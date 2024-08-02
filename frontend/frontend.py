@@ -3,7 +3,7 @@ import requests
 import time
 
 # Backend API base URL
-BACKEND_URL = "http://localhost:5001"
+BACKEND_URL = "http://backend:5001"
 
 # Assuming the iCloud link to the shortcut is provided
 ICLOUD_LINK = "https://www.icloud.com/shortcuts/dcfe6771a20a4613b182cd4ca4d22d9d"  # Replace with actual iCloud link
