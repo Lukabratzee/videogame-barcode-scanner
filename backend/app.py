@@ -2,19 +2,25 @@ import json
 import os
 import random
 import time
+import chromedriver_autoinstaller
+import undetected_chromedriver as uc
+import requests
+import logging
+import re
+import sqlite3
 from flask import Flask, request, jsonify
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
-import undetected_chromedriver as uc
-import requests
-import logging
-import re
-import sqlite3
+
 
 app = Flask(__name__)
+
+chromedriver_autoinstaller.install()  # Check if the current version of chromedriver exists
+# and if it doesn't exist, download it automatically,
+# then add chromedriver to path
 
 # Replace with your actual API keys
 IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
@@ -67,9 +73,9 @@ def scrape_barcode_lookup(barcode):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
-    driver = uc.Chrome(
-        service=ChromeService(ChromeDriverManager().install()), options=options
-    )
+    # Clear the cache and update the ChromeDriver
+    ChromeDriverManager().cache_path = None
+    driver = uc.Chrome(service=ChromeService(ChromeDriverManager().install()))
 
     url = f"https://www.barcodelookup.com/{barcode}"
     driver.get(url)
@@ -158,128 +164,165 @@ def remove_last_word(game_title):
 def generate_random_id():
     return random.randint(1000, 9999)
 
+class GameScan:
+    response_data = None  # Class variable to store response data
 
-@app.route("/scan", methods=["POST"])
-def scan():
-    try:
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(BASE_DIR, "games.db")
-        logging.debug(f"Database path: {db_path}")
+    @staticmethod
+    @app.route("/scan", methods=["POST"])
+    def scan():
+        try:
+            BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(BASE_DIR, "games.db")
+            logging.debug(f"Database path: {db_path}")
 
-        data = request.json
-        barcode = data.get("barcode")
-        logging.debug(f"Received barcode: {barcode}")
+            data = request.json
+            barcode = data.get("barcode")
+            logging.debug(f"Received barcode: {barcode}")
 
-        game_title, average_price = scrape_barcode_lookup(barcode)
-        if not game_title:
-            logging.error("Failed to scrape game title from barcode lookup")
-            return jsonify({"error": "Failed to retrieve game title"}), 404
+            game_title, average_price = scrape_barcode_lookup(barcode)
+            if not game_title:
+                logging.error("Failed to scrape game title from barcode lookup")
+                return jsonify({"error": "Failed to retrieve game title"}), 404
 
-        logging.debug(f"Average price for the game: {average_price}")
+            logging.debug(f"Average price for the game: {average_price}")
 
-        igdb_access_token = get_igdb_access_token()
-        if not igdb_access_token:
-            logging.error("Failed to retrieve IGDB access token")
-            return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
+            igdb_access_token = get_igdb_access_token()
+            if not igdb_access_token:
+                logging.error("Failed to retrieve IGDB access token")
+                return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
-        exact_match, alternative_match = search_game_with_alternatives(
-            game_title, igdb_access_token
-        )
-
-        if not exact_match and not alternative_match:
-            return jsonify({"error": "No results found on IGDB"}), 404
-        # TODO: Send entire object to Shortcuts app
-        # Need to target item one from each nest i.e item 1 from exact_match and item 1 from alternative_match
-        # then send just the names to the shortcut app, send the result back and match the name to the object in the list
-        # then send the entire object back to the backend to be written to the database
-        logging.debug(
-            json.dumps(
-                {
-                    "matches": {
-                        "exact_match": exact_match['name'] if exact_match else "No exact match",
-                        "alternative_match": alternative_match['name'] if alternative_match else "No alternative match"
-                    }
-                },
-                indent=4
+            exact_match, alternative_match = search_game_with_alternatives(
+                game_title, igdb_access_token
             )
-        )
 
-        return jsonify(
-            {
-                "matches": {
-                    "exact_match": exact_match['name'],
-                    "alternative_match": alternative_match['name']
-                },
-                "average_price": average_price,
+            if not exact_match and not alternative_match:
+                return jsonify({"error": "No results found on IGDB"}), 404
+
+            # Log the matches
+            logging.debug(
+                json.dumps(
+                    {
+                        "matches": {
+                            "exact_match": (
+                                exact_match["name"] if exact_match else "No exact match"
+                            ),
+                            "alternative_match": (
+                                alternative_match["name"]
+                                if alternative_match
+                                else "No alternative match"
+                            ),
+                        }
+                    },
+                    indent=4,
+                )
+            )
+
+            # Store both exact and alternative matches for later use
+            GameScan.response_data = {
+                "exact_match": exact_match,
+                "alternative_match": alternative_match,
             }
-        )
 
-    except Exception as e:
-        logging.error(f"Error in /scan route: {e}")
-        return jsonify({"error": str(e)}), 50000
+            # Return both exact and alternative matches for user selection
+            response = {
+                "exact_match": (
+                    {
+                        "index": 1,
+                        "name": exact_match["name"] if exact_match else "No exact match",
+                    }
+                    if exact_match
+                    else {}
+                ),
+                "alternative_match": (
+                    {
+                        "index": 2,
+                        "name": (
+                            alternative_match["name"]
+                            if alternative_match
+                            else "No alternative match"
+                        ),
+                    }
+                    if alternative_match
+                    else {}
+                ),
+            }
+            return jsonify(response)
 
+        except Exception as e:
+            logging.error(f"Error in /scan route: {e}")
+            return jsonify({"error": str(e)}), 500
 
-@app.route("/confirm", methods=["POST"])
-def confirm():
-    try:
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(BASE_DIR, "games.db")
-        logging.debug(f"Database path: {db_path}")
+    @staticmethod
+    @app.route("/confirm", methods=["POST"])
+    def confirm():
+        try:
+            BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(BASE_DIR, "games.db")
+            logging.debug(f"Database path: {db_path}")
 
-        data = request.json
-        game_info = data.get("game_info")
-        average_price = data.get("average_price")
-        if not game_info:
-            return jsonify({"error": "No game information provided"}), 400
+            data = request.json
+            selection = data.get("selection")  # Expected to be '1' for exact_match or '2' for alternative_match
+            logging.debug(f"Received selection: {selection}")
 
-        game_data = {
-            "title": game_info.get("name"),
-            "cover_image": game_info.get("cover", {}).get("url"),
-            "description": game_info.get("summary"),
-            "publisher": [
-                company["company"]["name"]
-                for company in game_info.get("involved_companies", [])
-            ],
-            "platforms": [
-                platform["name"] for platform in game_info.get("platforms", [])
-            ],
-            "genres": [genre["name"] for genre in game_info.get("genres", [])],
-            "series": [
-                franchise["name"] for franchise in game_info.get("franchises", [])
-            ],
-            "release_date": None,
-            "average_price": average_price,
-        }
+            # Ensure we have stored response_data from the /scan route
+            if not GameScan.response_data:
+                return jsonify({"error": "No stored game data available"}), 400
 
-        if game_info.get("first_release_date"):
-            game_data["release_date"] = time.strftime(
-                "%Y-%m-%d", time.gmtime(game_info["first_release_date"])
+            # Use the appropriate game info based on the user's selection
+            selected_game = GameScan.response_data["exact_match"] if selection == "1" else GameScan.response_data["alternative_match"]
+
+            if not selected_game:
+                return jsonify({"error": "Selected game information not found"}), 404
+
+            game_data = {
+                "title": selected_game.get("name"),
+                "cover_image": selected_game.get("cover", {}).get("url"),
+                "description": selected_game.get("summary"),
+                "publisher": [
+                    company["company"]["name"]
+                    for company in selected_game.get("involved_companies", [])
+                ],
+                "platforms": [
+                    platform["name"] for platform in selected_game.get("platforms", [])
+                ],
+                "genres": [genre["name"] for genre in selected_game.get("genres", [])],
+                "series": [
+                    franchise["name"] for franchise in selected_game.get("franchises", [])
+                ],
+                "release_date": None,
+                "average_price": None,  # Not needed to be sent back, handled internally if needed
+            }
+
+            if selected_game.get("first_release_date"):
+                game_data["release_date"] = time.strftime(
+                    "%Y-%m-%d", time.gmtime(selected_game["first_release_date"])
+                )
+
+            save_game_to_db(game_data)
+
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, title, average_price FROM games WHERE title = ?",
+                (game_data["title"],),
             )
+            rows = cursor.fetchall()
+            conn.close()
 
-        save_game_to_db(game_data)
+            games_with_prices = []
+            for row in rows:
+                games_with_prices.append(
+                    {"id": row[0], "title": row[1], "average_price": row[2]}
+                )
 
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, title, average_price FROM games WHERE title = ?",
-            (game_data["title"],),
-        )
-        rows = cursor.fetchall()
-        conn.close()
+            logging.debug(f"Games with prices: {games_with_prices}")
 
-        games_with_prices = []
-        for row in rows:
-            games_with_prices.append(
-                {"id": row[0], "title": row[1], "average_price": row[2]}
-            )
+            return jsonify(game_data)
 
-        logging.debug(f"Games with prices: {games_with_prices}")
+        except Exception as e:
+            logging.error(f"Error in /confirm route: {e}")
+            return jsonify({"error": str(e)}), 500
 
-        return jsonify(game_data)
-
-    except Exception as e:
-        logging.error(f"Error in /confirm route: {e}")
-        return jsonify({"error": str(e)}), 500
 
 
 def search_game_with_alternatives(game_name, auth_token):
