@@ -368,6 +368,30 @@ def search_game_with_alternatives(game_name, auth_token):
 
     return exact_match, alternative_match
 
+@app.route("/search_game_by_name", methods=["POST"])
+def search_game_by_name():
+    try:
+        data = request.json
+        game_name = data.get("game_name")
+
+        igdb_access_token = get_igdb_access_token()
+        if not igdb_access_token:
+            return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
+
+        exact_match, alternative_match = search_game_with_alternatives(game_name, igdb_access_token)
+
+        if exact_match or alternative_match:
+            return jsonify({
+                "exact_match": exact_match,
+                "alternative_match": alternative_match
+            }), 200
+        else:
+            return jsonify({"error": "No results found"}), 404
+
+    except Exception as e:
+        logging.error(f"Error in /search_game_by_name route: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 def save_game_to_db(game_data):
     try:
