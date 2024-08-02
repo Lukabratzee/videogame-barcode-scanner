@@ -221,7 +221,13 @@ class GameScan:
             GameScan.response_data = {
                 "exact_match": exact_match,
                 "alternative_match": alternative_match,
+                "average_price": average_price,
             }
+
+            # if exact_match and alternative_match are the same, only send exact_match
+            if exact_match and alternative_match and exact_match["id"] == alternative_match["id"]:
+                alternative_match = None
+            
 
             # Return both exact and alternative matches for user selection
             response = {
@@ -270,7 +276,7 @@ class GameScan:
 
             # Use the appropriate game info based on the user's selection
             selected_game = GameScan.response_data["exact_match"] if selection == "1" else GameScan.response_data["alternative_match"]
-
+            average_price = GameScan.response_data["average_price"]
             if not selected_game:
                 return jsonify({"error": "Selected game information not found"}), 404
 
@@ -290,7 +296,7 @@ class GameScan:
                     franchise["name"] for franchise in selected_game.get("franchises", [])
                 ],
                 "release_date": None,
-                "average_price": None,  # Not needed to be sent back, handled internally if needed
+                "average_price": average_price,  # Not needed to be sent back, handled internally if needed
             }
 
             if selected_game.get("first_release_date"):
@@ -557,6 +563,70 @@ def delete_game():
     except Exception as e:
         logging.error(f"Error deleting game: {e}")
         return jsonify({"error": str(e)}), 500
+    
+@app.route("/update_game/<int:game_id>", methods=["PUT"])
+def update_game(game_id):
+    data = request.json
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(BASE_DIR, "games.db")
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Update game data
+        cursor.execute("""
+            UPDATE games
+            SET title = ?, cover_image = ?, description = ?, publisher = ?, platforms = ?, genres = ?, series = ?, release_date = ?
+            WHERE id = ?
+        """, (
+            data["title"],
+            data["cover_image"],
+            data["description"],
+            ", ".join(data["publisher"]),
+            ", ".join(data["platforms"]),
+            ", ".join(data["genres"]),
+            ", ".join(data["series"]),
+            data["release_date"],
+            game_id
+        ))
+
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Game updated successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/game/<int:game_id>", methods=["GET"])
+def fetch_game_by_id(game_id):
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(BASE_DIR, "games.db")
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+        game = cursor.fetchone()
+        conn.close()
+
+        if game:
+            return jsonify({
+                "id": game[0],
+                "title": game[1],
+                "cover_image": game[2],
+                "description": game[3],
+                "publisher": game[4].split(", "),
+                "platforms": game[5].split(", "),
+                "genres": game[6].split(", "),
+                "series": game[7].split(", "),
+                "release_date": game[8],
+                "average_price": game[9],
+            }), 200
+        else:
+            return jsonify({"error": "Game not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 if __name__ == "__main__":
