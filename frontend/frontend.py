@@ -1,40 +1,49 @@
 import streamlit as st
 import requests
 
-# Backend API URLs
+# Backend API base URL
 BACKEND_URL = "http://localhost:5001"
 
+# Assuming the iCloud link to the shortcut is provided
+ICLOUD_LINK = "https://www.icloud.com/shortcuts/dcfe6771a20a4613b182cd4ca4d22d9d"  # Replace with actual iCloud link
 
+# Function to fetch games from the backend, optionally using filters
 def fetch_games(filters=None):
     response = requests.get(f"{BACKEND_URL}/games", params=filters)
     return response.json()
 
-
+# Function to fetch available consoles from the backend
 def fetch_consoles():
     response = requests.get(f"{BACKEND_URL}/consoles")
     return response.json()
 
-
+# Function to fetch unique values for a given type (e.g., publisher, platform)
 def fetch_unique_values(value_type):
     response = requests.get(f"{BACKEND_URL}/unique_values", params={"type": value_type})
     return response.json()
 
+# Function to calculate the total cost of displayed games
+def calculate_total_cost(games):
+    return sum(game.get("average_price", 0) for game in games if game.get("average_price") is not None)
 
+# Function to add a new game to the backend
 def add_game(game_data):
     response = requests.post(f"{BACKEND_URL}/add_game", json=game_data)
     return response.status_code == 201
 
-
+# Function to delete a game by ID from the backend
 def delete_game(game_id):
     response = requests.post(
         f"{BACKEND_URL}/delete_game", json={"id": int(game_id)}
     )  # Ensure game_id is an integer
     return response.status_code == 200
 
+# Function to update an existing game in the backend
 def update_game(game_id, game_data):
     response = requests.put(f"{BACKEND_URL}/update_game/{game_id}", json=game_data)
     return response.status_code == 200
 
+# Function to fetch game details by ID from the backend
 def fetch_game_by_id(game_id):
     response = requests.get(f"{BACKEND_URL}/game/{game_id}")
     if response.status_code == 200:
@@ -42,10 +51,10 @@ def fetch_game_by_id(game_id):
     else:
         return None
 
+# Function to scan a game by barcode
 def scan_game(barcode):
     response = requests.post(f"{BACKEND_URL}/scan", json={"barcode": barcode})
     return response.json()
-
 
 # CSS styling for better layout
 st.markdown(
@@ -76,13 +85,15 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
+# Main function to run the Streamlit app
 def main():
     st.title("Video Game Catalogue")
 
+    # Sidebar for filtering and managing games
     st.sidebar.title("Filter Games")
     search_term = st.sidebar.text_input("Search by Title", key="search_title")
 
+    # Section to add a new game
     add_expander = st.sidebar.expander("Add Game")
     with add_expander:
         title = st.text_input("Title", key="add_title")
@@ -104,11 +115,12 @@ def main():
                 "genres": genres.split(", "),
                 "series": [series],
                 "release_date": release_date.strftime("%Y-%m-%d"),
-                "average_price": None,  # Add a field for average price in the frontend (if needed)
+                "average_price": None,  # Add a field for average price if needed
             }
             if add_game(game_data):
                 st.success("Game added successfully")
 
+    # Section to delete an existing game
     delete_expander = st.sidebar.expander("Delete Game")
     with delete_expander:
         game_id = st.text_input("Game ID", key="delete_game_id")
@@ -121,7 +133,7 @@ def main():
             else:
                 st.error("Failed to delete game")
 
-        # Edit Game section
+    # Section to edit an existing game
     edit_expander = st.sidebar.expander("Edit Game")
     with edit_expander:
         edit_game_id = st.text_input("Game ID to Edit", key="edit_game_id")
@@ -159,6 +171,7 @@ def main():
                 else:
                     st.error("Failed to update game")
 
+    # Advanced filtering options
     filter_expander = st.sidebar.expander("Advanced Filters")
     with filter_expander:
         publishers = fetch_unique_values("publisher")
@@ -195,14 +208,22 @@ def main():
             games = fetch_games(filters)
         else:
             games = fetch_games()
+            
+    # Calculate total cost of the displayed games
+    total_cost = calculate_total_cost(games)
 
+    # Display the total cost
+    st.markdown(f"### Total Cost of Displayed Games: £{total_cost:.2f}")
 
-    # Add barcode scan functionality
+    # Barcode scanner functionality
     st.markdown("## Barcode Scanner")
     barcode = st.text_input("Enter Barcode", key="barcode_input")
 
-     # Add a link to trigger the shortcut
-    st.markdown("[Scan Barcode with iPhone](shortcuts://run-shortcut?name=Scan Video Games)")
+    # Link to trigger barcode scanning via iPhone
+    st.markdown("[Scan Barcode with iPhone](shortcuts://run-shortcut?name=Scan%20Video%20Games)")
+
+    # Add a link to install the shortcut if not already installed
+    st.markdown(f"[Install 'Scan Video Games' Shortcut]({ICLOUD_LINK})")
 
     if st.button("Scan Barcode", key="scan_barcode_button"):
         scan_response = scan_game(barcode)
@@ -238,6 +259,7 @@ def main():
             st.write(game_data)
             # Optionally save the game to the database here
 
+    # Display the list of games
     for game in games:
         if search_term.lower() in game["title"].lower():
             # Ensure full image URL
@@ -271,5 +293,6 @@ def main():
                 unsafe_allow_html=True,
             )
 
+# Entry point of the script
 if __name__ == "__main__":
     main()
