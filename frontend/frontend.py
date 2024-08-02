@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import time
 
 # Backend API base URL
 BACKEND_URL = "http://localhost:5001"
@@ -42,6 +43,14 @@ def delete_game(game_id):
 def update_game(game_id, game_data):
     response = requests.put(f"{BACKEND_URL}/update_game/{game_id}", json=game_data)
     return response.status_code == 200
+
+# Function to search for games by name using the backend
+def search_game_by_name(game_name):
+    response = requests.post(f"{BACKEND_URL}/search_game_by_name", json={"game_name": game_name})
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return None
 
 # Function to fetch game details by ID from the backend
 def fetch_game_by_id(game_id):
@@ -215,49 +224,85 @@ def main():
     # Display the total cost
     st.markdown(f"### Total Cost of Displayed Games: £{total_cost:.2f}")
 
-    # Barcode scanner functionality
-    st.markdown("## Barcode Scanner")
-    barcode = st.text_input("Enter Barcode", key="barcode_input")
-
     # Link to trigger barcode scanning via iPhone
     st.markdown("[Scan Barcode with iPhone](shortcuts://run-shortcut?name=Scan%20Video%20Games)")
 
     # Add a link to install the shortcut if not already installed
     st.markdown(f"[Install 'Scan Video Games' Shortcut]({ICLOUD_LINK})")
 
-    if st.button("Scan Barcode", key="scan_barcode_button"):
-        scan_response = scan_game(barcode)
-        if "exact_match" in scan_response or "alternative_match" in scan_response:
-            selected_game = scan_response.get("exact_match") or scan_response.get(
-                "alternative_match"
-            )
-            game_data = {
-                "title": selected_game["name"],
-                "cover_image": selected_game.get("cover", {}).get("url"),
-                "description": selected_game.get("summary"),
-                "publisher": [
-                    company["company"]["name"]
-                    for company in selected_game.get("involved_companies", [])
-                ],
-                "platforms": [
-                    platform["name"] for platform in selected_game.get("platforms", [])
-                ],
-                "genres": [genre["name"] for genre in selected_game.get("genres", [])],
-                "series": [
-                    franchise["name"] for franchise in selected_game.get("franchises", [])
-                ],
-                "release_date": None,
-                "average_price": None,  # Add field for average price if needed
-            }
-            st.write(game_data)
-            # Optionally save the selected game to the database here
-        elif "error" in scan_response:
-            st.error(scan_response["error"])
+    # Game search functionality
+    st.markdown("## Search Game by Name")
+    game_name = st.text_input("Enter Game Name", key="game_name_input")
+
+    # Initialize state to store search results and selected game
+    if "search_results" not in st.session_state:
+        st.session_state["search_results"] = None
+    if "selected_game" not in st.session_state:
+        st.session_state["selected_game"] = None
+
+    if st.button("Search Game", key="search_game_button"):
+        search_response = search_game_by_name(game_name)
+        if search_response:
+            st.session_state["search_results"] = search_response
         else:
-            game_data = scan_response
-            st.write("Game found:")
-            st.write(game_data)
-            # Optionally save the game to the database here
+            st.error("No game found with the provided name.")
+            st.session_state["search_results"] = None
+
+    # Display search results if available
+    if st.session_state["search_results"]:
+        exact_match = st.session_state["search_results"].get("exact_match")
+        alternative_match = st.session_state["search_results"].get("alternative_match")
+
+        game_options = []
+        game_map = {}
+
+        if exact_match:
+            game_title = f"Exact Match: {exact_match['name']}"
+            game_options.append(game_title)
+            game_map[game_title] = exact_match
+
+        if alternative_match:
+            alt_title = f"Alternative Match: {alternative_match['name']}"
+            game_options.append(alt_title)
+            game_map[alt_title] = alternative_match
+
+        selected_option = st.radio("Select a game to add:", game_options, key="selected_game_radio")
+        st.session_state["selected_game"] = game_map[selected_option]
+
+        if st.button("Add Selected Game", key="add_selected_game_button"):
+            selected_game_data = st.session_state["selected_game"]
+            if selected_game_data:
+                game_data = {
+                    "title": selected_game_data["name"],
+                    "cover_image": selected_game_data.get("cover", {}).get("url"),
+                    "description": selected_game_data.get("summary"),
+                    "publisher": [
+                        company["company"]["name"]
+                        for company in selected_game_data.get("involved_companies", [])
+                    ],
+                    "platforms": [
+                        platform["name"] for platform in selected_game_data.get("platforms", [])
+                    ],
+                    "genres": [genre["name"] for genre in selected_game_data.get("genres", [])],
+                    "series": [
+                        franchise["name"] for franchise in selected_game_data.get("franchises", [])
+                    ],
+                    "release_date": None,
+                    "average_price": None,  # Add field for average price if needed
+                }
+
+                # Optionally, convert release date if available
+                if selected_game_data.get("first_release_date"):
+                    game_data["release_date"] = time.strftime(
+                        "%Y-%m-%d", time.gmtime(selected_game_data["first_release_date"])
+                    )
+
+                # Call the add_game function
+                if add_game(game_data):
+                    st.success(f"{selected_game_data['name']} added successfully!")
+                else:
+                    st.error("Failed to add game.")
+
 
     # Display the list of games
     for game in games:
