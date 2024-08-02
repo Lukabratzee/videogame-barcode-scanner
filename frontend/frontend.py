@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-import time
 
 # Backend API URLs
 BACKEND_URL = "http://localhost:5001"
@@ -32,6 +31,16 @@ def delete_game(game_id):
     )  # Ensure game_id is an integer
     return response.status_code == 200
 
+def update_game(game_id, game_data):
+    response = requests.put(f"{BACKEND_URL}/update_game/{game_id}", json=game_data)
+    return response.status_code == 200
+
+def fetch_game_by_id(game_id):
+    response = requests.get(f"{BACKEND_URL}/game/{game_id}")
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return None
 
 def scan_game(barcode):
     response = requests.post(f"{BACKEND_URL}/scan", json={"barcode": barcode})
@@ -111,6 +120,44 @@ def main():
                 st.success("Game Deleted")
             else:
                 st.error("Failed to delete game")
+
+        # Edit Game section
+    edit_expander = st.sidebar.expander("Edit Game")
+    with edit_expander:
+        edit_game_id = st.text_input("Game ID to Edit", key="edit_game_id")
+        if st.button("Fetch Game Details", key="fetch_game_details_button"):
+            game_details = fetch_game_by_id(edit_game_id)
+            if game_details:
+                st.session_state["edit_game_data"] = game_details
+            else:
+                st.error("Game not found.")
+
+        if "edit_game_data" in st.session_state:
+            game_details = st.session_state["edit_game_data"]
+            edit_title = st.text_input("Title", game_details["title"], key="edit_title")
+            edit_cover_image = st.text_input("Cover Image URL", game_details["cover_image"], key="edit_cover_image")
+            edit_description = st.text_area("Description", game_details["description"], key="edit_description")
+            edit_publisher = st.text_input("Publisher", ", ".join(game_details["publisher"]), key="edit_publisher")
+            edit_platforms = st.text_input("Platforms (comma separated)", ", ".join(game_details["platforms"]), key="edit_platforms")
+            edit_genres = st.text_input("Genres (comma separated)", ", ".join(game_details["genres"]), key="edit_genres")
+            edit_series = st.text_input("Series", ", ".join(game_details["series"]), key="edit_series")
+            edit_release_date = st.date_input("Release Date", key="edit_release_date")
+
+            if st.button("Update Game", key="update_game_button"):
+                updated_game_data = {
+                    "title": edit_title,
+                    "cover_image": edit_cover_image,
+                    "description": edit_description,
+                    "publisher": edit_publisher.split(", "),
+                    "platforms": edit_platforms.split(", "),
+                    "genres": edit_genres.split(", "),
+                    "series": edit_series.split(", "),
+                    "release_date": edit_release_date.strftime("%Y-%m-%d"),
+                }
+                if update_game(edit_game_id, updated_game_data):
+                    st.success("Game updated successfully")
+                else:
+                    st.error("Failed to update game")
 
     filter_expander = st.sidebar.expander("Advanced Filters")
     with filter_expander:
