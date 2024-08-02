@@ -2,7 +2,6 @@ import json
 import os
 import random
 import time
-import chromedriver_autoinstaller
 import undetected_chromedriver as uc
 import requests
 import logging
@@ -18,7 +17,6 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
 
-chromedriver_autoinstaller.install()  # Check if the current version of chromedriver exists
 # and if it doesn't exist, download it automatically,
 # then add chromedriver to path
 
