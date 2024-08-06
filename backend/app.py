@@ -21,16 +21,6 @@ from selenium.webdriver.chrome.service import Service
 
 app = Flask(__name__)
 
-# and if it doesn't exist, download it automatically,
-# then add chromedriver to path
-# This automatically installs the correct version of ChromeDriver
-# chromedriver_autoinstaller.install()
-
-# # Create a Service object and pass it to the WebDriver
-# service = Service(ChromeDriverManager().install())
-# print(f"Using ChromeDriver located at: {service.path}")
-# driver = webdriver.Chrome(service=service)
-
 # Replace with your actual API keys
 IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
 IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
@@ -78,19 +68,25 @@ def get_igdb_access_token():
 
 # Scrape the barcode lookup website for the game title using undetected_chromedriver
 def scrape_barcode_lookup(barcode):
+    # Specify the exact path to the ChromeDriver binary
+    driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
+
+    # Set up Chrome options
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
-    # Clear the cache and update the ChromeDriver
-    ChromeDriverManager().cache_path = None
-    driver = uc.Chrome(service=ChromeService(ChromeDriverManager().install()))
+    # Use the Service class to specify the ChromeDriver path and avoid caching issues
+    service = ChromeService(driver_path)
+
+    # Initialize the Chrome browser using undetected_chromedriver with the given service and options
+    driver = uc.Chrome(service=service, options=options)
 
     url = f"https://www.barcodelookup.com/{barcode}"
     driver.get(url)
 
     try:
-        # Wait for Cloudflare challenge to complete and page to load
+        # Wait for the page to load and the expected element to be located
         WebDriverWait(driver, 60).until(
             EC.presence_of_element_located(
                 (By.CSS_SELECTOR, "div.col-50.product-details")
@@ -115,10 +111,7 @@ def scrape_barcode_lookup(barcode):
                 price = float(price_match.group()[1:])
                 prices.append(price)
 
-        if prices:
-            average_price = round(sum(prices) / len(prices), 2)
-        else:
-            average_price = None
+        average_price = round(sum(prices) / len(prices), 2) if prices else None
         logging.debug(f"Average price calculated: {average_price}")
 
     except Exception as e:
