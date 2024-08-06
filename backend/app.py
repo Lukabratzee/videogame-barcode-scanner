@@ -7,18 +7,29 @@ import requests
 import logging
 import re
 import sqlite3
+import chromedriver_autoinstaller
+
 from flask import Flask, request, jsonify
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 
 
 app = Flask(__name__)
 
 # and if it doesn't exist, download it automatically,
 # then add chromedriver to path
+# This automatically installs the correct version of ChromeDriver
+# chromedriver_autoinstaller.install()
+
+# # Create a Service object and pass it to the WebDriver
+# service = Service(ChromeDriverManager().install())
+# print(f"Using ChromeDriver located at: {service.path}")
+# driver = webdriver.Chrome(service=service)
 
 # Replace with your actual API keys
 IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
