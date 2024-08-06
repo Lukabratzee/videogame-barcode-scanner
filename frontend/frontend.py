@@ -4,11 +4,12 @@ import time
 import os
 
 # Retrieve the backend host from environment variables, default to 'localhost' if not set
-backend_host = os.getenv('BACKEND_HOST', 'localhost')
+backend_host = os.getenv('BACKEND_HOST', 'backend')
 backend_port = 5001  # Assuming the backend is running on this port
 
 # Backend API base URL
 BACKEND_URL = f"http://{backend_host}:{backend_port}"
+print(f"Connecting to backend at {BACKEND_URL}")  # Debugging output
 
 # Assuming the iCloud link to the shortcut is provided
 ICLOUD_LINK = "https://www.icloud.com/shortcuts/dcfe6771a20a4613b182cd4ca4d22d9d"  # Replace with actual iCloud link
