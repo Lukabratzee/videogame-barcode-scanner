@@ -103,11 +103,11 @@ To use the iOS Shortcut for scanning games, you can add the provided shortcut to
 [iOS Shortcut Link](https://www.icloud.com/shortcuts/b324cde379434401a511e025ee9ccd4c)
 
 This shortcut allows you to scan games and send the data to the application for adding to the catalogue.
-
+Remember to change the IP's in the shortcut to IP running the application.
 ## FAQ
 
-CHROMEDRIVER 114 VERSION NO WORKY
+## CHROMEDRIVER 114 VERSION NO WORKY
 
-Define where Chromedriver is i.e /opt/homebrew/bin/chromedriver
-Run this: pip uninstall undetected-chromedriver webdriver-manager
-pip install undetected-chromedriver webdriver-manager
+Define where Chromedriver is `i.e /opt/homebrew/bin/chromedriver`
+Run this: `bashpip uninstall undetected-chromedriver webdriver-manager`
+`pip install undetected-chromedriver webdriver-manager`
