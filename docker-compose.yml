@@ -5,6 +5,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: videogamescanner/frontend:latest
     ports:
       - "8501:8501"
     depends_on:
@@ -16,6 +17,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: videogamescanner/backend:latest
     volumes:
       - ./backend/games.db:/app/games.db
     ports:
