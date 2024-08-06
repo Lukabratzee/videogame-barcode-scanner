@@ -11,6 +11,8 @@ services:
       - backend
     networks:
       - app-network
+    environment:
+      - BACKEND_HOST=${BACKEND_HOST:-localhost}  # Use the provided IP or default to local      
 
   backend: # Backend for videogame scanner
     image: videogamescanner/backend:latest
