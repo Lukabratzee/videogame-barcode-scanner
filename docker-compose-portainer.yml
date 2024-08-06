@@ -12,14 +12,14 @@ services:
     networks:
       - app-network
     environment:
-      - BACKEND_HOST=${BACKEND_HOST:-localhost}  # Use the provided IP or default to local      
+      - BACKEND_HOST=backend  # Use the provided IP or default to local      
 
   backend: # Backend for videogame scanner
     image: videogamescanner/backend:latest
     container_name: videogamescanner-backend
     restart: unless-stopped    
     volumes:
-      - ./backend/games.db:/app/games.db
+      - /root//backend/games.db:/app/games.db
     ports:
       - "5001:5001"
     environment:
