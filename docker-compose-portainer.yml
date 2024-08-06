@@ -2,9 +2,6 @@ version: '3.8'
 
 services:
   frontend: # Frontend for videogame scanner
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
     image: videogamescanner/frontend:latest
     container_name: videogamescanner-frontend
     restart: unless-stopped    
@@ -16,20 +13,18 @@ services:
       - app-network
 
   backend: # Backend for videogame scanner
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     image: videogamescanner/backend:latest
     container_name: videogamescanner-backend
     restart: unless-stopped    
     volumes:
-      - /root/videogamescanner/backend/games.db:/app/games.db
+      - ./backend/games.db:/app/games.db
     ports:
       - "5001:5001"
     environment:
       - FLASK_ENV=development
     networks:
       - app-network 
+
 networks:
   app-network:
     driver: bridge
