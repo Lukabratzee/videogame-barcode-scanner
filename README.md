@@ -106,8 +106,10 @@ This shortcut allows you to scan games and send the data to the application for 
 Remember to change the IP's in the shortcut to IP running the application.
 ## FAQ
 
-## CHROMEDRIVER 114 VERSION NO WORKY
+## CHROMEDRIVER 114/xxx VERSION NO WORKY
 
-Define where Chromedriver is `i.e /opt/homebrew/bin/chromedriver`
-Run this: `bashpip uninstall undetected-chromedriver webdriver-manager`
+Define where Chromedriver is `i.e /opt/homebrew/bin/chromedriver` for Mac w/ brew package manager
+Run this: `pip uninstall undetected-chromedriver webdriver-manager`
 `pip install undetected-chromedriver webdriver-manager`
+
+Issue arises from olde rversions of selenium. At time of writing 4.23.1 works. May be liable to break again due to how Chrome and ChromeDriver updated and get out of sync.
