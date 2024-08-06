@@ -1,36 +1,32 @@
-version: '3'
+version: '3.8'
 
 services:
-  frontend: # Frontend for videogame scanner
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+  frontend:
     image: videogamescanner/frontend:latest
     container_name: videogamescanner-frontend
-    restart: unless-stopped    
+    restart: unless-stopped
     ports:
       - "8501:8501"
     depends_on:
       - backend
     networks:
       - app-network
+    environment:
+      - BACKEND_HOST=backend  # Use the service name for inter-container communication
 
-  backend: # Backend for videogame scanner
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+  backend:
     image: videogamescanner/backend:latest
     container_name: videogamescanner-backend
-    restart: unless-stopped    
+    restart: unless-stopped
     volumes:
-      - /root/videogamescanner/backend/games.db:/app/games.db
+      - ./backend/games.db:/app/games.db  # For persistent data storage
     ports:
       - "5001:5001"
     environment:
       - FLASK_ENV=development
     networks:
-      - app-network 
-      
+      - app-network
+
 networks:
   app-network:
     driver: bridge
