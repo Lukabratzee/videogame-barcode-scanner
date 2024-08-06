@@ -1,7 +1,7 @@
 Flask==3.0.3
 Werkzeug==3.0.3
-selenium==4.4.3
+selenium==4.23.1
 undetected-chromedriver==3.4.6
 requests==2.28.1
-webdriver-manager==4.0.2
+webdriver-manager==5.8.0
 setuptools==72.1.0
