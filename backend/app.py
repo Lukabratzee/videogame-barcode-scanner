@@ -25,6 +25,9 @@ app = Flask(__name__)
 IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
 IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 
+# Specify the exact path to the ChromeDriver binary
+driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 
@@ -73,8 +76,6 @@ def get_igdb_access_token():
 
 # Scrape the barcode lookup website for the game title using undetected_chromedriver
 def scrape_barcode_lookup(barcode):
-    # Specify the exact path to the ChromeDriver binary
-    driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
 
     # Set up Chrome options
     options = uc.ChromeOptions()
@@ -300,7 +301,7 @@ class GameScan:
                 ],
                 "genres": [genre["name"] for genre in selected_game.get("genres", [])],
                 "series": [
-                    franchise["name"] for franchise in selected_game.get("franchises", [])
+                    series["name"] for series in selected_game.get("series", [])
                 ],
                 "release_date": None,
                 "average_price": average_price,  # Not needed to be sent back, handled internally if needed
@@ -375,6 +376,36 @@ def search_game_with_alternatives(game_name, auth_token):
 
     return exact_match, alternative_match
 
+@app.route("/search_game_by_id", methods=["POST"])
+def search_game_by_id():
+    try:
+        data = request.json
+        igdb_id = data.get("igdb_id")
+
+        igdb_access_token = get_igdb_access_token()
+        if not igdb_access_token:
+            return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
+
+        url = f"https://api.igdb.com/v4/games"
+        headers = {
+            "Client-ID": IGDB_CLIENT_ID,
+            "Authorization": f"Bearer {igdb_access_token}",
+        }
+        body = f"fields name, cover.url, summary, platforms.name, genres.name, involved_companies.company.name, franchises.name, first_release_date; where id = {igdb_id};"
+        response = requests.post(url, headers=headers, data=body)
+        response_json = response.json()
+        logging.debug(f"IGDB search response for ID {igdb_id}: {response_json}")
+
+        if response_json:
+            return jsonify(response_json[0]), 200
+        else:
+            return jsonify({"error": "No results found"}), 404
+
+    except Exception as e:
+        logging.error(f"Error in /search_game_by_id route: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/search_game_by_name", methods=["POST"])
 def search_game_by_name():
     try:
@@ -388,9 +419,24 @@ def search_game_by_name():
         exact_match, alternative_match = search_game_with_alternatives(game_name, igdb_access_token)
 
         if exact_match or alternative_match:
+            # Fetch additional details for exact and alternative matches
+            def get_game_details(game):
+                return {
+                    "name": game.get("name"),
+                    "cover_url": game.get("cover", {}).get("url"),
+                    "summary": game.get("summary"),
+                    "platforms": [platform["name"] for platform in game.get("platforms", [])],
+                    "genres": [genre["name"] for genre in game.get("genres", [])],
+                    "release_date": game.get("first_release_date"),
+                    "involved_companies": [company["company"]["name"] for company in game.get("involved_companies", [])]
+                }
+
+            exact_match_details = get_game_details(exact_match) if exact_match else None
+            alternative_match_details = get_game_details(alternative_match) if alternative_match else None
+
             return jsonify({
-                "exact_match": exact_match,
-                "alternative_match": alternative_match
+                "exact_match": exact_match_details,
+                "alternative_match": alternative_match_details
             }), 200
         else:
             return jsonify({"error": "No results found"}), 404
@@ -398,6 +444,7 @@ def search_game_by_name():
     except Exception as e:
         logging.error(f"Error in /search_game_by_name route: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 
 def save_game_to_db(game_data):
