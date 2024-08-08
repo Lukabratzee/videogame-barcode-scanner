@@ -4,7 +4,7 @@ import time
 import os
 
 # Retrieve the backend host from environment variables, default to 'localhost' if using Python locally
-backend_host = os.getenv('BACKEND_HOST', 'localhost') 
+backend_host = os.getenv("BACKEND_HOST", "localhost")
 backend_port = 5001  # Assuming the backend is running on this port
 
 # Backend API base URL
@@ -14,29 +14,39 @@ print(f"Connecting to backend at {BACKEND_URL}")  # Debugging output
 # Assuming the iCloud link to the shortcut is provided
 ICLOUD_LINK = "https://www.icloud.com/shortcuts/dcfe6771a20a4613b182cd4ca4d22d9d"  # Replace with actual iCloud link
 
+
 # Function to fetch games from the backend, optionally using filters
 def fetch_games(filters=None):
     response = requests.get(f"{BACKEND_URL}/games", params=filters)
     return response.json()
+
 
 # Function to fetch available consoles from the backend
 def fetch_consoles():
     response = requests.get(f"{BACKEND_URL}/consoles")
     return response.json()
 
+
 # Function to fetch unique values for a given type (e.g., publisher, platform)
 def fetch_unique_values(value_type):
     response = requests.get(f"{BACKEND_URL}/unique_values", params={"type": value_type})
     return response.json()
 
+
 # Function to calculate the total cost of displayed games
 def calculate_total_cost(games):
-    return sum(game.get("average_price", 0) for game in games if game.get("average_price") is not None)
+    return sum(
+        game.get("average_price", 0)
+        for game in games
+        if game.get("average_price") is not None
+    )
+
 
 # Function to add a new game to the backend
 def add_game(game_data):
     response = requests.post(f"{BACKEND_URL}/add_game", json=game_data)
     return response.status_code == 201
+
 
 # Function to delete a game by ID from the backend
 def delete_game(game_id):
@@ -45,27 +55,35 @@ def delete_game(game_id):
     )  # Ensure game_id is an integer
     return response.status_code == 200
 
+
 # Function to update an existing game in the backend
 def update_game(game_id, game_data):
     response = requests.put(f"{BACKEND_URL}/update_game/{game_id}", json=game_data)
     return response.status_code == 200
 
+
 # Function to search for games by name using the backend
 def search_game_by_name(game_name):
-    response = requests.post(f"{BACKEND_URL}/search_game_by_name", json={"game_name": game_name})
+    response = requests.post(
+        f"{BACKEND_URL}/search_game_by_name", json={"game_name": game_name}
+    )
     if response.status_code == 200:
         return response.json()
     else:
         return None
-    
+
+
 # Function to search for games by IGDB ID using the backend
 def search_game_by_id(igdb_id):
-    response = requests.post(f"{BACKEND_URL}/search_game_by_id", json={"igdb_id": igdb_id})
+    response = requests.post(
+        f"{BACKEND_URL}/search_game_by_id", json={"igdb_id": igdb_id}
+    )
     if response.status_code == 200:
         return response.json()
     else:
         return None
-    
+
+
 # Function to fetch the top 5 games with the highest average price
 def fetch_top_games():
     response = requests.get(f"{BACKEND_URL}/top_games")
@@ -80,10 +98,12 @@ def fetch_game_by_id(game_id):
     else:
         return None
 
+
 # Function to scan a game by barcode
 def scan_game(barcode):
     response = requests.post(f"{BACKEND_URL}/scan", json={"barcode": barcode})
     return response.json()
+
 
 # CSS styling for better layout
 st.markdown(
@@ -113,6 +133,7 @@ st.markdown(
 """,
     unsafe_allow_html=True,
 )
+
 
 # Main function to run the Streamlit app
 def main():
@@ -147,7 +168,9 @@ def main():
                 "platforms": platforms.split(", "),
                 "genres": genres.split(", "),
                 "series": [series],
-                "release_date": release_date.strftime("%Y-%m-%d"),
+                "release_date": (
+                    release_date.strftime("%Y-%m-%d") if release_date else "1900-01-01"
+                ),
                 "average_price": None,  # Add a field for average price if needed
             }
             if add_game(game_data):
@@ -180,12 +203,28 @@ def main():
         if "edit_game_data" in st.session_state:
             game_details = st.session_state["edit_game_data"]
             edit_title = st.text_input("Title", game_details["title"], key="edit_title")
-            edit_cover_image = st.text_input("Cover Image URL", game_details["cover_image"], key="edit_cover_image")
-            edit_description = st.text_area("Description", game_details["description"], key="edit_description")
-            edit_publisher = st.text_input("Publisher", ", ".join(game_details["publisher"]), key="edit_publisher")
-            edit_platforms = st.text_input("Platforms (comma separated)", ", ".join(game_details["platforms"]), key="edit_platforms")
-            edit_genres = st.text_input("Genres (comma separated)", ", ".join(game_details["genres"]), key="edit_genres")
-            edit_series = st.text_input("Series", ", ".join(game_details["series"]), key="edit_series")
+            edit_cover_image = st.text_input(
+                "Cover Image URL", game_details["cover_image"], key="edit_cover_image"
+            )
+            edit_description = st.text_area(
+                "Description", game_details["description"], key="edit_description"
+            )
+            edit_publisher = st.text_input(
+                "Publisher", ", ".join(game_details["publisher"]), key="edit_publisher"
+            )
+            edit_platforms = st.text_input(
+                "Platforms (comma separated)",
+                ", ".join(game_details["platforms"]),
+                key="edit_platforms",
+            )
+            edit_genres = st.text_input(
+                "Genres (comma separated)",
+                ", ".join(game_details["genres"]),
+                key="edit_genres",
+            )
+            edit_series = st.text_input(
+                "Series", ", ".join(game_details["series"]), key="edit_series"
+            )
             edit_release_date = st.date_input("Release Date", key="edit_release_date")
 
             if st.button("Update Game", key="update_game_button"):
@@ -197,7 +236,11 @@ def main():
                     "platforms": edit_platforms.split(", "),
                     "genres": edit_genres.split(", "),
                     "series": edit_series.split(", "),
-                    "release_date": edit_release_date.strftime("%Y-%m-%d"),
+                    "release_date": (
+                        edit_release_date.strftime("%Y-%m-%d")
+                        if edit_release_date
+                        else "1900-01-01"
+                    ),
                 }
                 if update_game(edit_game_id, updated_game_data):
                     st.success("Game updated successfully")
@@ -244,7 +287,7 @@ def main():
             games = fetch_games(filters)
         else:
             games = []
-            
+
     # Calculate total cost of the displayed games
     total_cost = calculate_total_cost(games)
 
@@ -253,7 +296,9 @@ def main():
         st.markdown(f"### Total Cost of Displayed Games: £{total_cost:.2f}")
 
     # Link to trigger barcode scanning via iPhone
-    st.markdown("[Scan Barcode with iPhone](shortcuts://run-shortcut?name=Scan%20Video%20Games)")
+    st.markdown(
+        "[Scan Barcode with iPhone](shortcuts://run-shortcut?name=Scan%20Video%20Games)"
+    )
 
     # Add a link to install the shortcut if not already installed
     st.markdown(f"[Install 'Scan Video Games' Shortcut]({ICLOUD_LINK})")
@@ -294,7 +339,9 @@ def main():
             game_options.append(alt_title)
             game_map[alt_title] = alternative_match
 
-        selected_option = st.radio("Select a game to add:", game_options, key="selected_game_radio")
+        selected_option = st.radio(
+            "Select a game to add:", game_options, key="selected_game_radio"
+        )
         st.session_state["selected_game"] = game_map[selected_option]
 
         # Display preview information for the selected game
@@ -308,27 +355,22 @@ def main():
             if selected_game_data:
                 game_data = {
                     "title": selected_game_data["name"],
-                    "cover_image": selected_game_data.get("cover", {}).get("url"),
+                    "cover_image": selected_game_data.get("cover_url"),
                     "description": selected_game_data.get("summary"),
-                    "publisher": [
-                        company["company"]["name"]
-                        for company in selected_game_data.get("involved_companies", [])
-                    ] if isinstance(selected_game_data.get('involved_companies'), list) else [],
-                    "platforms": [
-                        platform["name"] for platform in selected_game_data.get("platforms", [])
-                    ] if isinstance(selected_game_data.get('platforms'), list) else [],
-                    "genres": [genre["name"] for genre in selected_game_data.get("genres", [])] if isinstance(selected_game_data.get('genres'), list) else [],
-                    "series": [
-                        franchise["name"] for franchise in selected_game_data.get("franchises", [])
-                    ] if isinstance(selected_game_data.get('franchises'), list) else [],
+                    "publisher": selected_game_data.get("involved_companies", []),
+                    "platforms": selected_game_data.get("platforms", []),
+                    "genres": selected_game_data.get("genres", []),
+                    "franchise": selected_game_data.get("franchise", []),
+                    "series": selected_game_data.get("series", []),
                     "release_date": None,
                     "average_price": None,  # Add field for average price if needed
                 }
 
                 # Optionally, convert release date if available
-                if selected_game_data.get("first_release_date"):
+                if selected_game_data.get("release_date"):
                     game_data["release_date"] = time.strftime(
-                        "%Y-%m-%d", time.gmtime(selected_game_data["first_release_date"])
+                        "%Y-%m-%d",
+                        time.gmtime(selected_game_data["release_date"]),
                     )
 
                 # Call the add_game function
@@ -350,59 +392,83 @@ def main():
             st.session_state["selected_game_by_id"] = None
 
     # Display game details if IGDB ID search result is available
-    if "selected_game_by_id" in st.session_state and st.session_state["selected_game_by_id"]:
+    if (
+        "selected_game_by_id" in st.session_state
+        and st.session_state["selected_game_by_id"]
+    ):
         selected_game_data_by_id = st.session_state["selected_game_by_id"]
         st.markdown("### Game Details (By ID)")
         st.markdown(f"**Title:** {selected_game_data_by_id['name']}")
-        st.markdown(f"**Description:** {selected_game_data_by_id.get('summary', 'N/A')}")
-        if isinstance(selected_game_data_by_id.get('involved_companies'), list):
-            st.markdown(f"**Publisher:** {', '.join([company['company']['name'] for company in selected_game_data_by_id.get('involved_companies', []) if isinstance(company, dict) and 'company' in company and isinstance(company['company'], dict) and 'name' in company['company']])}")
+        st.markdown(
+            f"**Description:** {selected_game_data_by_id.get('summary', 'N/A')}"
+        )
+        st.markdown(
+            f"**Cover URL:** {selected_game_data_by_id.get('cover_url', 'N/A')}"
+        )
+        if isinstance(selected_game_data_by_id.get("involved_companies"), list):
+            st.markdown(
+                f"**Publisher:** {', '.join([company['company']['name'] for company in selected_game_data_by_id.get('involved_companies', []) if isinstance(company, dict) and 'company' in company and isinstance(company['company'], dict) and 'name' in company['company']])}"
+            )
         else:
             st.markdown(f"**Publisher:** N/A")
-        if isinstance(selected_game_data_by_id.get('platforms'), list):
-            st.markdown(f"**Platforms:** {', '.join([platform['name'] for platform in selected_game_data_by_id.get('platforms', [])])}")
+        if isinstance(selected_game_data_by_id.get("platforms"), list):
+            st.markdown(
+                f"**Platforms:** {', '.join([platform['name'] for platform in selected_game_data_by_id.get('platforms', [])])}"
+            )
         else:
             st.markdown(f"**Platforms:** N/A")
-        if isinstance(selected_game_data_by_id.get('genres'), list):
-            st.markdown(f"**Genres:** {', '.join([genre['name'] for genre in selected_game_data_by_id.get('genres', [])])}")
+        if isinstance(selected_game_data_by_id.get("genres"), list):
+            st.markdown(
+                f"**Genres:** {', '.join([genre['name'] for genre in selected_game_data_by_id.get('genres', [])])}"
+            )
         else:
             st.markdown(f"**Genres:** N/A")
-        st.markdown(f"**Release Date:** {time.strftime('%Y-%m-%d', time.gmtime(selected_game_data_by_id['first_release_date'])) if selected_game_data_by_id.get('first_release_date') else 'N/A'}")
+        st.markdown(
+            f"**Release Date:** {time.strftime('%Y-%m-%d', time.gmtime(selected_game_data_by_id['release_date'])) if selected_game_data_by_id.get('release_date') else 'N/A'}"
+        )
 
         if st.button("Add Game by ID", key="add_game_by_id_button"):
             if selected_game_data_by_id:
                 game_data = {
                     "title": selected_game_data_by_id["name"],
-                    "cover_image": selected_game_data_by_id.get("cover", {}).get("url"),
+                    "cover_image": selected_game_data_by_id.get("cover_url"),
                     "description": selected_game_data_by_id.get("summary"),
                     "publisher": [
                         company["company"]["name"]
-                        for company in selected_game_data_by_id.get("involved_companies", [])
+                        for company in selected_game_data_by_id.get(
+                            "involved_companies", []
+                        )
                     ],
                     "platforms": [
-                        platform["name"] for platform in selected_game_data_by_id.get("platforms", [])
+                        platform["name"]
+                        for platform in selected_game_data_by_id.get("platforms", [])
                     ],
-                    "genres": [genre["name"] for genre in selected_game_data_by_id.get("genres", [])],
+                    "genres": [
+                        genre["name"]
+                        for genre in selected_game_data_by_id.get("genres", [])
+                    ],
                     "series": [
-                        franchise["name"] for franchise in selected_game_data_by_id.get("franchises", [])
+                        franchise["name"]
+                        for franchise in selected_game_data_by_id.get("franchises", [])
                     ],
                     "release_date": None,
                     "average_price": None,  # Add field for average price if needed
                 }
 
                 # Optionally, convert release date if available
-                if selected_game_data_by_id.get("first_release_date"):
+                if selected_game_data_by_id.get("release_date"):
                     game_data["release_date"] = time.strftime(
-                        "%Y-%m-%d", time.gmtime(selected_game_data_by_id["first_release_date"])
+                        "%Y-%m-%d",
+                        time.gmtime(selected_game_data_by_id["release_date"]),
                     )
 
                 # Call the add_game function
                 if add_game(game_data):
-                    st.success(f"{selected_game_data_by_id['name']} added successfully!")
+                    st.success(
+                        f"{selected_game_data_by_id['name']} added successfully!"
+                    )
                 else:
                     st.error("Failed to add game.")
-
-                    
 
     # Display the list of games
     for game in games:
@@ -473,6 +539,7 @@ def main():
             """,
                 unsafe_allow_html=True,
             )
+
 
 # Entry point of the script
 if __name__ == "__main__":
