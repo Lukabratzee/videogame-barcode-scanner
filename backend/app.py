@@ -519,8 +519,8 @@ def save_game_to_db(game_data):
                     ", ".join(game_data["publisher"]),
                     ", ".join(game_data["platforms"]),
                     ", ".join(game_data["genres"]),
-                    ", ".join(game_data["series"]),
-                    release_date,
+                    ", ".join(game_data["franchise"]),
+                    game_data["release_date"],
                     game_data["average_price"],
                 ),
             )
