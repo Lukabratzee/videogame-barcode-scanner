@@ -293,7 +293,7 @@ class GameScan:
                 return jsonify({"error": "No stored game data available"}), 400
 
             # Use the appropriate game info based on the user's selection
-            selected_game = GameScan.response_data["exact_match"] if selection == "1" else GameScan.response_data["alternative_match"]
+            selected_game = GameScan.response_data["exact_match"] if selection == GameScan.response_data["exact_match"]['name'] else GameScan.response_data["alternative_match"]
             average_price = GameScan.response_data["average_price"]
             if not selected_game:
                 return jsonify({"error": "Selected game information not found"}), 404
@@ -311,7 +311,7 @@ class GameScan:
                 ],
                 "genres": [genre["name"] for genre in selected_game.get("genres", [])],
                 "series": [
-                    series["name"] for series in selected_game.get("series", [])
+                    series["name"] for series in selected_game.get("franchise", [])
                 ],
                 "release_date": None,
                 "average_price": average_price,  # Not needed to be sent back, handled internally if needed
@@ -519,7 +519,8 @@ def save_game_to_db(game_data):
                     ", ".join(game_data["publisher"]),
                     ", ".join(game_data["platforms"]),
                     ", ".join(game_data["genres"]),
-                    ", ".join(game_data["franchise"]),
+                    # 
+                    ", ".join(game_data["series"]),
                     game_data["release_date"],
                     game_data["average_price"],
                 ),
