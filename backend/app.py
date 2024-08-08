@@ -468,6 +468,8 @@ def search_game_by_name():
                     "platforms": [platform["name"] for platform in game.get("platforms", [])],
                     "genres": [genre["name"] for genre in game.get("genres", [])],
                     "release_date": game.get("first_release_date"),
+                    "franchises": [franchise["name"] for franchise in game.get("franchises", [])],
+                    "series": [series["name"] for series in game.get("series", [])],
                     "involved_companies": [company["company"]["name"] for company in game.get("involved_companies", [])]
                 }
 
@@ -495,6 +497,8 @@ def save_game_to_db(game_data):
         cursor = conn.cursor()
         logging.debug(f"Inserting game data: {game_data}")
 
+        release_date = game_data.get("release_date") or "1900-01-01"
+
         # Check if a game with the same title already exists
         cursor.execute(
             "SELECT COUNT(*) FROM games WHERE title = ?", (game_data["title"],)
@@ -516,7 +520,7 @@ def save_game_to_db(game_data):
                     ", ".join(game_data["platforms"]),
                     ", ".join(game_data["genres"]),
                     ", ".join(game_data["series"]),
-                    game_data["release_date"],
+                    release_date,
                     game_data["average_price"],
                 ),
             )
