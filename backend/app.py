@@ -26,10 +26,15 @@ IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
 IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 
 # Set up logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 # List of common console names and abbreviations to exclude
 CONSOLE_NAMES = [
+    "PlayStation",
+    "PS",
+    "PS1",
+    "PS2",
+    "Gamecube",
     "PlayStation 3",
     "PS3",
     "PlayStation 4",

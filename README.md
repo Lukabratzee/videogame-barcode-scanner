@@ -111,5 +111,6 @@ Remember to change the IP's in the shortcut to IP running the application.
 Define where Chromedriver is `i.e /opt/homebrew/bin/chromedriver` for Mac w/ brew package manager
 Run this: `pip uninstall undetected-chromedriver webdriver-manager`
 `pip install undetected-chromedriver webdriver-manager`
+[Link to install ChromeDrivers](https://googlechromelabs.github.io/chrome-for-testing/#stable)
 
 Issue arises from olde rversions of selenium. At time of writing 4.23.1 works. May be liable to break again due to how Chrome and ChromeDriver updated and get out of sync.
