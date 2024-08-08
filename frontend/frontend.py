@@ -65,6 +65,11 @@ def search_game_by_id(igdb_id):
         return response.json()
     else:
         return None
+    
+# Function to fetch the top 5 games with the highest average price
+def fetch_top_games():
+    response = requests.get(f"{BACKEND_URL}/top_games")
+    return response.json()
 
 
 # Function to fetch game details by ID from the backend
@@ -112,6 +117,10 @@ st.markdown(
 # Main function to run the Streamlit app
 def main():
     st.title("Video Game Catalogue")
+
+    # Initialize state to track filter status
+    if "filters_active" not in st.session_state:
+        st.session_state["filters_active"] = False
 
     # Sidebar for filtering and managing games
     st.sidebar.title("Filter Games")
@@ -198,16 +207,18 @@ def main():
     # Advanced filtering options
     filter_expander = st.sidebar.expander("Advanced Filters")
     with filter_expander:
-        publishers = fetch_unique_values("publisher")
-        platforms = fetch_unique_values("platform")
-        genres = fetch_unique_values("genre")
-        years = fetch_unique_values("year")
+        publishers = sorted(fetch_unique_values("publisher"))
+        platforms = sorted(fetch_unique_values("platform"))
+        genres = sorted(fetch_unique_values("genre"))
+        years = sorted(fetch_unique_values("year"))
 
         if st.button("Clear Filters", key="clear_filter_button"):
             st.session_state["filter_publisher"] = ""
             st.session_state["filter_platform"] = ""
             st.session_state["filter_genre"] = ""
             st.session_state["filter_year"] = ""
+            st.session_state["filters_active"] = False
+            games = fetch_games()  # Re-fetch all games
 
         selected_publisher = st.selectbox(
             "Publisher", [""] + publishers, key="filter_publisher"
@@ -229,15 +240,17 @@ def main():
             filters["year"] = selected_year
 
         if st.button("Filter", key="filter_button"):
+            st.session_state["filters_active"] = True
             games = fetch_games(filters)
         else:
-            games = fetch_games()
+            games = []
             
     # Calculate total cost of the displayed games
     total_cost = calculate_total_cost(games)
 
     # Display the total cost
-    st.markdown(f"### Total Cost of Displayed Games: £{total_cost:.2f}")
+    if st.session_state["filters_active"]:
+        st.markdown(f"### Total Cost of Displayed Games: £{total_cost:.2f}")
 
     # Link to trigger barcode scanning via iPhone
     st.markdown("[Scan Barcode with iPhone](shortcuts://run-shortcut?name=Scan%20Video%20Games)")
@@ -389,9 +402,47 @@ def main():
                 else:
                     st.error("Failed to add game.")
 
+                    
+
     # Display the list of games
     for game in games:
         if search_term.lower() in game["title"].lower():
+            # Ensure full image URL
+            cover_image_url = (
+                f"https:{game['cover_image']}"
+                if game["cover_image"] and game["cover_image"].startswith("//")
+                else game["cover_image"]
+            )
+            average_price = (
+                f"£{game['average_price']:.2f}"
+                if game["average_price"] is not None
+                else "N/A"
+            )
+            st.markdown(
+                f"""
+                <div class="game-container">
+                    <img src="{cover_image_url}" class="game-image">
+                    <div class="game-details">
+                        <div><strong>ID:</strong> {game['id']}</div>
+                        <div><strong>Title:</strong> {game['title']}</div>
+                        <div><strong>Description:</strong> {game['description']}</div>
+                        <div><strong>Publisher:</strong> {game['publisher']}</div>
+                        <div><strong>Platforms:</strong> {game['platforms']}</div>
+                        <div><strong>Genres:</strong> {game['genres']}</div>
+                        <div><strong>Series:</strong> {game['series']}</div>
+                        <div><strong>Release Date:</strong> {game['release_date']}</div>
+                        <div><strong>Average Price:</strong> {average_price}</div>
+                    </div>
+                </div>
+            """,
+                unsafe_allow_html=True,
+            )
+
+    # Fetch and display the top 5 games with the highest average price
+    if not st.session_state["filters_active"]:
+        st.markdown("## Top 5 Games by Average Price")
+        top_games = fetch_top_games()
+        for game in top_games:
             # Ensure full image URL
             cover_image_url = (
                 f"https:{game['cover_image']}"

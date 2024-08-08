@@ -29,7 +29,7 @@ IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 # List of common console names and abbreviations to exclude
 CONSOLE_NAMES = [
@@ -93,11 +93,18 @@ def scrape_barcode_lookup(barcode):
 
     try:
         # Wait for the page to load and the expected element to be located
-        WebDriverWait(driver, 60).until(
+        try:
+            WebDriverWait(driver, 10).until(
             EC.presence_of_element_located(
                 (By.CSS_SELECTOR, "div.col-50.product-details")
             )
-        )
+            )
+        except Exception as e:
+            logging.error(f"Failed to find barcode")
+            game_title = None
+            average_price = None
+            driver.quit()
+            return game_title, average_price
 
         # Extract the game title
         game_title_element = driver.find_element(
@@ -188,10 +195,13 @@ class GameScan:
             logging.debug(f"Received barcode: {barcode}")
 
             game_title, average_price = scrape_barcode_lookup(barcode)
+
+            # If we can't find a barcode title, return an error and status code
             if not game_title:
                 logging.error("Failed to scrape game title from barcode lookup")
                 return jsonify({"error": "Failed to retrieve game title"}), 404
-
+            
+            
             logging.debug(f"Average price for the game: {average_price}")
 
             igdb_access_token = get_igdb_access_token()
@@ -375,6 +385,36 @@ def search_game_with_alternatives(game_name, auth_token):
     logging.debug(f"Alternative match: {alternative_match}")
 
     return exact_match, alternative_match
+
+@app.route("/top_games", methods=["GET"])
+def get_top_games():
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(BASE_DIR, "games.db")
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM games WHERE average_price IS NOT NULL ORDER BY average_price DESC LIMIT 5")
+    games = cursor.fetchall()
+    conn.close()
+
+    game_list = []
+    for game in games:
+        game_list.append(
+            {
+                "id": game[0],
+                "title": game[1],
+                "cover_image": game[2],
+                "description": game[3],
+                "publisher": game[4],
+                "platforms": game[5],
+                "genres": game[6],
+                "series": game[7],
+                "release_date": game[8],
+                "average_price": game[9],
+            }
+        )
+
+    return jsonify(game_list)
 
 @app.route("/search_game_by_id", methods=["POST"])
 def search_game_by_id():
