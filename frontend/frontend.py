@@ -360,7 +360,7 @@ def main():
                     "publisher": selected_game_data.get("involved_companies", []),
                     "platforms": selected_game_data.get("platforms", []),
                     "genres": selected_game_data.get("genres", []),
-                    "franchise": selected_game_data.get("franchise", []),
+                    "franchise": selected_game_data.get("franchises", []),
                     "series": selected_game_data.get("series", []),
                     "release_date": None,
                     "average_price": None,  # Add field for average price if needed
