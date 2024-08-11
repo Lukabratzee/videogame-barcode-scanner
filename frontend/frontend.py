@@ -403,8 +403,9 @@ def main():
             f"**Description:** {selected_game_data_by_id.get('summary', 'N/A')}"
         )
         st.markdown(
-            f"**Cover URL:** {selected_game_data_by_id.get('cover_url', 'N/A')}"
+            f"**Cover URL:** {selected_game_data_by_id.get('cover', {}).get('url', 'N/A')}"
         )
+
         if isinstance(selected_game_data_by_id.get("involved_companies"), list):
             st.markdown(
                 f"**Publisher:** {', '.join([company['company']['name'] for company in selected_game_data_by_id.get('involved_companies', []) if isinstance(company, dict) and 'company' in company and isinstance(company['company'], dict) and 'name' in company['company']])}"
@@ -424,14 +425,14 @@ def main():
         else:
             st.markdown(f"**Genres:** N/A")
         st.markdown(
-            f"**Release Date:** {time.strftime('%Y-%m-%d', time.gmtime(selected_game_data_by_id['release_date'])) if selected_game_data_by_id.get('release_date') else 'N/A'}"
+            f"**Release Date:** {time.strftime('%Y-%m-%d', time.gmtime(selected_game_data_by_id['first_release_date'])) if selected_game_data_by_id.get('first_release_date') else 'N/A'}"
         )
 
         if st.button("Add Game by ID", key="add_game_by_id_button"):
             if selected_game_data_by_id:
                 game_data = {
                     "title": selected_game_data_by_id["name"],
-                    "cover_image": selected_game_data_by_id.get("cover_url"),
+                    "cover_image": selected_game_data_by_id.get("cover", {}).get("url"),
                     "description": selected_game_data_by_id.get("summary"),
                     "publisher": [
                         company["company"]["name"]
@@ -456,10 +457,10 @@ def main():
                 }
 
                 # Optionally, convert release date if available
-                if selected_game_data_by_id.get("release_date"):
+                if selected_game_data_by_id.get("first_release_date"):
                     game_data["release_date"] = time.strftime(
                         "%Y-%m-%d",
-                        time.gmtime(selected_game_data_by_id["release_date"]),
+                        time.gmtime(selected_game_data_by_id["first_release_date"]),
                     )
 
                 # Call the add_game function
