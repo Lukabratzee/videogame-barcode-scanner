@@ -350,6 +350,31 @@ def main():
             st.markdown("### Game Details")
             st.markdown(f"**Title:** {selected_game_data['name']}")
             st.markdown(f"**Description:** {selected_game_data.get('summary', 'N/A')}")
+            st.markdown(
+            f"**Cover URL:** {selected_game_data.get('cover_url', 'N/A')}"
+        )
+
+            if isinstance(selected_game_data.get("involved_companies"), list):
+                st.markdown(
+                    f"**Publisher:** {', '.join([company['company']['name'] for company in selected_game_data.get('involved_companies', []) if isinstance(company, dict) and 'company' in company and isinstance(company['company'], dict) and 'name' in company['company']])}"
+                )
+            else:
+                st.markdown(f"**Publisher:** N/A")
+            if isinstance(selected_game_data.get("platforms"), list):
+                st.markdown(
+                    f"**Platforms:** {', '.join([platform['name'] for platform in selected_game_data.get('platforms', [])])}"
+                )
+            else:
+                st.markdown(f"**Platforms:** N/A")
+            if isinstance(selected_game_data.get("genres"), list):
+                st.markdown(
+                    f"**Genres:** {', '.join([genre['name'] for genre in selected_game_data.get('genres', [])])}"
+                )
+            else:
+                st.markdown(f"**Genres:** N/A")
+            st.markdown(
+                f"**Release Date:** {time.strftime('%Y-%m-%d', time.gmtime(selected_game_data['first_release_date'])) if selected_game_data.get('first_release_date') else 'N/A'}"
+            )
 
         if st.button("Add Selected Game", key="add_selected_game_button"):
             if selected_game_data:
