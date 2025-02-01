@@ -28,6 +28,8 @@ IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 # Specify the exact path to the ChromeDriver binary
 driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
 
+database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
+
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -187,7 +189,7 @@ class GameScan:
     def scan():
         try:
             BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-            db_path = os.path.join(BASE_DIR, "games.db")
+            db_path = os.path.join(BASE_DIR, database_path)
             logging.debug(f"Database path: {db_path}")
 
             data = request.json
@@ -281,7 +283,7 @@ class GameScan:
     def confirm():
         try:
             BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-            db_path = os.path.join(BASE_DIR, "games.db")
+            db_path = os.path.join(BASE_DIR, database_path)
             logging.debug(f"Database path: {db_path}")
 
             data = request.json
@@ -389,7 +391,7 @@ def search_game_with_alternatives(game_name, auth_token):
 @app.route("/top_games", methods=["GET"])
 def get_top_games():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(BASE_DIR, "games.db")
+    db_path = os.path.join(BASE_DIR, database_path)
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -492,7 +494,7 @@ def search_game_by_name():
 def save_game_to_db(game_data):
     try:
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(BASE_DIR, "games.db")
+        db_path = os.path.join(BASE_DIR, database_path)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         logging.debug(f"Inserting game data: {game_data}")
@@ -544,9 +546,10 @@ def get_games():
     platform = request.args.get("platform")
     genre = request.args.get("genre")
     year = request.args.get("year")
+    title = request.args.get("title")
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(BASE_DIR, "games.db")
+    db_path = os.path.join(BASE_DIR, database_path)
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -569,6 +572,10 @@ def get_games():
     if year:
         query += ' AND strftime("%Y", release_date) = ?'
         params.append(year)
+
+    if title:
+        query += " AND title LIKE ?"
+        params.append(f"%{title}%")  # Allow partial matches
 
     cursor.execute(query, params)
     games = cursor.fetchall()
@@ -597,7 +604,7 @@ def get_games():
 
 @app.route("/consoles", methods=["GET"])
 def get_consoles():
-    conn = sqlite3.connect("games.db")
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT platforms FROM games")
     platforms = cursor.fetchall()
@@ -616,7 +623,7 @@ def get_unique_values():
     value_type = request.args.get("type")
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(BASE_DIR, "games.db")
+    db_path = os.path.join(BASE_DIR, database_path)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -664,7 +671,7 @@ def delete_game():
 
     try:
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(BASE_DIR, "games.db")
+        db_path = os.path.join(BASE_DIR, database_path)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
@@ -691,7 +698,7 @@ def delete_game():
 def update_game(game_id):
     data = request.json
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(BASE_DIR, "games.db")
+    db_path = os.path.join(BASE_DIR, database_path)
 
     try:
         conn = sqlite3.connect(db_path)
@@ -723,7 +730,7 @@ def update_game(game_id):
 @app.route("/game/<int:game_id>", methods=["GET"])
 def fetch_game_by_id(game_id):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(BASE_DIR, "games.db")
+    db_path = os.path.join(BASE_DIR, database_path)
 
     try:
         conn = sqlite3.connect(db_path)
