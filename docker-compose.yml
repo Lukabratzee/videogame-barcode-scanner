@@ -1,39 +1,38 @@
-version: '3.8'
+version: '3'
 
 services:
   frontend:
-    image: videogamescanner/frontend:latest
+    build:
+      context: "/root/docker/video_game_catalogue/frontend"  # Ensure absolute path
+      dockerfile: Dockerfile
     container_name: videogamescanner-frontend
     restart: unless-stopped
     ports:
       - "8501:8501"
     depends_on:
-      backend:
-        condition: service_healthy  # Ensure backend is fully running before frontend starts
+      - backend
     networks:
       - app-network
     environment:
-      - BACKEND_HOST=backend  # Use service name for inter-container communication
+      - BACKEND_HOST=backend
+    volumes:
+      - "/root/docker/video_game_catalogue/frontend:/app"
 
   backend:
-    image: videogamescanner/backend:latest
+    build:
+      context: "/root/docker/video_game_catalogue/backend"  # Ensure absolute path
+      dockerfile: Dockerfile
     container_name: videogamescanner-backend
     restart: unless-stopped
-    volumes:
-      - ./backend/games.db:/app/games.db  # Persist database
     ports:
       - "5001:5001"
     environment:
       - FLASK_ENV=development
-      - DISPLAY=:99
     networks:
       - app-network
-    shm_size: '1gb'  # Increase shared memory for Chrome stability
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+    volumes:
+      - "/root/docker/video_game_catalogue/backend:/app"
+      - "/share/backup_proxmox/lukabratzee/games.db:/app/games.db"
 
 networks:
   app-network:
