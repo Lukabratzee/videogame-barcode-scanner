@@ -1,4 +1,4 @@
-version: '3'
+version: '3.8'
 
 services:
   frontend:
@@ -8,24 +8,32 @@ services:
     ports:
       - "8501:8501"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy  # Ensure backend is fully running before frontend starts
     networks:
       - app-network
     environment:
-      - BACKEND_HOST=backend  # Use the service name for inter-container communication
+      - BACKEND_HOST=backend  # Use service name for inter-container communication
 
   backend:
     image: videogamescanner/backend:latest
     container_name: videogamescanner-backend
     restart: unless-stopped
     volumes:
-      - ./backend/games.db:/app/games.db  # For persistent data storage
+      - ./backend/games.db:/app/games.db  # Persist database
     ports:
       - "5001:5001"
     environment:
       - FLASK_ENV=development
+      - DISPLAY=:99
     networks:
       - app-network
+    shm_size: '1gb'  # Increase shared memory for Chrome stability
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 networks:
   app-network:
