@@ -405,27 +405,61 @@ def main():
             f"**Cover URL:** {selected_game_data.get('cover_url', 'N/A')}"
         )
 
-            if isinstance(selected_game_data.get("involved_companies"), list):
-                st.markdown(
-                    f"**Publisher:** {', '.join([company['company']['name'] for company in selected_game_data.get('involved_companies', []) if isinstance(company, dict) and 'company' in company and isinstance(company['company'], dict) and 'name' in company['company']])}"
-                )
+            publishers = selected_game_data.get("involved_companies", [])
+
+            # If publishers are already a list of strings, join them directly
+            if publishers and all(isinstance(publisher, str) for publisher in publishers):
+                publisher_text = ", ".join(publishers)
+
+            # If publishers are a list of dictionaries, extract names
+            elif publishers and all(isinstance(publisher, dict) and "company" in publisher and "name" in publisher["company"] for publisher in publishers):
+                publisher_text = ", ".join([publisher["company"]["name"] for publisher in publishers])
+
             else:
-                st.markdown(f"**Publisher:** N/A")
-            if isinstance(selected_game_data.get("platforms"), list):
-                st.markdown(
-                    f"**Platforms:** {', '.join([platform['name'] for platform in selected_game_data.get('platforms', [])])}"
-                )
+                publisher_text = "N/A"
+
+            st.markdown(f"**Publisher:** {publisher_text}")
+                
+            platforms = selected_game_data.get("platforms", [])
+
+            # If platforms are already a list of strings, join them directly
+            if platforms and all(isinstance(platform, str) for platform in platforms):
+                platform_text = ", ".join(platforms)
+
+            # If platforms are a list of dictionaries, extract names
+            elif platforms and all(isinstance(platform, dict) and "name" in platform for platform in platforms):
+                platform_text = ", ".join([platform["name"] for platform in platforms])
+
             else:
-                st.markdown(f"**Platforms:** N/A")
-            if isinstance(selected_game_data.get("genres"), list):
-                st.markdown(
-                    f"**Genres:** {', '.join([genre['name'] for genre in selected_game_data.get('genres', [])])}"
-                )
+                platform_text = "N/A"
+
+            st.markdown(f"**Platforms:** {platform_text}")
+
+            # st.write("Debugging: Full Game Data:", selected_game_data)  # Check full response
+            # st.write("Debugging: Genres Field:", selected_game_data.get("genres", "MISSING"))  # Check genres field
+            genres = selected_game_data.get("genres", [])
+
+            # Handle case where genres is a list of strings (like in your response)
+            if genres and all(isinstance(genre, str) for genre in genres):
+                genre_text = ", ".join(genres)
+
+            # Handle case where genres is a list of dictionaries (older structure)
+            elif genres and all(isinstance(genre, dict) and "name" in genre for genre in genres):
+                genre_text = ", ".join([genre["name"] for genre in genres])
+
             else:
-                st.markdown(f"**Genres:** N/A")
-            st.markdown(
-                f"**Release Date:** {time.strftime('%Y-%m-%d', time.gmtime(selected_game_data['first_release_date'])) if selected_game_data.get('first_release_date') else 'N/A'}"
-            )
+                genre_text = "N/A"
+
+            st.markdown(f"**Genres:** {genre_text}")
+
+            release_date_timestamp = selected_game_data.get("release_date")
+
+            if isinstance(release_date_timestamp, int):  # Ensure it's a valid timestamp
+                release_date = time.strftime("%Y-%m-%d", time.gmtime(release_date_timestamp))
+            else:
+                release_date = "N/A"
+
+            st.markdown(f"**Release Date:** {release_date}")
 
         if st.button("Add Selected Game", key="add_selected_game_button"):
             if selected_game_data:
@@ -468,41 +502,54 @@ def main():
             st.session_state["selected_game_by_id"] = None
 
     # Display game details if IGDB ID search result is available
-    if (
-        "selected_game_by_id" in st.session_state
-        and st.session_state["selected_game_by_id"]
-    ):
+    if "selected_game_by_id" in st.session_state and st.session_state["selected_game_by_id"]:
         selected_game_data_by_id = st.session_state["selected_game_by_id"]
         st.markdown("### Game Details (By ID)")
-        st.markdown(f"**Title:** {selected_game_data_by_id['name']}")
-        st.markdown(
-            f"**Description:** {selected_game_data_by_id.get('summary', 'N/A')}"
-        )
-        st.markdown(
-            f"**Cover URL:** {selected_game_data_by_id.get('cover', {}).get('url', 'N/A')}"
-        )
 
+        # Title & Description
+        st.markdown(f"**Title:** {selected_game_data_by_id.get('name', 'N/A')}")
+        st.markdown(f"**Description:** {selected_game_data_by_id.get('summary', 'N/A')}")
+
+        # Cover Image
+        cover_url = selected_game_data_by_id.get("cover", {}).get("url", "N/A")
+        st.markdown(f"**Cover URL:** {cover_url}")
+
+        publishers = []
         if isinstance(selected_game_data_by_id.get("involved_companies"), list):
-            st.markdown(
-                f"**Publisher:** {', '.join([company['company']['name'] for company in selected_game_data_by_id.get('involved_companies', []) if isinstance(company, dict) and 'company' in company and isinstance(company['company'], dict) and 'name' in company['company']])}"
-            )
-        else:
-            st.markdown(f"**Publisher:** N/A")
+            for company in selected_game_data_by_id.get("involved_companies", []):
+                if isinstance(company, dict) and "company" in company:
+                    company_info = company["company"]
+                    if isinstance(company_info, dict) and "name" in company_info:
+                        publishers.append(company_info["name"])
+        st.markdown(f"**Publisher:** {', '.join(publishers) if publishers else 'N/A'}")
+
+        platforms = []
         if isinstance(selected_game_data_by_id.get("platforms"), list):
-            st.markdown(
-                f"**Platforms:** {', '.join([platform['name'] for platform in selected_game_data_by_id.get('platforms', [])])}"
-            )
-        else:
-            st.markdown(f"**Platforms:** N/A")
+            for platform in selected_game_data_by_id.get("platforms", []):
+                if isinstance(platform, dict) and "name" in platform:
+                    platforms.append(platform["name"])
+        st.markdown(f"**Platforms:** {', '.join(platforms) if platforms else 'N/A'}")
+
+        genres = []
         if isinstance(selected_game_data_by_id.get("genres"), list):
-            st.markdown(
-                f"**Genres:** {', '.join([genre['name'] for genre in selected_game_data_by_id.get('genres', [])])}"
-            )
-        else:
-            st.markdown(f"**Genres:** N/A")
-        st.markdown(
-            f"**Release Date:** {time.strftime('%Y-%m-%d', time.gmtime(selected_game_data_by_id['first_release_date'])) if selected_game_data_by_id.get('first_release_date') else 'N/A'}"
-        )
+            for genre in selected_game_data_by_id["genres"]:
+                if isinstance(genre, dict) and "name" in genre:
+                    genres.append(genre["name"])
+                elif isinstance(genre, str):  # Handle if IGDB returns a string
+                    genres.append(genre)
+        st.markdown(f"**Genres:** {', '.join(genres) if genres else 'N/A'}")
+
+        series = []
+        if isinstance(selected_game_data_by_id.get("franchises"), list):
+            for franchise in selected_game_data_by_id.get("franchises", []):
+                if isinstance(franchise, dict) and "name" in franchise:
+                    series.append(franchise["name"])
+        st.markdown(f"**Series:** {', '.join(series) if series else 'N/A'}")
+
+        release_date = "N/A"
+        if isinstance(selected_game_data_by_id.get("first_release_date"), (int, float)):
+            release_date = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data_by_id["first_release_date"]))
+        st.markdown(f"**Release Date:** {release_date}")
 
         if st.button("Add Game by ID", key="add_game_by_id_button"):
             if selected_game_data_by_id:
