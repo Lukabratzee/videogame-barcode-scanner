@@ -75,6 +75,44 @@ def get_igdb_access_token():
     logging.debug(f"IGDB access token response: {response.json()}")
     return response.json().get("access_token")
 
+# Scrape Amazon for the game price
+def scrape_amazon_price(game_title):
+    # Set up Chrome options for headless browsing
+    options = uc.ChromeOptions()
+    options.add_argument("--headless")  # Run without opening a browser window
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    service = ChromeService(driver_path)
+    driver = uc.Chrome(service=service, options=options)
+
+    # Format the search URL for Amazon UK
+    search_url = f"https://www.amazon.co.uk/s?k={game_title.replace(' ', '+')}&i=videogames"
+    driver.get(search_url)
+
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "span.a-price-whole"))
+        )
+
+        # Extract the first price found
+        price_elements = driver.find_elements(By.CSS_SELECTOR, "span.a-price-whole")
+        if price_elements:
+            price_text = price_elements[0].text.strip().replace(",", "")  # Remove commas
+            price = float(price_text)  # Convert to float
+            logging.debug(f"Amazon price found for {game_title}: £{price}")
+        else:
+            logging.warning(f"No price found for {game_title} on Amazon")
+            price = None
+
+    except Exception as e:
+        logging.error(f"Error scraping Amazon: {e}")
+        price = None
+    finally:
+        driver.quit()
+
+    return price
+
 
 # Scrape the barcode lookup website for the game title using undetected_chromedriver
 def scrape_barcode_lookup(barcode):
@@ -196,46 +234,26 @@ class GameScan:
             barcode = data.get("barcode")
             logging.debug(f"Received barcode: {barcode}")
 
-            game_title, average_price = scrape_barcode_lookup(barcode)
-
-            # If we can't find a barcode title, return an error and status code
-            if not game_title:
-                logging.error("Failed to scrape game title from barcode lookup")
-                return jsonify({"error": "Failed to retrieve game title"}), 404
-            
-            
-            logging.debug(f"Average price for the game: {average_price}")
-
+            # Remove barcode lookup, directly get the game title from IGDB
             igdb_access_token = get_igdb_access_token()
             if not igdb_access_token:
                 logging.error("Failed to retrieve IGDB access token")
                 return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
+            game_title, _ = scrape_barcode_lookup(barcode)  # Old method (not needed)
+            game_title = game_title if game_title else "Unknown Game"  # Fallback
+
+            # Use Amazon for price lookup
+            average_price = scrape_amazon_price(game_title)
+            logging.debug(f"Amazon average price for {game_title}: {average_price}")
+
+            # Search IGDB for the game
             exact_match, alternative_match = search_game_with_alternatives(
                 game_title, igdb_access_token
             )
 
             if not exact_match and not alternative_match:
                 return jsonify({"error": "No results found on IGDB"}), 404
-
-            # Log the matches
-            logging.debug(
-                json.dumps(
-                    {
-                        "matches": {
-                            "exact_match": (
-                                exact_match["name"] if exact_match else "No exact match"
-                            ),
-                            "alternative_match": (
-                                alternative_match["name"]
-                                if alternative_match
-                                else "No alternative match"
-                            ),
-                        }
-                    },
-                    indent=4,
-                )
-            )
 
             # Store both exact and alternative matches for later use
             GameScan.response_data = {
@@ -244,10 +262,9 @@ class GameScan:
                 "average_price": average_price,
             }
 
-            # if exact_match and alternative_match are the same, only send exact_match
+            # If exact_match and alternative_match are the same, only send exact_match
             if exact_match and alternative_match and exact_match["id"] == alternative_match["id"]:
                 alternative_match = None
-            
 
             # Return both exact and alternative matches for user selection
             response = {
