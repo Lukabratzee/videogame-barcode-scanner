@@ -19,7 +19,7 @@ services:
     container_name: videogamescanner-backend
     restart: unless-stopped    
     volumes:
-      - /root//backend/games.db:/app/games.db
+      - /root/backend/games.db:/app/games.db
     ports:
       - "5001:5001"
     environment:
