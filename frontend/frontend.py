@@ -5,6 +5,7 @@ import os
 
 # Retrieve the backend host from environment variables, default to 'localhost' if using Python locally
 backend_host = os.getenv("BACKEND_HOST", "localhost")
+
 backend_port = 5001  # Assuming the backend is running on this port
 
 # Backend API base URL

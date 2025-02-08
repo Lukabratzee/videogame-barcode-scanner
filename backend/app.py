@@ -28,7 +28,14 @@ IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 # Specify the exact path to the ChromeDriver binary
 driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
 
-database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
+# Mac mount
+# database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
+
+# Windows mount
+database_path = r"X:\lukabratzee\games.db"
+
+# Windows mount
+# database_path = "/mnt/backup_proxmox/lukabratzee/games.db"
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
