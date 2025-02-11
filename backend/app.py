@@ -29,12 +29,12 @@ IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
 
 # Specify the path to the SQLite database
-# External
 
-# database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
+# External for local
+database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
 
 # Internal for Docker
-database_path = "./games.db"
+# database_path = "./games.db"
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
