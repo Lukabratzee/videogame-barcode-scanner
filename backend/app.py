@@ -85,7 +85,6 @@ def get_igdb_access_token():
 def scrape_amazon_price(game_title):
     # Set up Chrome options for headless browsing
     options = uc.ChromeOptions()
-    options.add_argument("--headless")  # Run without opening a browser window
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
