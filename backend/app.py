@@ -8,6 +8,7 @@ import logging
 import re
 import sqlite3
 import chromedriver_autoinstaller
+from fuzzywuzzy import process
 
 from flask import Flask, request, jsonify
 from selenium.webdriver.common.by import By
@@ -198,18 +199,22 @@ def search_igdb_game(game_name, auth_token):
         "Client-ID": IGDB_CLIENT_ID,
         "Authorization": f"Bearer {auth_token}",
     }
-    body = f'search "{game_name}"; fields name, cover.url, summary, platforms.name, genres.name, involved_companies.company.name, franchises.name, first_release_date, alternative_names.name;'
-    response = requests.post(url, headers=headers, data=body)
-    response_json = response.json()
-    logging.debug(f"IGDB search response for {game_name}: {response_json}")
+    body = f'search "{game_name}"; fields name, cover.url, summary, platforms.name, genres.name, involved_companies.company.name, first_release_date;'
 
-    for game in response_json:
-        if "alternative_names" in game:
-            logging.debug(
-                f"Alternative names for {game['name']}: {[alt['name'] for alt in game['alternative_names']]}"
-            )
+    timeout_duration = 10 if len(game_name) > 30 else 5  # Longer timeout for long names
+    logging.debug(f"IGDB API Request for {game_name} (Timeout: {timeout_duration}s)")
 
-    return response_json
+    try:
+        response = requests.post(url, headers=headers, data=body, timeout=timeout_duration)
+        response.raise_for_status()
+        response_json = response.json()
+        return response_json
+    except requests.exceptions.Timeout:
+        logging.error(f"Timeout while querying IGDB for {game_name}")
+        return []
+    except requests.exceptions.RequestException as e:
+        logging.error(f"IGDB API error: {e}")
+        return []
 
 
 # Remove the last word from the game title
@@ -218,6 +223,25 @@ def remove_last_word(game_title):
     if len(words) > 1:
         return " ".join(words[:-1])
     return game_title
+
+def fuzzy_match_title(search_title, igdb_results):
+    """
+    Uses fuzzy matching to find the closest game title from IGDB results.
+    """
+    game_titles = [game["name"] for game in igdb_results if "name" in game]
+
+    if not game_titles:
+        return None  # No valid game titles found
+
+    best_match, score = process.extractOne(search_title, game_titles)
+
+    if score > 80:  # Only accept high-confidence matches
+        for game in igdb_results:
+            if game["name"] == best_match:
+                logging.debug(f"Fuzzy match found: {best_match} (Score: {score})")
+                return game
+
+    return None  # No good fuzzy match found
 
 
 # Generate a random ID for the game
@@ -253,7 +277,11 @@ class GameScan:
             logging.debug(f"Amazon average price for {game_title}: {average_price}")
 
             # Search IGDB for the game
-            exact_match, alternative_match = search_game_with_alternatives(
+            # exact_match, alternative_match = search_game_with_alternatives(
+            #     game_title, igdb_access_token
+            # )
+
+            exact_match, alternative_match = search_game_with_fuzzy_matching(
                 game_title, igdb_access_token
             )
 
@@ -372,14 +400,65 @@ class GameScan:
             return jsonify({"error": str(e)}), 500
 
 
-
-def search_game_with_alternatives(game_name, auth_token):
+def search_game_with_fuzzy_matching(game_name, auth_token, max_attempts=30):
+    """
+    Searches IGDB using a combination of exact matches, simplified title matches, 
+    and fuzzy matching to find the best possible game match.
+    """
     search_attempts = [game_name]
     exact_match = None
     alternative_match = None
+    attempt_count = 0  
 
-    while search_attempts:
+    while search_attempts and attempt_count < max_attempts:
+        current_title = search_attempts.pop(0).strip()
+        attempt_count += 1
+
+        logging.debug(f"IGDB Search Attempt {attempt_count}/{max_attempts} for: {current_title}")
+        igdb_response = search_igdb_game(current_title, auth_token)
+
+        if igdb_response:
+            # Check for an exact match
+            for game in igdb_response:
+                if "name" in game and game["name"].lower() == current_title.lower():
+                    exact_match = game
+                    logging.debug(f"✅ Exact match found: {game['name']}")
+                    return exact_match  # Return immediately on exact match
+
+            # Try fuzzy matching if no exact match
+            fuzzy_match = fuzzy_match_title(current_title, igdb_response)
+            if fuzzy_match:
+                return fuzzy_match  # Return the closest matching result
+
+        # If no match, generate new variations of the title
+        if attempt_count < max_attempts:
+            # Remove company and console names to simplify the search
+            cleaned_title = clean_game_title(current_title)
+            if cleaned_title and cleaned_title != current_title:
+                search_attempts.append(cleaned_title)
+
+            # Remove the last word aggressively
+            next_attempt = remove_last_word(current_title)
+            while next_attempt and next_attempt != current_title:
+                search_attempts.append(next_attempt)
+                current_title = next_attempt  # Keep trimming until it's just the base title
+                next_attempt = remove_last_word(current_title)
+
+    logging.warning("⏳ Max API attempts reached. Returning best available results.")
+    return None  # No match found
+
+
+def search_game_with_alternatives(game_name, auth_token, max_attempts=50):
+    search_attempts = [game_name]
+    exact_match = None
+    alternative_match = None
+    attempt_count = 0
+
+    while search_attempts and attempt_count < max_attempts:
         current_title = search_attempts.pop(0)
+        attempt_count += 1
+
+        logging.debug(f"IGDB Search Attempt {attempt_count}/{max_attempts} for: {current_title}")
         igdb_response = search_igdb_game(current_title, auth_token)
         if igdb_response:
             for game in igdb_response:
