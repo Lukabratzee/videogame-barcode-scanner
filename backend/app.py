@@ -32,10 +32,10 @@ driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
 # Specify the path to the SQLite database
 
 # External for local
-database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
+# database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
 
 # Internal for Docker
-# database_path = "./games.db"
+database_path = os.getenv("DATABASE_PATH")
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -737,6 +737,7 @@ def get_unique_values():
     elif value_type == "year":
         cursor.execute('SELECT DISTINCT strftime("%Y", release_date) FROM games')
     else:
+        conn.close()
         return jsonify([]), 400
 
     values = cursor.fetchall()
@@ -744,10 +745,16 @@ def get_unique_values():
 
     unique_values = set()
     for value_tuple in values:
+        # Get the raw value
+        value = value_tuple[0]
+        # Skip if value is None or an empty string
+        if not value or value.strip() == "":
+            continue
+
         if value_type == "year":
-            unique_values.add(value_tuple[0])
+            unique_values.add(value)
         else:
-            value_list = value_tuple[0].split(", ")
+            value_list = value.split(", ")
             unique_values.update(value_list)
 
     return jsonify(list(unique_values))
@@ -805,10 +812,10 @@ def update_game(game_id):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        # Update game data
+        # Update game data, including average_price
         cursor.execute("""
             UPDATE games
-            SET title = ?, cover_image = ?, description = ?, publisher = ?, platforms = ?, genres = ?, series = ?, release_date = ?
+            SET title = ?, cover_image = ?, description = ?, publisher = ?, platforms = ?, genres = ?, series = ?, release_date = ?, average_price = ?
             WHERE id = ?
         """, (
             data["title"],
@@ -819,6 +826,7 @@ def update_game(game_id):
             ", ".join(data["genres"]),
             ", ".join(data["series"]),
             data["release_date"],
+            data["average_price"],
             game_id
         ))
 

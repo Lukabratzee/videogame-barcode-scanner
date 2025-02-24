@@ -30,6 +30,8 @@ def fetch_consoles():
 # Function to fetch unique values for a given type (e.g., publisher, platform)
 def fetch_unique_values(value_type):
     response = requests.get(f"{BACKEND_URL}/unique_values", params={"type": value_type})
+    st.write("Status Code:", response.status_code)
+    st.write("Response Text:", response.text)
     return response.json()
 
 
@@ -277,6 +279,10 @@ def main():
                 "Series", ", ".join(game_details["series"]), key="edit_series"
             )
             edit_release_date = st.date_input("Release Date", key="edit_release_date")
+            default_price = float(game_details.get("average_price") or 0)
+            edit_average_price = st.number_input(
+                "Average Price", value=default_price, step=0.01, format="%.2f", key="edit_average_price"
+            )
 
             if st.button("Update Game", key="update_game_button"):
                 updated_game_data = {
@@ -292,6 +298,7 @@ def main():
                         if edit_release_date
                         else "1900-01-01"
                     ),
+                    "average_price": edit_average_price,
                 }
                 if update_game(edit_game_id, updated_game_data):
                     st.success("Game updated successfully")
