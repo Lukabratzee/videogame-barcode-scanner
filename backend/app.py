@@ -18,6 +18,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from dotenv import load_dotenv
 
 
 app = Flask(__name__)
@@ -33,10 +34,39 @@ driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
 
 # External for local
 # database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
+###### DB LOAD ######
 
-# Internal for Docker
-database_path = os.getenv("DATABASE_PATH")
+# Load .env variables
+load_dotenv()
 
+# Get database path from .env
+database_path = os.getenv("DATABASE_PATH", "").strip()
+
+# Debugging - Print what we got from .env
+print(f"📜 DATABASE_PATH from .env: '{database_path}'")
+
+if not os.path.isabs(database_path):
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    
+    # If database_path already starts with "backend/", remove it
+    if database_path.startswith("backend/"):
+        database_path = database_path.replace("backend/", "", 1)
+
+    database_path = os.path.join(BASE_DIR, database_path)
+    
+    # Debugging - Print before modification
+    print(f"📁 BASE_DIR: '{BASE_DIR}'")
+    
+    database_path = os.path.join(BASE_DIR, database_path)
+    
+    # Debugging - Print after modification
+    print(f"🔍 After join: '{database_path}'")
+
+# Final check
+print(f"✅ Final Database Path: {database_path}")
+print(f"🧐 File Exists: {os.path.exists(database_path)}")
+
+####################
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -74,6 +104,16 @@ COMPANY_NAMES = [
     "Bandai Namco",
 ]
 
+
+def get_db_connection():
+    try:
+        print(f"📂 Attempting to connect to database at: {database_path}")
+        conn = sqlite3.connect(database_path, timeout=30, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except sqlite3.OperationalError as e:
+        print(f"🚨 Database Connection Error: {e}")
+        raise
 
 # Get IGDB access token
 def get_igdb_access_token():
@@ -255,7 +295,6 @@ class GameScan:
     @app.route("/scan", methods=["POST"])
     def scan():
         try:
-            BASE_DIR = os.path.dirname(os.path.abspath(__file__))
             db_path = os.path.join(BASE_DIR, database_path)
             logging.debug(f"Database path: {db_path}")
 
@@ -376,7 +415,7 @@ class GameScan:
 
             save_game_to_db(game_data)
 
-            conn = sqlite3.connect(db_path)
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT id, title, average_price FROM games WHERE title = ?",
@@ -494,7 +533,7 @@ def get_top_games():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(BASE_DIR, database_path)
 
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM games WHERE average_price IS NOT NULL ORDER BY average_price DESC LIMIT 5")
     games = cursor.fetchall()
@@ -596,7 +635,7 @@ def save_game_to_db(game_data):
     try:
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(BASE_DIR, database_path)
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         logging.debug(f"Inserting game data: {game_data}")
 
@@ -652,7 +691,7 @@ def get_games():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(BASE_DIR, database_path)
 
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     query = "SELECT * FROM games WHERE 1=1"
@@ -725,7 +764,7 @@ def get_unique_values():
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(BASE_DIR, database_path)
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     if value_type == "publisher":
@@ -780,7 +819,7 @@ def delete_game():
     try:
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(BASE_DIR, database_path)
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Check if the game ID exists
@@ -809,7 +848,7 @@ def update_game(game_id):
     db_path = os.path.join(BASE_DIR, database_path)
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Update game data, including average_price
@@ -842,7 +881,7 @@ def fetch_game_by_id(game_id):
     db_path = os.path.join(BASE_DIR, database_path)
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM games WHERE id = ?", (game_id,))
         game = cursor.fetchone()
@@ -869,4 +908,4 @@ def fetch_game_by_id(game_id):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)
