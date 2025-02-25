@@ -149,56 +149,55 @@ def main():
     st.sidebar.title("Filter Games")
     search_term = st.sidebar.text_input("Search by Title", key="search_title")
     
-    # Only fetch games if a search term is provided
-    games = []
+    # If a search term is provided, fetch and display only the search results.
     if search_term:
         filters = {"title": search_term}  # Pass search term to backend
         games = fetch_games(filters)
-
-    # Ensure 'games' is always a list to prevent errors
-    if not isinstance(games, list):
-        games = []
-
-    # Debugging: Check what we get from backend
-    # st.write("Fetched games:", games)
-
-    # Display search results if there are games
-    if games:
-        for game in games:
-            cover_image_url = (
-                f"https:{game.get('cover_image', '')}"
-                if game.get("cover_image") and game["cover_image"].startswith("//")
-                else game.get("cover_image", "https://via.placeholder.com/150")
-            )
-
-            average_price = (
-                f"£{game.get('average_price', 0):.2f}"
-                if game.get("average_price") is not None
-                else "N/A"
-            )
-
-            st.markdown(
-                f"""
-                <div class="game-container">
-                    <img src="{cover_image_url}" class="game-image">
-                    <div class="game-details">
-                        <div><strong>ID:</strong> {game.get('id', 'N/A')}</div>
-                        <div><strong>Title:</strong> {game.get('title', 'N/A')}</div>
-                        <div><strong>Description:</strong> {game.get('description', 'N/A')}</div>
-                        <div><strong>Publisher:</strong> {game.get('publisher', 'N/A')}</div>
-                        <div><strong>Platforms:</strong> {game.get('platforms', 'N/A')}</div>
-                        <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
-                        <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
-                        <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
-                        <div><strong>Average Price:</strong> {average_price}</div>
+        # Ensure 'games' is always a list to prevent errors
+        if not isinstance(games, list):
+            games = []
+        
+        # Calculate total cost of the search results
+        total_cost = calculate_total_cost(games)
+        st.markdown(f"<h3>Total Cost of Search Results: <strong style='color: red;'>£{total_cost:.2f}</strong></h3>", unsafe_allow_html=True)
+        
+        # Display each search result (if any)
+        if games:
+            for game in games:
+                cover_image_url = (
+                    f"https:{game.get('cover_image', '')}"
+                    if game.get("cover_image") and game["cover_image"].startswith("//")
+                    else game.get("cover_image", "https://via.placeholder.com/150")
+                )
+                average_price = (
+                    f"£{game.get('average_price', 0):.2f}"
+                    if game.get("average_price") is not None
+                    else "N/A"
+                )
+                st.markdown(
+                    f"""
+                    <div class="game-container">
+                        <img src="{cover_image_url}" class="game-image">
+                        <div class="game-details">
+                            <div><strong>ID:</strong> {game.get('id', 'N/A')}</div>
+                            <div><strong>Title:</strong> {game.get('title', 'N/A')}</div>
+                            <div><strong>Description:</strong> {game.get('description', 'N/A')}</div>
+                            <div><strong>Publisher:</strong> {game.get('publisher', 'N/A')}</div>
+                            <div><strong>Platforms:</strong> {game.get('platforms', 'N/A')}</div>
+                            <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
+                            <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
+                            <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
+                            <div><strong>Average Price:</strong> {average_price}</div>
+                        </div>
                     </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        if search_term:
+                    """,
+                    unsafe_allow_html=True,
+                )
+        else:
             st.warning("No games found matching your search.")
+        
+        # When a search term is active, display only the search results and exit.
+        return
 
     # Section to add a new game
     add_expander = st.sidebar.expander("Add Game")
@@ -351,7 +350,7 @@ def main():
 
     # Display the total cost
     if st.session_state["filters_active"]:
-        st.markdown(f"### Total Cost of Displayed Games: £{total_cost:.2f}")
+        st.markdown(f"<h3>Total Cost of Displayed Games: <strong style='color: red;'>£{total_cost:.2f}</strong></h3>", unsafe_allow_html=True)
 
     # Link to trigger barcode scanning via iPhone
     st.markdown(
@@ -638,6 +637,14 @@ def main():
             """,
                 unsafe_allow_html=True,
             )
+
+    # If no filters are active, fetch all games to calculate overall total value
+    all_games = fetch_games()  # Get all scanned games from the backend
+    overall_total_value = calculate_total_cost(all_games)
+    st.markdown(
+        f"<h3>Total Value of All Scanned Games: <span style='color: red;'>£{overall_total_value:.2f}</span></h3>",
+        unsafe_allow_html=True
+    )
 
     # Fetch and display the top 5 games with the highest average price
     if not st.session_state["filters_active"]:
