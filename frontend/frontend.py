@@ -151,52 +151,57 @@ def main():
     
     # If a search term is provided, fetch and display only the search results.
     if search_term:
-        filters = {"title": search_term}  # Pass search term to backend
+        filters = {"title": search_term}
         games = fetch_games(filters)
-        # Ensure 'games' is always a list to prevent errors
         if not isinstance(games, list):
             games = []
         
-        # Calculate total cost of the search results
         total_cost = calculate_total_cost(games)
         st.markdown(f"<h3>Total Cost of Search Results: <strong style='color: red;'>£{total_cost:.2f}</strong></h3>", unsafe_allow_html=True)
         
-        # Display each search result (if any)
         if games:
             for game in games:
-                cover_image_url = (
-                    f"https:{game.get('cover_image', '')}"
-                    if game.get("cover_image") and game["cover_image"].startswith("//")
-                    else game.get("cover_image", "https://via.placeholder.com/150")
-                )
-                average_price = (
-                    f"£{game.get('average_price', 0):.2f}"
-                    if game.get("average_price") is not None
-                    else "N/A"
-                )
-                st.markdown(
-                    f"""
-                    <div class="game-container">
-                        <img src="{cover_image_url}" class="game-image">
-                        <div class="game-details">
-                            <div><strong>ID:</strong> {game.get('id', 'N/A')}</div>
-                            <div><strong>Title:</strong> {game.get('title', 'N/A')}</div>
-                            <div><strong>Description:</strong> {game.get('description', 'N/A')}</div>
-                            <div><strong>Publisher:</strong> {game.get('publisher', 'N/A')}</div>
-                            <div><strong>Platforms:</strong> {game.get('platforms', 'N/A')}</div>
-                            <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
-                            <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
-                            <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
-                            <div><strong>Average Price:</strong> {average_price}</div>
+                # Use a container so that each result gets its own interactive area.
+                with st.container():
+                    cover_image_url = (
+                        f"https:{game.get('cover_image', '')}"
+                        if game.get("cover_image") and game["cover_image"].startswith("//")
+                        else game.get("cover_image", "https://via.placeholder.com/150")
+                    )
+                    average_price = (
+                        f"£{game.get('average_price', 0):.2f}"
+                        if game.get("average_price") is not None
+                        else "N/A"
+                    )
+                    st.markdown(
+                        f"""
+                        <div class="game-container">
+                            <img src="{cover_image_url}" class="game-image">
+                            <div class="game-details">
+                                <div><strong>ID:</strong> {game.get('id', 'N/A')}</div>
+                                <div><strong>Title:</strong> {game.get('title', 'N/A')}</div>
+                                <div><strong>Description:</strong> {game.get('description', 'N/A')}</div>
+                                <div><strong>Publisher:</strong> {game.get('publisher', 'N/A')}</div>
+                                <div><strong>Platforms:</strong> {game.get('platforms', 'N/A')}</div>
+                                <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
+                                <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
+                                <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
+                                <div><strong>Average Price:</strong> {average_price}</div>
+                            </div>
                         </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    # Add a small delete button for this game
+                    if st.button("Delete", key=f"delete_{game.get('id')}"):
+                        if delete_game(game.get("id")):
+                            st.success(f"Deleted game: {game.get('title')}")
+                        else:
+                            st.error("Delete failed!")
         else:
             st.warning("No games found matching your search.")
         
-        # When a search term is active, display only the search results and exit.
+        # Stop here so that when a search term is active, we display only search results.
         return
 
     # Section to add a new game
