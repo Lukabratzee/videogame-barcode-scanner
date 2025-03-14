@@ -36,33 +36,23 @@ driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
 # database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
 ###### DB LOAD ######
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Load .env variables
 load_dotenv()
 
 # Get database path from .env
 database_path = os.getenv("DATABASE_PATH", "").strip()
 
-# Debugging - Print what we got from .env
 print(f"📜 DATABASE_PATH from .env: '{database_path}'")
 
+# If the path is not absolute, then join with BASE_DIR
 if not os.path.isabs(database_path):
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    
     # If database_path already starts with "backend/", remove it
     if database_path.startswith("backend/"):
         database_path = database_path.replace("backend/", "", 1)
-
     database_path = os.path.join(BASE_DIR, database_path)
-    
-    # Debugging - Print before modification
-    print(f"📁 BASE_DIR: '{BASE_DIR}'")
-    
-    database_path = os.path.join(BASE_DIR, database_path)
-    
-    # Debugging - Print after modification
-    print(f"🔍 After join: '{database_path}'")
 
-# Final check
 print(f"✅ Final Database Path: {database_path}")
 print(f"🧐 File Exists: {os.path.exists(database_path)}")
 
@@ -302,65 +292,67 @@ class GameScan:
             barcode = data.get("barcode")
             logging.debug(f"Received barcode: {barcode}")
 
-            # Remove barcode lookup, directly get the game title from IGDB
             igdb_access_token = get_igdb_access_token()
             if not igdb_access_token:
                 logging.error("Failed to retrieve IGDB access token")
                 return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
-            game_title, _ = scrape_barcode_lookup(barcode)  # Old method (not needed)
-            game_title = game_title if game_title else "Unknown Game"  # Fallback
+            # If you still use the old barcode lookup, remove or adapt as needed
+            game_title, _ = scrape_barcode_lookup(barcode)  
+            game_title = game_title if game_title else "Unknown Game"  
 
-            # Use Amazon for price lookup
             average_price = scrape_amazon_price(game_title)
             logging.debug(f"Amazon average price for {game_title}: {average_price}")
-
-            # Search IGDB for the game
-            # exact_match, alternative_match = search_game_with_alternatives(
-            #     game_title, igdb_access_token
-            # )
 
             exact_match, alternative_match = search_game_with_fuzzy_matching(
                 game_title, igdb_access_token
             )
 
+            # exact_match, alternative_match = search_game_with_alternatives(
+            #     game_title, igdb_access_token
+            # )
+
             if not exact_match and not alternative_match:
                 return jsonify({"error": "No results found on IGDB"}), 404
 
-            # Store both exact and alternative matches for later use
+            # Store them for /confirm
             GameScan.response_data = {
                 "exact_match": exact_match,
                 "alternative_match": alternative_match,
                 "average_price": average_price,
             }
 
-            # If exact_match and alternative_match are the same, only send exact_match
-            if exact_match and alternative_match and exact_match["id"] == alternative_match["id"]:
-                alternative_match = None
+            # Debug: Log the raw IGDB match objects
+            logging.debug(f"Exact match object: {exact_match}")
+            logging.debug(f"Alternative match object: {alternative_match}")
 
-            # Return both exact and alternative matches for user selection
+            # Build the final JSON response for iOS
+            if exact_match:
+                response_exact = {
+                    "index": 1,
+                    "name": exact_match["name"],
+                    "platforms": [p["name"] for p in exact_match.get("platforms", [])],
+                }
+            else:
+                response_exact = {}
+
+            if alternative_match:
+                response_alternative = {
+                    "index": 2,
+                    "name": alternative_match["name"],
+                    "platforms": [p["name"] for p in alternative_match.get("platforms", [])],
+                }
+            else:
+                response_alternative = {}
+
             response = {
-                "exact_match": (
-                    {
-                        "index": 1,
-                        "name": exact_match["name"] if exact_match else "No exact match",
-                    }
-                    if exact_match
-                    else {}
-                ),
-                "alternative_match": (
-                    {
-                        "index": 2,
-                        "name": (
-                            alternative_match["name"]
-                            if alternative_match
-                            else "No alternative match"
-                        ),
-                    }
-                    if alternative_match
-                    else {}
-                ),
+                "exact_match": response_exact,
+                "alternative_match": response_alternative
             }
+
+            # Debug: Log the final response
+            logging.debug(f"Returning /scan response: {json.dumps(response, indent=2)}")
+
             return jsonify(response)
 
         except Exception as e:
@@ -376,6 +368,7 @@ class GameScan:
             logging.debug(f"Database path: {db_path}")
 
             data = request.json
+            logging.debug(f"Received /confirm payload: {json.dumps(data, indent=2)}")
             selection = data.get("selection")  # Expected to be '1' for exact_match or '2' for alternative_match
             logging.debug(f"Received selection: {selection}")
 
@@ -383,12 +376,19 @@ class GameScan:
             if not GameScan.response_data:
                 return jsonify({"error": "No stored game data available"}), 400
 
-            # Use the appropriate game info based on the user's selection
-            selected_game = GameScan.response_data["exact_match"] if selection == GameScan.response_data["exact_match"]['name'] else GameScan.response_data["alternative_match"]
+            # Select the game based on the provided selection value
+            if selection == "1":
+                selected_game = GameScan.response_data.get("exact_match")
+            elif selection == "2":
+                selected_game = GameScan.response_data.get("alternative_match")
+            else:
+                return jsonify({"error": "Invalid selection value"}), 400
+
             average_price = GameScan.response_data["average_price"]
             if not selected_game:
                 return jsonify({"error": "Selected game information not found"}), 404
 
+            # Build the game data from the selected game information
             game_data = {
                 "title": selected_game.get("name"),
                 "cover_image": selected_game.get("cover", {}).get("url"),
@@ -405,8 +405,13 @@ class GameScan:
                     series["name"] for series in selected_game.get("franchise", [])
                 ],
                 "release_date": None,
-                "average_price": average_price,  # Not needed to be sent back, handled internally if needed
+                "average_price": average_price,
             }
+
+            # If the user provided a selected platform, override the platforms list.
+            selected_platform = data.get("selected_platform")
+            if selected_platform:
+                game_data["platforms"] = [selected_platform]
 
             if selected_game.get("first_release_date"):
                 game_data["release_date"] = time.strftime(
@@ -443,10 +448,9 @@ def search_game_with_fuzzy_matching(game_name, auth_token, max_attempts=30):
     """
     Searches IGDB using a combination of exact matches, simplified title matches, 
     and fuzzy matching to find the best possible game match.
+    Always returns a tuple: (exact_match, alternative_match), with alternative_match as None if not available.
     """
     search_attempts = [game_name]
-    exact_match = None
-    alternative_match = None
     attempt_count = 0  
 
     while search_attempts and attempt_count < max_attempts:
@@ -460,31 +464,27 @@ def search_game_with_fuzzy_matching(game_name, auth_token, max_attempts=30):
             # Check for an exact match
             for game in igdb_response:
                 if "name" in game and game["name"].lower() == current_title.lower():
-                    exact_match = game
                     logging.debug(f"✅ Exact match found: {game['name']}")
-                    return exact_match  # Return immediately on exact match
+                    return game, None  # Always return a tuple (exact_match, alternative_match)
 
-            # Try fuzzy matching if no exact match
+            # Try fuzzy matching if no exact match is found
             fuzzy_match = fuzzy_match_title(current_title, igdb_response)
             if fuzzy_match:
-                return fuzzy_match  # Return the closest matching result
+                return fuzzy_match, None
 
         # If no match, generate new variations of the title
         if attempt_count < max_attempts:
-            # Remove company and console names to simplify the search
             cleaned_title = clean_game_title(current_title)
             if cleaned_title and cleaned_title != current_title:
                 search_attempts.append(cleaned_title)
-
-            # Remove the last word aggressively
             next_attempt = remove_last_word(current_title)
             while next_attempt and next_attempt != current_title:
                 search_attempts.append(next_attempt)
-                current_title = next_attempt  # Keep trimming until it's just the base title
+                current_title = next_attempt  # Continue trimming
                 next_attempt = remove_last_word(current_title)
 
     logging.warning("⏳ Max API attempts reached. Returning best available results.")
-    return None  # No match found
+    return None, None
 
 
 def search_game_with_alternatives(game_name, auth_token, max_attempts=50):
