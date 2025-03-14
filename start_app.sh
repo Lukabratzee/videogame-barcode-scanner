@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Run the kill_port.sh script to free up port 5001
+./kill_port.sh
+
 # Set project root directory (modify this path as needed)
 PROJECT_ROOT="."
 
