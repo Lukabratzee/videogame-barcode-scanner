@@ -445,26 +445,36 @@ def main():
             st.session_state["search_results"] = None
 
     if st.session_state["search_results"]:
+    # Get the exact match and alternative matches list
         exact_match = st.session_state["search_results"].get("exact_match")
-        alternative_match = st.session_state["search_results"].get("alternative_match")
+        alternative_matches = st.session_state["search_results"].get("alternative_matches", [])
 
         game_options = []
         game_map = {}
 
+        # Add the exact match if available
         if exact_match:
-            game_title = f"Exact Match: {exact_match['name']}"
-            game_options.append(game_title)
-            game_map[game_title] = exact_match
+            option_text = f"Exact Match: {exact_match['name']}"
+            game_options.append(option_text)
+            game_map[option_text] = exact_match
 
-        if alternative_match:
-            alt_title = f"Alternative Match: {alternative_match['name']}"
-            game_options.append(alt_title)
-            game_map[alt_title] = alternative_match
+        # Add each alternative match to the options list
+        for alt in alternative_matches:
+            option_text = f"Alternative Match: {alt['name']}"
+            game_options.append(option_text)
+            game_map[option_text] = alt
 
-        selected_option = st.radio("Select a game to add:", game_options, key="selected_game_radio")
-        st.session_state["selected_game"] = game_map[selected_option]
+        # Show the radio button only if there is at least one option
+        if game_options:
+            selected_option = st.radio("Select a game to add:", game_options, key="selected_game_radio")
+            if selected_option in game_map:
+                st.session_state["selected_game"] = game_map[selected_option]
+            else:
+                st.error("Please select a valid game option.")
+        else:
+            st.error("No valid game options available.")
 
-        selected_game_data = st.session_state["selected_game"]
+        selected_game_data = st.session_state.get("selected_game")
         if selected_game_data:
             st.markdown("### Game Details")
             st.markdown(f"**Title:** {selected_game_data['name']}")

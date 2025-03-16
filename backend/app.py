@@ -490,43 +490,49 @@ def search_game_with_fuzzy_matching(game_name, auth_token, max_attempts=30):
 def search_game_with_alternatives(game_name, auth_token, max_attempts=50):
     search_attempts = [game_name]
     exact_match = None
-    alternative_match = None
+    alternative_matches = []
     attempt_count = 0
 
     while search_attempts and attempt_count < max_attempts:
-        current_title = search_attempts.pop(0)
+        current_title = search_attempts.pop(0).strip()
         attempt_count += 1
-
         logging.debug(f"IGDB Search Attempt {attempt_count}/{max_attempts} for: {current_title}")
         igdb_response = search_igdb_game(current_title, auth_token)
+
         if igdb_response:
+            # Find an exact match (case insensitive)
             for game in igdb_response:
-                if "name" in game and not exact_match:
-                    exact_match = game
-                    logging.debug(f"Exact match found: {game['name']}")
-                    # return exact_match, alternative_match  # Return immediately after finding the first exact match
+                if "name" in game and game["name"].lower() == current_title.lower():
+                    if not exact_match:
+                        exact_match = game
+                        logging.debug(f"Exact match found: {game['name']}")
 
-                if "alternative_names" in game and not alternative_match:
-                    for alt in game["alternative_names"]:
-                        alternative_match = game
-                        logging.debug(
-                            f"Using alternative name: {alt['name']} for game: {game['name']}"
-                        )
-                        if exact_match or alternative_match:
-                            return exact_match, alternative_match
+            # Consider all games that are not the exact match as potential alternatives.
+            for game in igdb_response:
+                if exact_match and game["name"].lower() != exact_match["name"].lower():
+                    # Optionally, use fuzzy matching to ensure quality (e.g., score > 60)
+                    score = process.extractOne(game_name, [game["name"]])[1]
+                    if score > 60:
+                        alternative_matches.append(game)
+                        logging.debug(f"Alternative match candidate (score {score}): {game['name']}")
+                elif not exact_match:
+                    # If there's no exact match yet, add all as alternatives.
+                    alternative_matches.append(game)
+                    logging.debug(f"Alternative match candidate: {game['name']}")
 
+            if exact_match or alternative_matches:
+                return exact_match, alternative_matches
+
+        # If no match, try modifying the title
         cleaned_title = clean_game_title(current_title)
         if cleaned_title and cleaned_title != current_title:
             search_attempts.append(cleaned_title)
-
         next_attempt = remove_last_word(current_title)
         if next_attempt and next_attempt != current_title:
             search_attempts.append(next_attempt)
 
-    logging.debug(f"Exact match: {exact_match}")
-    logging.debug(f"Alternative match: {alternative_match}")
-
-    return exact_match, alternative_match
+    logging.warning("⏳ Max API attempts reached. Returning best available results.")
+    return exact_match, alternative_matches
 
 @app.route("/top_games", methods=["GET"])
 def get_top_games():
@@ -598,10 +604,10 @@ def search_game_by_name():
         if not igdb_access_token:
             return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
-        exact_match, alternative_match = search_game_with_alternatives(game_name, igdb_access_token)
+        exact_match, alternative_matches = search_game_with_alternatives(game_name, igdb_access_token)
 
-        if exact_match or alternative_match:
-            # Fetch additional details for exact and alternative matches
+        if exact_match or alternative_matches:
+            # A helper function to fetch game details
             def get_game_details(game):
                 return {
                     "name": game.get("name"),
@@ -616,11 +622,11 @@ def search_game_by_name():
                 }
 
             exact_match_details = get_game_details(exact_match) if exact_match else None
-            alternative_match_details = get_game_details(alternative_match) if alternative_match else None
+            alternative_match_details = [get_game_details(game) for game in alternative_matches] if alternative_matches else []
 
             return jsonify({
                 "exact_match": exact_match_details,
-                "alternative_match": alternative_match_details
+                "alternative_matches": alternative_match_details
             }), 200
         else:
             return jsonify({"error": "No results found"}), 404
@@ -628,8 +634,6 @@ def search_game_by_name():
     except Exception as e:
         logging.error(f"Error in /search_game_by_name route: {e}")
         return jsonify({"error": str(e)}), 500
-
-
 
 def save_game_to_db(game_data):
     try:
