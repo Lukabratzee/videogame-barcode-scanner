@@ -297,36 +297,45 @@ class GameScan:
                 logging.error("Failed to retrieve IGDB access token")
                 return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
-            # If you still use the old barcode lookup, remove or adapt as needed
-            game_title, _ = scrape_barcode_lookup(barcode)  
-            game_title = game_title if game_title else "Unknown Game"  
+            # Look up the game title via barcode
+            game_title, _ = scrape_barcode_lookup(barcode)
+            game_title = game_title if game_title else "Unknown Game"
+            
+            # --- Check if the game already exists ---
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            # After barcode lookup:
+            cursor.execute("SELECT * FROM games WHERE title = ?", (game_title,))
+            existing_game = cursor.fetchone()
+            conn.close()
 
+            if existing_game:
+                return jsonify({
+                    "error": f"Game with title '{game_title}' already exists in the DB",
+                    "id": existing_game[0]
+                }), 200  # <-- Use 200 instead of 409
+            # -----------------------------------------
+
+            # Continue processing if the game does not exist
             average_price = scrape_amazon_price(game_title)
             logging.debug(f"Amazon average price for {game_title}: {average_price}")
 
-            exact_match, alternative_match = search_game_with_fuzzy_matching(
-                game_title, igdb_access_token
-            )
-
-            # exact_match, alternative_match = search_game_with_alternatives(
-            #     game_title, igdb_access_token
-            # )
+            # Use your search function (here using fuzzy matching)
+            exact_match, alternative_match = search_game_with_fuzzy_matching(game_title, igdb_access_token)
 
             if not exact_match and not alternative_match:
                 return jsonify({"error": "No results found on IGDB"}), 404
 
-            # Store them for /confirm
+            # Store the results for the /confirm route if needed
             GameScan.response_data = {
                 "exact_match": exact_match,
                 "alternative_match": alternative_match,
                 "average_price": average_price,
             }
 
-            # Debug: Log the raw IGDB match objects
             logging.debug(f"Exact match object: {exact_match}")
             logging.debug(f"Alternative match object: {alternative_match}")
 
-            # Build the final JSON response for iOS
             if exact_match:
                 response_exact = {
                     "index": 1,
@@ -350,9 +359,7 @@ class GameScan:
                 "alternative_match": response_alternative
             }
 
-            # Debug: Log the final response
             logging.debug(f"Returning /scan response: {json.dumps(response, indent=2)}")
-
             return jsonify(response)
 
         except Exception as e:
@@ -390,7 +397,7 @@ class GameScan:
 
             # Build the game data from the selected game information
             game_data = {
-                "title": selected_game.get("name"),
+                "title": selected_game.get("name").strip(),
                 "cover_image": selected_game.get("cover", {}).get("url"),
                 "description": selected_game.get("summary"),
                 "publisher": [
@@ -418,13 +425,19 @@ class GameScan:
                     "%Y-%m-%d", time.gmtime(selected_game["first_release_date"])
                 )
 
-            save_game_to_db(game_data)
+            # Try to save the game. Our updated save_game_to_db() returns True if inserted, False if duplicate.
+            inserted = save_game_to_db(game_data)
+            if not inserted:
+                return jsonify({
+                    "error": f"Game with title '{game_data['title']}' already exists in the database."
+                }), 200
 
+            # If insertion succeeded, query the DB for inserted game info (optional)
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT id, title, average_price FROM games WHERE title = ?",
-                (game_data["title"],),
+                (game_data["title"],)
             )
             rows = cursor.fetchall()
             conn.close()
@@ -645,18 +658,19 @@ def save_game_to_db(game_data):
 
         release_date = game_data.get("release_date") or "1900-01-01"
 
-        # Check if a game with the same title already exists
+        # Use TRIM on title to avoid issues with leading/trailing spaces
         cursor.execute(
-            "SELECT COUNT(*) FROM games WHERE title = ?", (game_data["title"],)
+            "SELECT COUNT(*) FROM games WHERE TRIM(title) = ?",
+            (game_data["title"].strip(),)
         )
         count = cursor.fetchone()[0]
 
         if count == 0:
             cursor.execute(
                 """
-            INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+                INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                 (
                     generate_random_id(),
                     game_data["title"],
@@ -665,21 +679,20 @@ def save_game_to_db(game_data):
                     ", ".join(game_data["publisher"]),
                     ", ".join(game_data["platforms"]),
                     ", ".join(game_data["genres"]),
-                    # 
                     ", ".join(game_data["series"]),
                     game_data["release_date"],
                     game_data["average_price"],
                 ),
             )
-
             conn.commit()
             logging.debug("Data committed to the database")
+            return True
         else:
-            logging.debug(
-                f"Game with title '{game_data['title']}' already exists in the database"
-            )
+            logging.debug(f"Game with title '{game_data['title']}' already exists in the database")
+            return False
     except Exception as e:
         logging.error(f"Error saving game to database: {e}")
+        return False
     finally:
         conn.close()
 
