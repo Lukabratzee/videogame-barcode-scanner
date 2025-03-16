@@ -158,7 +158,7 @@ def display_game_item(game):
                 st.write("Are you sure you want to delete this game?")
                 confirm_col, cancel_col = st.columns(2)
                 with confirm_col:
-                    if st.button("Confirm", key=f"yes_delete_{game.get('id')}"):
+                    if st.button("Yes", key=f"yes_delete_{game.get('id')}"):
                         if delete_game(game.get("id")):
                             st.success(f"Deleted game: {game.get('title')}")
                         else:
