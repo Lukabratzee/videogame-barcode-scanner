@@ -11,27 +11,25 @@ backend_port = 5001  # Assuming the backend is running on this port
 BACKEND_URL = f"http://{backend_host}:{backend_port}"
 print(f"Connecting to backend at {BACKEND_URL}")  # Debugging output
 
-# Assuming the iCloud link to the shortcut is provided
-ICLOUD_LINK = "https://www.icloud.com/shortcuts/dcfe6771a20a4613b182cd4ca4d22d9d"  # Replace with actual iCloud link
+# iCloud shortcut link (replace with actual link as needed)
+ICLOUD_LINK = "https://www.icloud.com/shortcuts/dcfe6771a20a4613b182cd4ca4d22d9d"
 
-# Function to fetch games from the backend, optionally using filters
+# -------------------------
+# Backend API Helper Functions
+# -------------------------
+
 def fetch_games(filters=None):
     response = requests.get(f"{BACKEND_URL}/games", params=filters)
     return response.json()
 
-# Function to fetch available consoles from the backend
 def fetch_consoles():
     response = requests.get(f"{BACKEND_URL}/consoles")
     return response.json()
 
-# Function to fetch unique values for a given type (e.g., publisher, platform)
 def fetch_unique_values(value_type):
     response = requests.get(f"{BACKEND_URL}/unique_values", params={"type": value_type})
-    st.write("Status Code:", response.status_code)
-    st.write("Response Text:", response.text)
     return response.json()
 
-# Function to calculate the total cost of displayed games
 def calculate_total_cost(games):
     return sum(
         game.get("average_price", 0)
@@ -39,22 +37,18 @@ def calculate_total_cost(games):
         if game.get("average_price") is not None
     )
 
-# Function to add a new game to the backend
 def add_game(game_data):
     response = requests.post(f"{BACKEND_URL}/add_game", json=game_data)
     return response.status_code == 201
 
-# Function to delete a game by ID from the backend
 def delete_game(game_id):
     response = requests.post(f"{BACKEND_URL}/delete_game", json={"id": int(game_id)})
     return response.status_code == 200
 
-# Function to update an existing game in the backend
 def update_game(game_id, game_data):
     response = requests.put(f"{BACKEND_URL}/update_game/{game_id}", json=game_data)
     return response.status_code == 200
 
-# Function to search for games by name using the backend
 def search_game_by_name(game_name):
     response = requests.post(f"{BACKEND_URL}/search_game_by_name", json={"game_name": game_name})
     if response.status_code == 200:
@@ -62,7 +56,6 @@ def search_game_by_name(game_name):
     else:
         return None
 
-# Function to search for games by IGDB ID using the backend
 def search_game_by_id(igdb_id):
     response = requests.post(f"{BACKEND_URL}/search_game_by_id", json={"igdb_id": igdb_id})
     if response.status_code == 200:
@@ -70,12 +63,10 @@ def search_game_by_id(igdb_id):
     else:
         return None
 
-# Function to fetch the top 5 games with the highest average price
 def fetch_top_games():
     response = requests.get(f"{BACKEND_URL}/top_games")
     return response.json()
 
-# Function to fetch game details by ID from the backend
 def fetch_game_by_id(game_id):
     response = requests.get(f"{BACKEND_URL}/game/{game_id}")
     if response.status_code == 200:
@@ -83,18 +74,19 @@ def fetch_game_by_id(game_id):
     else:
         return None
 
-# Function to scan a game by barcode
 def scan_game(barcode):
     response = requests.post(f"{BACKEND_URL}/scan", json={"barcode": barcode})
     return response.json()
 
-# CSS styling for better layout
+# -------------------------
+# CSS Styling for Layout
+# -------------------------
 st.markdown(
     """
     <style>
     .game-container {
         display: flex;
-        align-items: flex-start;  /* Align items to the top */
+        align-items: flex-start;
         padding: 10px;
         border: 1px solid #ddd;
         margin-bottom: 10px;
@@ -117,179 +109,155 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# -------------------------
+# New Function: Display Game with Edit and Delete Options
+# -------------------------
+def display_game_item(game):
+    with st.container():
+        col_details, col_buttons = st.columns([3, 1])
+        with col_details:
+            # Prepare cover image URL
+            cover_image_url = (
+                f"https:{game.get('cover_image', '')}"
+                if game.get("cover_image") and game.get("cover_image", "").startswith("//")
+                else game.get("cover_image", "https://via.placeholder.com/150")
+            )
+            # Format the average price display
+            average_price = (
+                f"£{game.get('average_price', 0):.2f}"
+                if game.get("average_price") is not None
+                else "N/A"
+            )
+            # Display game details using HTML formatting
+            st.markdown(
+                f"""
+                <div class="game-container">
+                    <img src="{cover_image_url}" class="game-image">
+                    <div class="game-details">
+                        <div><strong>ID:</strong> {game.get('id', 'N/A')}</div>
+                        <div><strong>Title:</strong> {game.get('title', 'N/A')}</div>
+                        <div><strong>Description:</strong> {game.get('description', 'N/A')}</div>
+                        <div><strong>Publisher:</strong> {game.get('publisher', 'N/A')}</div>
+                        <div><strong>Platforms:</strong> {game.get('platforms', 'N/A')}</div>
+                        <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
+                        <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
+                        <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
+                        <div><strong>Average Price:</strong> {average_price}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with col_buttons:
+            # When the Delete button is clicked, set a confirmation flag.
+            if st.button("Delete", key=f"delete_{game.get('id')}"):
+                st.session_state[f"confirm_delete_{game.get('id')}"] = True
+
+            # If the confirmation flag is set, display confirmation buttons.
+            if st.session_state.get(f"confirm_delete_{game.get('id')}", False):
+                st.write("Are you sure you want to delete this game?")
+                confirm_col, cancel_col = st.columns(2)
+                with confirm_col:
+                    if st.button("Confirm", key=f"yes_delete_{game.get('id')}"):
+                        if delete_game(game.get("id")):
+                            st.success(f"Deleted game: {game.get('title')}")
+                        else:
+                            st.error("Delete failed!")
+                        st.session_state[f"confirm_delete_{game.get('id')}"] = False
+                with cancel_col:
+                    if st.button("Cancel", key=f"cancel_delete_{game.get('id')}"):
+                        st.session_state[f"confirm_delete_{game.get('id')}"] = False
+
+            # Edit button as before.
+            if st.button("Edit", key=f"edit_{game.get('id')}"):
+                st.session_state.editing_game_id = game.get("id")
+
+    # Inline edit form (only shown if this game is marked for editing)
+    if st.session_state.get("editing_game_id") == game.get("id"):
+        st.markdown("#### Edit Game")
+        new_title = st.text_input("Title", game.get("title"), key=f"edit_title_{game.get('id')}")
+        new_desc = st.text_area("Description", game.get("description"), key=f"edit_desc_{game.get('id')}")
+        new_cover = st.text_input("Cover Image URL", game.get("cover_image"), key=f"edit_cover_{game.get('id')}")
+        new_pub = st.text_input("Publisher", game.get("publisher"), key=f"edit_pub_{game.get('id')}")
+        
+        # Handle platforms: convert string to list if needed
+        platforms_data = game.get("platforms", [])
+        if isinstance(platforms_data, str):
+            platforms_data = [platforms_data]
+        raw_platforms = ", ".join(platforms_data)
+        raw_platforms_input = st.text_input("Platforms (comma separated)", raw_platforms, key=f"edit_platforms_{game.get('id')}")
+        new_platforms_list = [p.strip() for p in raw_platforms_input.split(",") if p.strip()]
+        
+        # Handle genres: convert string to list if needed
+        genres_data = game.get("genres", [])
+        if isinstance(genres_data, str):
+            genres_data = [genres_data]
+        raw_genres = ", ".join(genres_data)
+        raw_genres_input = st.text_input("Genres (comma separated)", raw_genres, key=f"edit_genres_{game.get('id')}")
+        new_genres_list = [g.strip() for g in raw_genres_input.split(",") if g.strip()]
+        
+        new_series = st.text_input("Series", game.get("series"), key=f"edit_series_{game.get('id')}")
+        new_release = st.text_input("Release Date", game.get("release_date"), key=f"edit_release_{game.get('id')}")
+        new_price = st.number_input("Average Price", value=game.get("average_price") or 0.0, step=0.01, format="%.2f", key=f"edit_price_{game.get('id')}")
+        
+        if st.button("Save", key=f"save_{game.get('id')}"):
+            updated_game_data = {
+                "title": new_title,
+                "cover_image": new_cover,
+                "description": new_desc,
+                "publisher": [new_pub],
+                "platforms": new_platforms_list,
+                "genres": new_genres_list,
+                "series": [new_series],
+                "release_date": new_release,
+                "average_price": new_price,
+            }
+            if update_game(game.get("id"), updated_game_data):
+                st.success("Game updated successfully!")
+                st.session_state.editing_game_id = None  # Exit edit mode
+            else:
+                st.error("Failed to update game")
+
+# -------------------------
+# Main Application Function
+# -------------------------
 def main():
     st.title("Video Game Catalogue")
 
-    # Initialize state to track filter status
+    # Initialize session state for filter mode
     if "filters_active" not in st.session_state:
         st.session_state["filters_active"] = False
 
-    # Sidebar for filtering and managing games
+    # -------------------------
+    # Sidebar: Search by Title
+    # -------------------------
     st.sidebar.title("Filter Games")
     search_term = st.sidebar.text_input("Search by Title", key="search_title")
 
-    # If a search term is provided, fetch and display only the search results.
+    # If a search term is provided, fetch and display matching games with edit/delete options.
     if search_term:
         filters = {"title": search_term}
         games = fetch_games(filters)
         if not isinstance(games, list):
             games = []
-        
         total_cost = calculate_total_cost(games)
         st.markdown(
             f"<h3>Total Cost of Search Results: <strong style='color: red;'>£{total_cost:.2f}</strong></h3>",
             unsafe_allow_html=True
         )
-        
         if games:
-            # Initialize editing state if not set yet
             if "editing_game_id" not in st.session_state:
                 st.session_state.editing_game_id = None
-
             for game in games:
-                if search_term.lower() in game["title"].lower():
-                    # Container for each game row with details and action buttons
-                    with st.container():
-                        col_details, col_buttons = st.columns([3, 1])
-                        with col_details:
-                            cover_image_url = (
-                                f"https:{game.get('cover_image', '')}"
-                                if game.get("cover_image") and game["cover_image"].startswith("//")
-                                else game.get("cover_image", "https://via.placeholder.com/150")
-                            )
-                            average_price = (
-                                f"£{game.get('average_price', 0):.2f}"
-                                if game.get("average_price") is not None
-                                else "N/A"
-                            )
-                            st.markdown(
-                                f"""
-                                <div class="game-container">
-                                    <img src="{cover_image_url}" class="game-image">
-                                    <div class="game-details">
-                                        <div><strong>ID:</strong> {game.get('id', 'N/A')}</div>
-                                        <div><strong>Title:</strong> {game.get('title', 'N/A')}</div>
-                                        <div><strong>Description:</strong> {game.get('description', 'N/A')}</div>
-                                        <div><strong>Publisher:</strong> {game.get('publisher', 'N/A')}</div>
-                                        <div><strong>Platforms:</strong> {game.get('platforms', 'N/A')}</div>
-                                        <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
-                                        <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
-                                        <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
-                                        <div><strong>Average Price:</strong> {average_price}</div>
-                                    </div>
-                                </div>
-                                """,
-                                unsafe_allow_html=True,
-                            )
-                        with col_buttons:
-                            # Delete button
-                            if st.button("Delete", key=f"delete_{game.get('id')}"):
-                                if delete_game(game.get("id")):
-                                    st.success(f"Deleted game: {game.get('title')}")
-                                else:
-                                    st.error("Delete failed!")
-                            # Edit button toggles the inline edit form
-                            if st.button("Edit", key=f"edit_{game.get('id')}"):
-                                st.session_state.editing_game_id = game.get("id")
-
-                        # If this game is marked for editing, show the inline edit form
-                        if st.session_state.editing_game_id == game.get("id"):
-                            st.markdown("#### Edit Game")
-
-                            # Title, description, etc.
-                            new_title = st.text_input(
-                                "Title",
-                                game.get("title"),
-                                key=f"edit_title_{game.get('id')}"
-                            )
-                            new_desc = st.text_area(
-                                "Description",
-                                game.get("description"),
-                                key=f"edit_desc_{game.get('id')}"
-                            )
-                            new_cover = st.text_input(
-                                "Cover Image URL",
-                                game.get("cover_image"),
-                                key=f"edit_cover_{game.get('id')}"
-                            )
-                            new_pub = st.text_input(
-                                "Publisher",
-                                game.get("publisher"),
-                                key=f"edit_pub_{game.get('id')}"
-                            )
-
-                            # Convert 'platforms' from string -> list if needed
-                            platforms_data = game.get("platforms", [])
-                            if isinstance(platforms_data, str):
-                                # If it's a single string like "PS3", make it a list
-                                platforms_data = [platforms_data]
-                            raw_platforms = ", ".join(platforms_data)
-                            raw_platforms_input = st.text_input(
-                                "Platforms (comma separated)",
-                                raw_platforms,
-                                key=f"edit_platforms_{game.get('id')}"
-                            )
-                            new_platforms_list = [
-                                p.strip() for p in raw_platforms_input.split(",") if p.strip()
-                            ]
-
-                            # Convert 'genres' from string -> list if needed
-                            genres_data = game.get("genres", [])
-                            if isinstance(genres_data, str):
-                                genres_data = [genres_data]
-                            raw_genres = ", ".join(genres_data)
-                            raw_genres_input = st.text_input(
-                                "Genres (comma separated)",
-                                raw_genres,
-                                key=f"edit_genres_{game.get('id')}"
-                            )
-                            new_genres_list = [
-                                g.strip() for g in raw_genres_input.split(",") if g.strip()
-                            ]
-
-                            new_series = st.text_input(
-                                "Series",
-                                game.get("series"),
-                                key=f"edit_series_{game.get('id')}"
-                            )
-                            new_release = st.text_input(
-                                "Release Date",
-                                game.get("release_date"),
-                                key=f"edit_release_{game.get('id')}"
-                            )
-                            new_price = st.number_input(
-                                "Average Price",
-                                value=game.get("average_price") or 0.0,
-                                step=0.01,
-                                format="%.2f",
-                                key=f"edit_price_{game.get('id')}"
-                            )
-
-                            # Save button
-                            if st.button("Save", key=f"save_{game.get('id')}"):
-                                updated_game_data = {
-                                    "title": new_title,
-                                    "cover_image": new_cover,
-                                    "description": new_desc,
-                                    "publisher": [new_pub],
-                                    "platforms": new_platforms_list,
-                                    "genres": new_genres_list,
-                                    "series": [new_series],
-                                    "release_date": new_release,
-                                    "average_price": new_price,
-                                }
-                                if update_game(game.get("id"), updated_game_data):
-                                    st.success("Game updated successfully!")
-                                    st.session_state.editing_game_id = None  # Reset edit mode
-                                else:
-                                    st.error("Failed to update game")
+                display_game_item(game)
         else:
             st.warning("No games found matching your search.")
-        
-        # Stop here so that when a search term is active, we display only search results.
+        # Return early to display only search results
         return
 
-    # Section to add a new game
+    # -------------------------
+    # Sidebar: Add Game Section
+    # -------------------------
     add_expander = st.sidebar.expander("Add Game")
     with add_expander:
         title = st.text_input("Title", key="add_title")
@@ -297,7 +265,6 @@ def main():
         description = st.text_area("Description", key="add_description")
         publisher = st.text_input("Publisher", key="add_publisher")
 
-        # Updated parsing to handle commas & strip whitespace
         raw_platforms = st.text_input("Platforms (comma separated)", key="add_platforms")
         platforms_list = [p.strip() for p in raw_platforms.split(",") if p.strip()]
 
@@ -319,26 +286,27 @@ def main():
                 "release_date": (
                     release_date.strftime("%Y-%m-%d") if release_date else "1900-01-01"
                 ),
-                "average_price": None,  # Add a field for average price if needed
+                "average_price": None,
             }
             if add_game(game_data):
                 st.success("Game added successfully")
 
-    # Section to delete an existing game
+    # -------------------------
+    # Sidebar: Delete Game Section
+    # -------------------------
     delete_expander = st.sidebar.expander("Delete Game")
     with delete_expander:
         game_id = st.text_input("Game ID", key="delete_game_id")
-        confirm_delete = st.checkbox(
-            "I confirm that I want to delete this game",
-            key="delete_confirm"
-        )
+        confirm_delete = st.checkbox("I confirm that I want to delete this game", key="delete_confirm")
         if st.button("Delete Game", key="delete_game_button") and confirm_delete:
             if delete_game(game_id):
                 st.success("Game Deleted")
             else:
                 st.error("Failed to delete game")
 
-    # Section to edit an existing game (separate from inline editing)
+    # -------------------------
+    # Sidebar: Edit Game Section (Separate from inline editing)
+    # -------------------------
     edit_expander = st.sidebar.expander("Edit Game")
     with edit_expander:
         edit_game_id = st.text_input("Game ID to Edit", key="edit_game_id")
@@ -352,8 +320,7 @@ def main():
         if "edit_game_data" in st.session_state:
             game_details = st.session_state["edit_game_data"]
 
-            # Convert from string to list if needed
-            # to avoid "P, S, 3" issues:
+            # Ensure platforms and genres are in list form
             if isinstance(game_details["platforms"], str):
                 game_details["platforms"] = [game_details["platforms"]]
             if isinstance(game_details["genres"], str):
@@ -363,50 +330,24 @@ def main():
             edit_cover_image = st.text_input("Cover Image URL", game_details["cover_image"], key="edit_cover_image")
             edit_description = st.text_area("Description", game_details["description"], key="edit_description")
 
-            # Publisher can remain as is (assuming it's a list of one or more items)
-            edit_publisher = st.text_input(
-                "Publisher",
-                ", ".join(game_details["publisher"]),
-                key="edit_publisher"
-            )
+            edit_publisher = st.text_input("Publisher", ", ".join(game_details["publisher"]), key="edit_publisher")
             new_pub_list = [p.strip() for p in edit_publisher.split(",") if p.strip()]
 
-            # Now do the same for platforms
             edit_platforms_str = ", ".join(game_details["platforms"])
-            edit_platforms_input = st.text_input(
-                "Platforms (comma separated)",
-                edit_platforms_str,
-                key="edit_platforms"
-            )
+            edit_platforms_input = st.text_input("Platforms (comma separated)", edit_platforms_str, key="edit_platforms")
             new_platforms_list = [p.strip() for p in edit_platforms_input.split(",") if p.strip()]
 
-            # Same for genres
             edit_genres_str = ", ".join(game_details["genres"])
-            edit_genres_input = st.text_input(
-                "Genres (comma separated)",
-                edit_genres_str,
-                key="edit_genres"
-            )
+            edit_genres_input = st.text_input("Genres (comma separated)", edit_genres_str, key="edit_genres")
             new_genres_list = [g.strip() for g in edit_genres_input.split(",") if g.strip()]
 
-            # Same for series
             edit_series_str = ", ".join(game_details["series"])
-            edit_series_input = st.text_input(
-                "Series",
-                edit_series_str,
-                key="edit_series"
-            )
+            edit_series_input = st.text_input("Series", edit_series_str, key="edit_series")
             new_series_list = [s.strip() for s in edit_series_input.split(",") if s.strip()]
 
             edit_release_date = st.date_input("Release Date", key="edit_release_date")
             default_price = float(game_details.get("average_price") or 0)
-            edit_average_price = st.number_input(
-                "Average Price",
-                value=default_price,
-                step=0.01,
-                format="%.2f",
-                key="edit_average_price"
-            )
+            edit_average_price = st.number_input("Average Price", value=default_price, step=0.01, format="%.2f", key="edit_average_price")
 
             if st.button("Update Game", key="update_game_button"):
                 updated_game_data = {
@@ -418,9 +359,7 @@ def main():
                     "genres": new_genres_list,
                     "series": new_series_list,
                     "release_date": (
-                        edit_release_date.strftime("%Y-%m-%d")
-                        if edit_release_date
-                        else "1900-01-01"
+                        edit_release_date.strftime("%Y-%m-%d") if edit_release_date else "1900-01-01"
                     ),
                     "average_price": edit_average_price,
                 }
@@ -429,7 +368,9 @@ def main():
                 else:
                     st.error("Failed to update game")
 
-    # Advanced filtering options
+    # -------------------------
+    # Sidebar: Advanced Filters Section with Edit/Delete for Filtered Results
+    # -------------------------
     filter_expander = st.sidebar.expander("Advanced Filters")
     with filter_expander:
         publishers = sorted(fetch_unique_values("publisher"))
@@ -466,27 +407,30 @@ def main():
         else:
             games = []
 
-    # Calculate total cost of the displayed games
-    total_cost = calculate_total_cost(games)
-
-    # Display the total cost
+    # If advanced filters are active, display the filtered games with edit and delete options.
     if st.session_state["filters_active"]:
+        total_cost = calculate_total_cost(games)
         st.markdown(
             f"<h3>Total Cost of Displayed Games: <strong style='color: red;'>£{total_cost:.2f}</strong></h3>",
             unsafe_allow_html=True
         )
+        if games:
+            if "editing_game_id" not in st.session_state:
+                st.session_state.editing_game_id = None
+            for game in games:
+                display_game_item(game)
+        else:
+            st.warning("No games found for the applied filters.")
 
-    # Link to trigger barcode scanning via iPhone
+    # -------------------------
+    # Rest of the UI (Barcode scanning, local searches, etc.)
+    # -------------------------
     st.markdown("[Scan Barcode with iPhone](shortcuts://run-shortcut?name=Scan%20Video%20Games)")
-
-    # Add a link to install the shortcut if not already installed
     st.markdown(f"[Install 'Scan Video Games' Shortcut]({ICLOUD_LINK})")
 
-    # Local game search functionality
     st.markdown("## Search Game by Name")
     game_name = st.text_input("Enter Game Name", key="game_name_input")
 
-    # Initialize state to store search results and selected game
     if "search_results" not in st.session_state:
         st.session_state["search_results"] = None
     if "selected_game" not in st.session_state:
@@ -500,7 +444,6 @@ def main():
             st.error("No game found with the provided name.")
             st.session_state["search_results"] = None
 
-    # Display search results if available
     if st.session_state["search_results"]:
         exact_match = st.session_state["search_results"].get("exact_match")
         alternative_match = st.session_state["search_results"].get("alternative_match")
@@ -521,7 +464,6 @@ def main():
         selected_option = st.radio("Select a game to add:", game_options, key="selected_game_radio")
         st.session_state["selected_game"] = game_map[selected_option]
 
-        # Display preview information for the selected game
         selected_game_data = st.session_state["selected_game"]
         if selected_game_data:
             st.markdown("### Game Details")
@@ -529,33 +471,28 @@ def main():
             st.markdown(f"**Description:** {selected_game_data.get('summary', 'N/A')}")
             st.markdown(f"**Cover URL:** {selected_game_data.get('cover_url', 'N/A')}")
             publishers = selected_game_data.get("involved_companies", [])
-
-            # Convert publishers if needed
-            if publishers and all(isinstance(publisher, str) for publisher in publishers):
+            if publishers and all(isinstance(p, str) for p in publishers):
                 publisher_text = ", ".join(publishers)
-            elif publishers and all(
-                isinstance(publisher, dict) and "company" in publisher and "name" in publisher["company"]
-                for publisher in publishers
-            ):
-                publisher_text = ", ".join([publisher["company"]["name"] for publisher in publishers])
+            elif publishers and all(isinstance(p, dict) and "company" in p and "name" in p["company"] for p in publishers):
+                publisher_text = ", ".join([p["company"]["name"] for p in publishers])
             else:
                 publisher_text = "N/A"
             st.markdown(f"**Publisher:** {publisher_text}")
 
             platforms = selected_game_data.get("platforms", [])
-            if platforms and all(isinstance(platform, str) for platform in platforms):
+            if platforms and all(isinstance(p, str) for p in platforms):
                 platform_text = ", ".join(platforms)
-            elif platforms and all(isinstance(platform, dict) and "name" in platform for platform in platforms):
-                platform_text = ", ".join([platform["name"] for platform in platforms])
+            elif platforms and all(isinstance(p, dict) and "name" in p for p in platforms):
+                platform_text = ", ".join([p["name"] for p in platforms])
             else:
                 platform_text = "N/A"
             st.markdown(f"**Platforms:** {platform_text}")
 
             genres = selected_game_data.get("genres", [])
-            if genres and all(isinstance(genre, str) for genre in genres):
+            if genres and all(isinstance(g, str) for g in genres):
                 genre_text = ", ".join(genres)
-            elif genres and all(isinstance(genre, dict) and "name" in genre for genre in genres):
-                genre_text = ", ".join([genre["name"] for genre in genres])
+            elif genres and all(isinstance(g, dict) and "name" in g for g in genres):
+                genre_text = ", ".join([g["name"] for g in genres])
             else:
                 genre_text = "N/A"
             st.markdown(f"**Genres:** {genre_text}")
@@ -579,19 +516,15 @@ def main():
                     "franchise": selected_game_data.get("franchises", []),
                     "series": selected_game_data.get("series", []),
                     "release_date": None,
-                    "average_price": None,  # Add field for average price if needed
+                    "average_price": None,
                 }
                 if selected_game_data.get("release_date"):
-                    game_data["release_date"] = time.strftime(
-                        "%Y-%m-%d",
-                        time.gmtime(selected_game_data["release_date"])
-                    )
+                    game_data["release_date"] = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data["release_date"]))
                 if add_game(game_data):
                     st.success(f"{selected_game_data['name']} added successfully!")
                 else:
                     st.error("Failed to add game.")
 
-    # IGDB ID search functionality
     st.markdown("## Search Game by IGDB ID")
     igdb_id = st.text_input("Enter IGDB ID", key="igdb_id_input")
 
@@ -606,7 +539,6 @@ def main():
     if "selected_game_by_id" in st.session_state and st.session_state["selected_game_by_id"]:
         selected_game_data_by_id = st.session_state["selected_game_by_id"]
         st.markdown("### Game Details (By ID)")
-
         st.markdown(f"**Title:** {selected_game_data_by_id.get('name', 'N/A')}")
         st.markdown(f"**Description:** {selected_game_data_by_id.get('summary', 'N/A')}")
         cover_url = selected_game_data_by_id.get("cover", {}).get("url", "N/A")
@@ -676,73 +608,37 @@ def main():
                         if "name" in franchise
                     ],
                     "release_date": None,
-                    "average_price": None,  # Add field for average price if needed
+                    "average_price": None,
                 }
                 if selected_game_data_by_id.get("first_release_date"):
-                    game_data["release_date"] = time.strftime(
-                        "%Y-%m-%d",
-                        time.gmtime(selected_game_data_by_id["first_release_date"])
-                    )
-
+                    game_data["release_date"] = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data_by_id["first_release_date"]))
                 if add_game(game_data):
                     st.success(f"{selected_game_data_by_id['name']} added successfully!")
                 else:
                     st.error("Failed to add game.")
 
-    # Display a quick listing if needed
-    for game in games:
-        if search_term.lower() in game["title"].lower():
-            cover_image_url = (
-                f"https:{game.get('cover_image', '')}"
-                if game.get("cover_image") and game["cover_image"].startswith("//")
-                else game.get("cover_image", "https://via.placeholder.com/150")
-            )
-            average_price = (
-                f"£{game.get('average_price', 0):.2f}"
-                if game.get("average_price") is not None
-                else "N/A"
-            )
-            st.markdown(
-                f"""
-                <div class="game-container">
-                    <img src="{cover_image_url}" class="game-image">
-                    <div class="game-details">
-                        <div><strong>ID:</strong> {game.get('id', 'N/A')}</div>
-                        <div><strong>Title:</strong> {game.get('title', 'N/A')}</div>
-                        <div><strong>Description:</strong> {game.get('description', 'N/A')}</div>
-                        <div><strong>Publisher:</strong> {game.get('publisher', 'N/A')}</div>
-                        <div><strong>Platforms:</strong> {game.get('platforms', 'N/A')}</div>
-                        <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
-                        <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
-                        <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
-                        <div><strong>Average Price:</strong> {average_price}</div>
-                    </div>
-                </div>
-            """,
-                unsafe_allow_html=True,
-            )
-
-    # Calculate overall total
-    all_games = fetch_games()  # Get all scanned games from the backend
+    # -------------------------
+    # Overall Totals and Top Games (if no filters are active)
+    # -------------------------
+    all_games = fetch_games()
     overall_total_value = calculate_total_cost(all_games)
     st.markdown(
         f"<h3>Total Value of All Scanned Games: <span style='color: red;'>£{overall_total_value:.2f}</span></h3>",
         unsafe_allow_html=True
     )
 
-    # Show top 5 if no filters are active
     if not st.session_state["filters_active"]:
         st.markdown("## Top 5 Games by Average Price")
         top_games = fetch_top_games()
         for game in top_games:
             cover_image_url = (
                 f"https:{game['cover_image']}"
-                if game["cover_image"] and game["cover_image"].startswith("//")
-                else game["cover_image"]
+                if game.get("cover_image") and game["cover_image"].startswith("//")
+                else game.get("cover_image")
             )
             average_price = (
                 f"£{game['average_price']:.2f}"
-                if game["average_price"] is not None
+                if game.get("average_price") is not None
                 else "N/A"
             )
             st.markdown(
@@ -761,7 +657,7 @@ def main():
                         <div><strong>Average Price:</strong> {average_price}</div>
                     </div>
                 </div>
-            """,
+                """,
                 unsafe_allow_html=True,
             )
 
