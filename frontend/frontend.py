@@ -12,7 +12,8 @@ BACKEND_URL = f"http://{backend_host}:{backend_port}"
 print(f"Connecting to backend at {BACKEND_URL}")  # Debugging output
 
 # iCloud shortcut link (replace with actual link as needed)
-ICLOUD_LINK = "https://www.icloud.com/shortcuts/dcfe6771a20a4613b182cd4ca4d22d9d"
+ICLOUD_LINK = "https://www.icloud.com/shortcuts/024bf54a6f584cc78c3ed394bcda8e84"
+ICLOUD_LINK_ALT = "https://www.icloud.com/shortcuts/bea9f60437194f0fad2f89b87c9d1fff"
 
 # -------------------------
 # Backend API Helper Functions
@@ -391,6 +392,10 @@ def main():
         selected_genre = st.selectbox("Genre", [""] + genres, key="filter_genre")
         selected_year = st.selectbox("Release Year", [""] + years, key="filter_year")
 
+        # Add checkboxes for sorting
+        sort_alphabetical = st.checkbox("Sort Alphabetically", key="filter_sort_alphabetical")
+        sort_highest_value = st.checkbox("Sort by Highest Value", key="filter_sort_highest_value")
+
         filters = {}
         if selected_publisher:
             filters["publisher"] = selected_publisher
@@ -401,23 +406,18 @@ def main():
         if selected_year:
             filters["year"] = selected_year
 
+        # Decide which sort to apply.
+        # If both are checked, you can choose one to take precedence (here we choose highest value)
+        if sort_highest_value:
+            filters["sort"] = "highest"
+        elif sort_alphabetical:
+            filters["sort"] = "alphabetical"
+
         if st.button("Filter", key="filter_button"):
             st.session_state["filters_active"] = True
             games = fetch_games(filters)
         else:
             games = []
-
-        response = requests.get(f"{BACKEND_URL}/export_csv")
-        if response.status_code == 200:
-            csv_data = response.text
-            st.download_button(
-                label="Export CSV",
-                data=csv_data,
-                file_name="games_export.csv",
-                mime="text/csv"
-            )
-        else:
-            st.error("Failed to export CSV.")
 
         # Build query parameters from active filters
         filter_params = {}
@@ -465,11 +465,25 @@ def main():
         else:
             st.warning("No games found for the applied filters.")
 
+    export_expander = st.sidebar.expander("Export All Games")
+    with export_expander:
+        response = requests.get(f"{BACKEND_URL}/export_csv")
+        if response.status_code == 200:
+            csv_data = response.text
+            st.download_button(
+                label="Export CSV",
+                data=csv_data,
+                file_name="games_export.csv",
+                mime="text/csv"
+            )
+        else:
+            st.error("Failed to export CSV.")
+
     # -------------------------
     # Rest of the UI (Barcode scanning, local searches, etc.)
     # -------------------------
-    st.markdown("[Scan Barcode with iPhone](shortcuts://run-shortcut?name=Scan%20Video%20Games)")
     st.markdown(f"[Install 'Scan Video Games' Shortcut]({ICLOUD_LINK})")
+    st.markdown(f"[Install 'Scan Video Games' Shortcut Alternate]({ICLOUD_LINK_ALT})")
 
     st.markdown("## Search Game by Name")
     game_name = st.text_input("Enter Game Name", key="game_name_input")
@@ -713,6 +727,7 @@ def main():
                 """,
                 unsafe_allow_html=True,
             )
+            
 
 if __name__ == "__main__":
     main()

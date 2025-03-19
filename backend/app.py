@@ -786,6 +786,7 @@ def get_games():
     genre = request.args.get("genre")
     year = request.args.get("year")
     title = request.args.get("title")
+    sort = request.args.get("sort")  # e.g. "alphabetical"
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(BASE_DIR, database_path)
@@ -815,6 +816,13 @@ def get_games():
     if title:
         query += " AND title LIKE ?"
         params.append(f"%{title}%")  # Allow partial matches
+
+    if sort == "alphabetical":
+        query += " ORDER BY title ASC"
+    elif sort == "highest":
+        query += " ORDER BY average_price DESC"
+        #Handles NULLS by placing them at the end
+        query += " NULLS LAST"
 
     cursor.execute(query, params)
     games = cursor.fetchall()
