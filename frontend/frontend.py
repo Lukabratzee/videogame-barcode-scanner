@@ -407,6 +407,49 @@ def main():
         else:
             games = []
 
+        response = requests.get(f"{BACKEND_URL}/export_csv")
+        if response.status_code == 200:
+            csv_data = response.text
+            st.download_button(
+                label="Export CSV",
+                data=csv_data,
+                file_name="games_export.csv",
+                mime="text/csv"
+            )
+        else:
+            st.error("Failed to export CSV.")
+
+        # Build query parameters from active filters
+        filter_params = {}
+        if st.session_state.get("filter_publisher"):
+            filter_params["publisher"] = st.session_state["filter_publisher"]
+        if st.session_state.get("filter_platform"):
+            filter_params["platform"] = st.session_state["filter_platform"]
+        if st.session_state.get("filter_genre"):
+            filter_params["genre"] = st.session_state["filter_genre"]
+        if st.session_state.get("filter_year"):
+            filter_params["year"] = st.session_state["filter_year"]
+
+        # Create a query string from the parameters
+        query_string = "&".join([f"{k}={v}" for k, v in filter_params.items()])
+
+        export_url = f"{BACKEND_URL}/export_csv"
+        if query_string:
+            export_url += "?" + query_string
+
+        # Use a download button that fetches the CSV
+        response = requests.get(export_url)
+        if response.status_code == 200:
+            csv_data = response.text
+            st.download_button(
+                label="Export Filtered CSV",
+                data=csv_data,
+                file_name="games_export.csv",
+                mime="text/csv"
+            )
+        else:
+            st.error("Failed to export CSV.")
+
     # If advanced filters are active, display the filtered games with edit and delete options.
     if st.session_state["filters_active"]:
         total_cost = calculate_total_cost(games)
