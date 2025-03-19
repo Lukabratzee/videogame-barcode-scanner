@@ -9,8 +9,10 @@ import re
 import sqlite3
 import chromedriver_autoinstaller
 from fuzzywuzzy import process
+import csv
+import io
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
@@ -995,7 +997,60 @@ def fetch_game_by_id(game_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/export_csv", methods=["GET"])
+def export_csv():
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(BASE_DIR, database_path)
 
+    # Get filter parameters from query string
+    publisher = request.args.get("publisher", "")
+    platform = request.args.get("platform", "")
+    genre = request.args.get("genre", "")
+    year = request.args.get("year", "")
+    title = request.args.get("title", "")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Build a dynamic query
+    query = "SELECT * FROM games WHERE 1=1"
+    params = []
+
+    if publisher:
+        query += " AND publisher LIKE ?"
+        params.append(f"%{publisher}%")
+    if platform:
+        query += " AND platforms LIKE ?"
+        params.append(f"%{platform}%")
+    if genre:
+        query += " AND genres LIKE ?"
+        params.append(f"%{genre}%")
+    if year:
+        query += ' AND strftime("%Y", release_date) = ?'
+        params.append(year)
+    if title:
+        query += " AND title LIKE ?"
+        params.append(f"%{title}%")
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header row
+    writer.writerow(["id", "title", "cover_image", "description", "publisher",
+                     "platforms", "genres", "series", "release_date", "average_price"])
+    for row in rows:
+        writer.writerow(row)
+
+    output.seek(0)
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-disposition": "attachment; filename=games_export.csv"}
+    )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)
