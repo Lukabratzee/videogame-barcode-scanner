@@ -292,6 +292,7 @@ class GameScan:
 
             data = request.json
             barcode = data.get("barcode")
+            use_alternate = data.get("alternate")  # e.g. "true" or None
             logging.debug(f"Received barcode: {barcode}")
 
             igdb_access_token = get_igdb_access_token()
@@ -322,8 +323,14 @@ class GameScan:
             average_price = scrape_amazon_price(game_title)
             logging.debug(f"Amazon average price for {game_title}: {average_price}")
 
-            # Use your search function (here using fuzzy matching)
-            exact_match, alternative_matches = search_game_fuzzy_with_alternates(game_title, igdb_access_token)
+            # Debug: print to see what's actually being posted
+            print("Incoming /scan data:", data)
+
+            # Use alternate search if mode is set to "alternate"
+            if use_alternate == "true":
+                exact_match, alternative_matches = search_game_with_alternatives(game_title, igdb_access_token)
+            else:
+                exact_match, alternative_matches = search_game_fuzzy_with_alternates(game_title, igdb_access_token)
 
             if not exact_match and not alternative_matches:
                 return jsonify({"error": "No results found on IGDB"}), 404
