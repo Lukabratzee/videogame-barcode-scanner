@@ -225,6 +225,9 @@ def display_game_item(game):
 def main():
     st.title("Video Game Catalogue")
 
+    if "bulk_delete_mode" not in st.session_state:
+        st.session_state["bulk_delete_mode"] = False
+
     # Initialize session state for filter mode
     if "filters_active" not in st.session_state:
         st.session_state["filters_active"] = False
@@ -234,6 +237,8 @@ def main():
     # -------------------------
     st.sidebar.title("Filter Games")
     search_term = st.sidebar.text_input("Search by Title", key="search_title")
+    selected_for_deletion = []  # List to hold IDs for games selected for deletion
+
 
     # If a search term is provided, fetch and display matching games with edit/delete options.
     if search_term:
@@ -249,11 +254,27 @@ def main():
         if games:
             if "editing_game_id" not in st.session_state:
                 st.session_state.editing_game_id = None
+            # Initialize the list to store IDs for bulk deletion.
+            selected_for_deletion = []  # Initialize list outside the loop
+
             for game in games:
                 display_game_item(game)
+                if st.checkbox("Select for deletion", key=f"bulk_delete_{game['id']}"):
+                    selected_for_deletion.append(game["id"])
+
+            # Now, after the loop, if any games were selected, show one button for bulk deletion.
+            if selected_for_deletion:
+                if st.button("Delete Selected Games", key="bulk_delete_button"):
+                    for game_id in selected_for_deletion:
+                        if delete_game(game_id):
+                            st.success(f"Deleted game with ID: {game_id}")
+                        else:
+                            st.error(f"Failed to delete game with ID: {game_id}")
+                    # Optionally, refresh the game list using the same filters:
+                    games = fetch_games(filters)
         else:
             st.warning("No games found matching your search.")
-        # Return early to display only search results
+        # Return early so that only search results are displayed
         return
 
     # -------------------------
@@ -387,7 +408,7 @@ def main():
                     st.error("Failed to update game")
 
     # -------------------------
-    # Sidebar: Advanced Filters Section with Edit/Delete for Filtered Results
+    # Sidebar: Advanced Filters Section with Export, Bulk Delete, and Display of Filtered Games
     # -------------------------
     filter_expander = st.sidebar.expander("Advanced Filters")
     with filter_expander:
@@ -423,8 +444,7 @@ def main():
         if selected_year:
             filters["year"] = selected_year
 
-        # Decide which sort to apply.
-        # If both are checked, you can choose one to take precedence (here we choose highest value)
+        # Decide which sort to apply. If both are checked, highest takes precedence.
         if sort_highest_value:
             filters["sort"] = "highest"
         elif sort_alphabetical:
@@ -434,12 +454,11 @@ def main():
             st.session_state["filters_active"] = True
             games = fetch_games(filters)
         elif st.session_state["filters_active"]:
-            # If we already had filters active, just re-fetch the same filters
             games = fetch_games(filters)
         else:
             games = []
 
-        # Build query parameters from active filters
+        # --- EXPORT CSV BUTTON ---
         filter_params = {}
         if st.session_state.get("filter_publisher"):
             filter_params["publisher"] = st.session_state["filter_publisher"]
@@ -450,27 +469,21 @@ def main():
         if st.session_state.get("filter_year"):
             filter_params["year"] = st.session_state["filter_year"]
 
-        # Create a query string from the parameters
         query_string = "&".join([f"{k}={v}" for k, v in filter_params.items()])
-
         export_url = f"{BACKEND_URL}/export_csv"
         if query_string:
             export_url += "?" + query_string
 
-        # Use a download button that fetches the CSV
-        response = requests.get(export_url)
-        if response.status_code == 200:
-            csv_data = response.text
-            st.download_button(
-                label="Export Filtered CSV",
-                data=csv_data,
-                file_name="games_export.csv",
-                mime="text/csv"
-            )
-        else:
-            st.error("Failed to export CSV.")
+        st.download_button(
+            label="Export Filtered CSV",
+            data=requests.get(export_url).text,
+            file_name="games_export.csv",
+            mime="text/csv"
+        )
 
-    # If advanced filters are active, display the filtered games with edit and delete options.
+    # -------------------------
+    # Display Filtered Games with Inline Bulk Delete
+    # -------------------------
     if st.session_state["filters_active"]:
         total_cost = calculate_total_cost(games)
         st.markdown(
@@ -480,8 +493,53 @@ def main():
         if games:
             if "editing_game_id" not in st.session_state:
                 st.session_state.editing_game_id = None
+
+            # Toggle Bulk Delete Mode: a row with two columns for the toggle and confirm button.
+            col_toggle, col_confirm = st.columns([1, 1])
+            with col_toggle:
+                if st.button("Toggle Bulk Delete Mode", key="toggle_bulk_delete"):
+                    st.session_state["bulk_delete_mode"] = not st.session_state.get("bulk_delete_mode", False)
+            
+            # Initialize an empty list to collect IDs for bulk deletion.
+            selected_for_deletion = []
+
+            # Display games.
             for game in games:
-                display_game_item(game)
+                if st.session_state.get("bulk_delete_mode", False):
+                    # Condensed layout for bulk delete mode: checkbox to left and condensed info to right.
+                    col_checkbox, col_info = st.columns([1, 4])
+                    with col_checkbox:
+                        if st.checkbox("", key=f"bulk_delete_{game['id']}"):
+                            selected_for_deletion.append(game["id"])
+                    with col_info:
+                        cover_image_url = (
+                            f"https:{game.get('cover_image', '')}"
+                            if game.get("cover_image") and game.get("cover_image", "").startswith("//")
+                            else game.get("cover_image", "https://via.placeholder.com/100")
+                        )
+                        st.image(cover_image_url, width=100)
+                        st.markdown(f"**{game.get('title', 'N/A')}**")
+                else:
+                    # Full display view if not in bulk delete mode.
+                    display_game_item(game)
+
+            # In bulk delete mode, display a count and confirm button in col_confirm.
+            if st.session_state.get("bulk_delete_mode", False):
+                with col_confirm:
+                    count_selected = len(selected_for_deletion)
+                    st.info(f"{count_selected} game{'s' if count_selected != 1 else ''} selected for deletion.")
+                    if count_selected:
+                        if st.button("Confirm Bulk Deletion", key="confirm_bulk_delete"):
+                            for game_id in selected_for_deletion:
+                                if delete_game(game_id):
+                                    st.success(f"Deleted game with ID: {game_id}")
+                                else:
+                                    st.error(f"Failed to delete game with ID: {game_id}")
+                            # Refresh the games list using the same filters:
+                            games = fetch_games(filters)
+                            st.session_state["bulk_delete_mode"] = False
+                    else:
+                        st.info("No games selected for deletion.")
         else:
             st.warning("No games found for the applied filters.")
 
@@ -498,6 +556,30 @@ def main():
             )
         else:
             st.error("Failed to export CSV.")
+
+        bulk_delete_expander = st.sidebar.expander("Bulk Delete Games")
+        with bulk_delete_expander:
+            # Fetch the list of games that are currently displayed
+            # (You could use fetch_games() to get all games or the currently filtered games)
+            all_games = fetch_games()  # or use your current filtered list if desired
+
+            # Build a dictionary mapping game titles to IDs.
+            # Optionally, you can combine the title and ID in the display string.
+            game_options = {f"{game['title']} (ID: {game['id']})": game["id"] for game in all_games}
+            
+            # Create a multiselect widget so the user can select multiple games.
+            selected_titles = st.multiselect("Select games to delete:", list(game_options.keys()))
+            
+            if st.button("Delete Selected Games"):
+                for title in selected_titles:
+                    game_id = game_options[title]
+                    if delete_game(game_id):
+                        st.success(f"Deleted game: {title}")
+                    else:
+                        st.error(f"Failed to delete game: {title}")
+                # Optionally, refresh the games list after deletion:
+                # e.g., st.session_state["filters_active"] = False or update the games variable
+                all_games = fetch_games()
 
     # -------------------------
     # Rest of the UI (Barcode scanning, local searches, etc.)
