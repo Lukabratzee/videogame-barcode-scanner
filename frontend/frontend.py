@@ -302,6 +302,23 @@ def main():
         if st.button("Delete Game", key="delete_game_button") and confirm_delete:
             if delete_game(game_id):
                 st.success("Game Deleted")
+                # Rebuild the filters from your session state (or from your filter controls)
+                filters = {}
+                if st.session_state.get("filter_publisher"):
+                    filters["publisher"] = st.session_state["filter_publisher"]
+                if st.session_state.get("filter_platform"):
+                    filters["platform"] = st.session_state["filter_platform"]
+                if st.session_state.get("filter_genre"):
+                    filters["genre"] = st.session_state["filter_genre"]
+                if st.session_state.get("filter_year"):
+                    filters["year"] = st.session_state["filter_year"]
+                # If you have sort options:
+                if st.session_state.get("filter_sort_highest_value"):
+                    filters["sort"] = "highest"
+                elif st.session_state.get("filter_sort_alphabetical"):
+                    filters["sort"] = "alphabetical"
+                # Re-fetch games using the same filters
+                games = fetch_games(filters)
             else:
                 st.error("Failed to delete game")
 
@@ -415,6 +432,9 @@ def main():
 
         if st.button("Filter", key="filter_button"):
             st.session_state["filters_active"] = True
+            games = fetch_games(filters)
+        elif st.session_state["filters_active"]:
+            # If we already had filters active, just re-fetch the same filters
             games = fetch_games(filters)
         else:
             games = []
