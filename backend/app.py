@@ -60,7 +60,7 @@ print(f"🧐 File Exists: {os.path.exists(database_path)}")
 
 ####################
 # Set up logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 # List of common console names and abbreviations to exclude
 CONSOLE_NAMES = [
@@ -115,42 +115,37 @@ def get_igdb_access_token():
     return response.json().get("access_token")
 
 # Scrape Amazon for the game price
-def scrape_amazon_price(game_title):
-    # Set up Chrome options for headless browsing
+def scrape_amazon_prices(game_title):
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-
+    # You can also add options to minimize window focus if needed.
     service = ChromeService(driver_path)
     driver = uc.Chrome(service=service, options=options)
-
-    # Format the search URL for Amazon UK
+    
+    # Build a more targeted search URL if possible
     search_url = f"https://www.amazon.co.uk/s?k={game_title.replace(' ', '+')}&i=videogames"
     driver.get(search_url)
 
+    prices = []
     try:
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "span.a-price-whole"))
         )
-
-        # Extract the first price found
         price_elements = driver.find_elements(By.CSS_SELECTOR, "span.a-price-whole")
-        if price_elements:
-            price_text = price_elements[0].text.strip().replace(",", "")  # Remove commas
-            price = float(price_text)  # Convert to float
-            logging.debug(f"Amazon price found for {game_title}: £{price}")
-        else:
-            logging.warning(f"No price found for {game_title} on Amazon")
-            price = None
-
+        # Loop through price elements and convert them to float
+        for el in price_elements:
+            price_text = el.text.strip().replace(",", "")
+            try:
+                price = float(price_text)
+                prices.append(price)
+            except ValueError:
+                continue  # Skip elements that cannot be converted
     except Exception as e:
         logging.error(f"Error scraping Amazon: {e}")
-        price = None
     finally:
         driver.quit()
-
-    return price
-
+    return prices
 
 # Scrape the barcode lookup website for the game title using undetected_chromedriver
 def scrape_barcode_lookup(barcode):
@@ -287,12 +282,8 @@ class GameScan:
     @app.route("/scan", methods=["POST"])
     def scan():
         try:
-            db_path = os.path.join(BASE_DIR, database_path)
-            logging.debug(f"Database path: {db_path}")
-
             data = request.json
             barcode = data.get("barcode")
-            use_alternate = data.get("alternate")  # e.g. "true" or None
             logging.debug(f"Received barcode: {barcode}")
 
             igdb_access_token = get_igdb_access_token()
@@ -300,52 +291,42 @@ class GameScan:
                 logging.error("Failed to retrieve IGDB access token")
                 return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
-            # Look up the game title via barcode
-            game_title, _ = scrape_barcode_lookup(barcode)
+            # Barcode lookup:
+            game_title, barcode_average = scrape_barcode_lookup(barcode)
             game_title = game_title if game_title else "Unknown Game"
-            
-            # --- Check if the game already exists ---
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            # After barcode lookup:
-            cursor.execute("SELECT * FROM games WHERE title = ?", (game_title,))
-            existing_game = cursor.fetchone()
-            conn.close()
 
-            if existing_game:
-                return jsonify({
-                    "error": f"Game with title '{game_title}' already exists in the DB",
-                    "id": existing_game[0]
-                }), 200  # <-- Use 200 instead of 409
-            # -----------------------------------------
-
-            # Continue processing if the game does not exist
-            average_price = scrape_amazon_price(game_title)
-            logging.debug(f"Amazon average price for {game_title}: {average_price}")
-
-            # Debug: print to see what's actually being posted
-            print("Incoming /scan data:", data)
-
-            # Use alternate search if mode is set to "alternate"
-            if use_alternate == "true":
-                exact_match, alternative_matches = search_game_with_alternatives(game_title, igdb_access_token)
+            # Amazon lookup:
+            amazon_prices = scrape_amazon_prices(game_title)
+            if amazon_prices:
+                amazon_average = sum(amazon_prices) / len(amazon_prices)
             else:
-                exact_match, alternative_matches = search_game_fuzzy_with_alternates(game_title, igdb_access_token)
+                amazon_average = None
 
+            # Combine the two averages.
+            if barcode_average is not None and amazon_average is not None:
+                combined_price = (barcode_average + amazon_average) / 2
+            elif barcode_average is not None:
+                combined_price = barcode_average
+            elif amazon_average is not None:
+                combined_price = amazon_average
+            else:
+                combined_price = None
+
+            logging.debug(f"Barcode average: {barcode_average}, Amazon average: {amazon_average}, Combined: {combined_price}")
+
+            # Use combined_price in your response. For example:
+            exact_match, alternative_matches = search_game_fuzzy_with_alternates(game_title, igdb_access_token)
             if not exact_match and not alternative_matches:
                 return jsonify({"error": "No results found on IGDB"}), 404
 
-            # Store the results for the /confirm route if needed
+            # Store the search results along with the price
             GameScan.response_data = {
                 "exact_match": exact_match,
-                "alternative_matches": alternative_matches,  # <-- store the full list
-                "average_price": average_price,
+                "alternative_matches": alternative_matches,
+                "average_price": combined_price,
             }
 
-            logging.debug(f"Exact match object: {exact_match}")
-            logging.debug(f"Alternative matches: {alternative_matches}")
-
-            # Build the final JSON response for iOS
+            # Build response JSON for iOS
             if exact_match:
                 response_exact = {
                     "index": 1,
@@ -355,10 +336,8 @@ class GameScan:
             else:
                 response_exact = {}
 
-            # Return a list of alternatives in a single array
             response_alternatives = []
             if alternative_matches:
-                # Loop through each alt match and build a summary
                 for idx, alt in enumerate(alternative_matches, start=2):
                     response_alternatives.append({
                         "index": idx,
@@ -368,12 +347,12 @@ class GameScan:
 
             response = {
                 "exact_match": response_exact,
-                "alternative_matches": response_alternatives
+                "alternative_matches": response_alternatives,
+                "average_price": combined_price,
             }
 
             logging.debug(f"Returning /scan response: {json.dumps(response, indent=2)}")
             return jsonify(response)
-        
         except Exception as e:
             logging.error(f"Error in /scan route: {e}")
             return jsonify({"error": str(e)}), 500
