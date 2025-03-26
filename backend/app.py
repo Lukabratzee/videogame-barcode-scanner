@@ -16,6 +16,8 @@ from flask import Flask, request, jsonify, Response
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
@@ -60,7 +62,7 @@ print(f"🧐 File Exists: {os.path.exists(database_path)}")
 
 ####################
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 # List of common console names and abbreviations to exclude
 CONSOLE_NAMES = [
@@ -116,31 +118,60 @@ def get_igdb_access_token():
 
 # Scrape Amazon for the game price
 def scrape_amazon_prices(game_title):
+    """
+    Opens Amazon's homepage, performs a search for the given game title,
+    waits for any captcha to be resolved manually, and returns a list of price values found.
+    """
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    # You can also add options to minimize window focus if needed.
+    options.add_argument("--start-maximized")
+    # Use a realistic user agent:
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                         "AppleWebKit/537.36 (KHTML, like Gecko) "
+                         "Chrome/115.0.0.0 Safari/537.36")
+
     service = ChromeService(driver_path)
     driver = uc.Chrome(service=service, options=options)
-    
-    # Build a more targeted search URL if possible
-    search_url = f"https://www.amazon.co.uk/s?k={game_title.replace(' ', '+')}&i=videogames"
-    driver.get(search_url)
-
     prices = []
     try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "span.a-price-whole"))
+        # 1. Go to Amazon's homepage
+        driver.get("https://www.amazon.co.uk/")
+        time.sleep(2)
+
+        # 2. Locate the search box and type the game title, then press Enter
+        search_box = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "twotabsearchtextbox"))
         )
+        search_box.send_keys(game_title)
+        time.sleep(1)
+        search_box.send_keys(Keys.RETURN)
+
+        # 3. Wait for search results to load and for any captcha to be solved
+        max_wait = 60  # Maximum total wait time (seconds)
+        wait_interval = 5
+        total_wait = 0
+        while "captcha" in driver.page_source.lower() and total_wait < max_wait:
+            logging.info("Captcha detected. Waiting for captcha resolution...")
+            time.sleep(wait_interval)
+            total_wait += wait_interval
+
+        if "captcha" in driver.page_source.lower():
+            logging.error("Captcha still present after waiting; aborting Amazon scrape.")
+            return []  # Or return None to indicate failure
+
+        # 4. Now, attempt to gather all price elements
         price_elements = driver.find_elements(By.CSS_SELECTOR, "span.a-price-whole")
-        # Loop through price elements and convert them to float
-        for el in price_elements:
-            price_text = el.text.strip().replace(",", "")
-            try:
-                price = float(price_text)
-                prices.append(price)
-            except ValueError:
-                continue  # Skip elements that cannot be converted
+        if price_elements:
+            for el in price_elements:
+                price_text = el.text.strip().replace(",", "")
+                try:
+                    price = float(price_text)
+                    prices.append(price)
+                except ValueError:
+                    continue
+        else:
+            logging.warning("No price elements found on Amazon search page.")
     except Exception as e:
         logging.error(f"Error scraping Amazon: {e}")
     finally:
