@@ -604,7 +604,7 @@ def main():
             st.session_state["search_results"] = None
 
     if st.session_state["search_results"]:
-    # Get the exact match and alternative matches list
+        # Get the exact match and alternative matches list
         exact_match = st.session_state["search_results"].get("exact_match")
         alternative_matches = st.session_state["search_results"].get("alternative_matches", [])
 
@@ -639,6 +639,7 @@ def main():
             st.markdown(f"**Title:** {selected_game_data['name']}")
             st.markdown(f"**Description:** {selected_game_data.get('summary', 'N/A')}")
             st.markdown(f"**Cover URL:** {selected_game_data.get('cover_url', 'N/A')}")
+
             publishers = selected_game_data.get("involved_companies", [])
             if publishers and all(isinstance(p, str) for p in publishers):
                 publisher_text = ", ".join(publishers)
@@ -648,14 +649,22 @@ def main():
                 publisher_text = "N/A"
             st.markdown(f"**Publisher:** {publisher_text}")
 
+            # Instead of simply displaying platforms, let the user select one.
             platforms = selected_game_data.get("platforms", [])
             if platforms and all(isinstance(p, str) for p in platforms):
-                platform_text = ", ".join(platforms)
+                platform_options = platforms
             elif platforms and all(isinstance(p, dict) and "name" in p for p in platforms):
-                platform_text = ", ".join([p["name"] for p in platforms])
+                platform_options = [p["name"] for p in platforms]
             else:
-                platform_text = "N/A"
-            st.markdown(f"**Platforms:** {platform_text}")
+                platform_options = []
+
+            if platform_options:
+                # Present a selectbox for the platforms.
+                selected_platform = st.selectbox("Select Platform:", platform_options, key="platform_select")
+                st.markdown(f"**Selected Platform:** {selected_platform}")
+            else:
+                selected_platform = None
+                st.markdown("**Platforms:** N/A")
 
             genres = selected_game_data.get("genres", [])
             if genres and all(isinstance(g, str) for g in genres):
@@ -675,12 +684,13 @@ def main():
 
         if st.button("Add Selected Game", key="add_selected_game_button"):
             if selected_game_data:
+                # When adding the game, override the platforms with the selected platform (if available).
                 game_data = {
                     "title": selected_game_data["name"],
                     "cover_image": selected_game_data.get("cover_url"),
                     "description": selected_game_data.get("summary"),
                     "publisher": selected_game_data.get("involved_companies", []),
-                    "platforms": selected_game_data.get("platforms", []),
+                    "platforms": [selected_platform] if selected_platform else selected_game_data.get("platforms", []),
                     "genres": selected_game_data.get("genres", []),
                     "franchise": selected_game_data.get("franchises", []),
                     "series": selected_game_data.get("series", []),
@@ -722,12 +732,18 @@ def main():
                         publishers.append(company_info["name"])
         st.markdown(f"**Publisher:** {', '.join(publishers) if publishers else 'N/A'}")
 
+        # Instead of just displaying platforms, present a selectbox:
         platforms = []
         if isinstance(selected_game_data_by_id.get("platforms"), list):
             for platform in selected_game_data_by_id.get("platforms", []):
                 if isinstance(platform, dict) and "name" in platform:
                     platforms.append(platform["name"])
-        st.markdown(f"**Platforms:** {', '.join(platforms) if platforms else 'N/A'}")
+        if platforms:
+            selected_platform_by_id = st.selectbox("Select Platform:", platforms, key="platform_select_by_id")
+            st.markdown(f"**Selected Platform:** {selected_platform_by_id}")
+        else:
+            selected_platform_by_id = None
+            st.markdown("**Platforms:** N/A")
 
         genres = []
         if isinstance(selected_game_data_by_id.get("genres"), list):
@@ -761,7 +777,8 @@ def main():
                         for company in selected_game_data_by_id.get("involved_companies", [])
                         if "company" in company and "name" in company["company"]
                     ],
-                    "platforms": [
+                    # Override platforms with the selected platform if available
+                    "platforms": [selected_platform_by_id] if selected_platform_by_id else [
                         platform["name"]
                         for platform in selected_game_data_by_id.get("platforms", [])
                         if "name" in platform
