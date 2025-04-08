@@ -116,6 +116,58 @@ def get_igdb_access_token():
     logging.debug(f"IGDB access token response: {response.json()}")
     return response.json().get("access_token")
 
+def scrape_ebay_prices(game_title):
+    """
+    Opens eBay UK homepage, enters the game_title in the search box,
+    waits for the results, and returns the first price found as a float.
+    """
+    options = uc.ChromeOptions()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--start-maximized")
+    # Set a realistic user agent
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
+    
+    service = ChromeService(driver_path)
+    driver = uc.Chrome(service=service, options=options)
+
+    try:
+        # 1. Navigate to eBay UK homepage.
+        driver.get("https://www.ebay.co.uk/")
+        time.sleep(2)  # Wait for the page to load.
+
+        # 2. Locate the search box. (eBay's search box typically has id 'gh-ac')
+        search_box = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "gh-ac"))
+        )
+        # 3. Enter the game title and press Enter.
+        search_box.send_keys(game_title)
+        time.sleep(1)
+        search_box.send_keys(Keys.RETURN)
+        time.sleep(3)  # Wait for search results to load.
+
+        # 4. Find price elements. Many eBay listings have a price element with class 's-item__price'
+        price_elements = driver.find_elements(By.CSS_SELECTOR, "span.s-item__price")
+        if price_elements:
+            # For now, we return just the first price.
+            price_text = price_elements[0].text.strip()
+            # Clean up the price text by removing currency symbols and extra words.
+            # Typical formats are "£42.00" or "GBP 42.00"
+            price_text = price_text.replace("£", "").replace("GBP", "").strip()
+            # Sometimes the text might include additional text (e.g., "to" a second price), so take the first token.
+            price_token = price_text.split()[0].replace(",", "")
+            logging.debug(f"Scraped eBay price text: {price_token}")
+            return float(price_token)
+        else:
+            logging.warning("No price elements found on eBay search page.")
+            return None
+    except Exception as e:
+        logging.error(f"Error scraping eBay: {e}")
+        return None
+    finally:
+        driver.quit()
+
 # Scrape Amazon for the game price
 def scrape_amazon_prices(game_title):
     """
@@ -327,23 +379,30 @@ class GameScan:
             game_title = game_title if game_title else "Unknown Game"
 
             # Amazon lookup:
-            amazon_prices = scrape_amazon_prices(game_title)
-            if amazon_prices:
-                amazon_average = sum(amazon_prices) / len(amazon_prices)
+            # amazon_prices = scrape_amazon_prices(game_title)
+            # if amazon_prices:
+            #     price_average = sum(amazon_prices) / len(amazon_prices)
+            # else:
+            #     price_average = None
+
+            # eBay lookup:
+            ebay_prices = scrape_ebay_prices(game_title)
+            if ebay_prices:
+                price_average = sum(ebay_prices) / len(ebay_prices)
             else:
-                amazon_average = None
+                price_average = None
 
             # Combine the two averages.
-            if barcode_average is not None and amazon_average is not None:
-                combined_price = (barcode_average + amazon_average) / 2
+            if barcode_average is not None and price_average is not None:
+                combined_price = (barcode_average + price_average) / 2
             elif barcode_average is not None:
                 combined_price = barcode_average
-            elif amazon_average is not None:
-                combined_price = amazon_average
+            elif price_average is not None:
+                combined_price = price_average
             else:
                 combined_price = None
 
-            logging.debug(f"Barcode average: {barcode_average}, Amazon average: {amazon_average}, Combined: {combined_price}")
+            logging.debug(f"Barcode average: {barcode_average}, Amazon average: {price_average}, Combined: {combined_price}")
 
             # Use combined_price in your response. For example:
             exact_match, alternative_matches = search_game_fuzzy_with_alternates(game_title, igdb_access_token)
