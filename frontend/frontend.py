@@ -1,7 +1,16 @@
 import streamlit as st
 import requests
 import time
-import os
+import os, sys
+# Calculate the project root as the parent directory of the frontend folder.
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+print("Project root added to sys.path:", PROJECT_ROOT)
+
+
+from modules.scrapers import scrape_ebay_prices, scrape_amazon_price, scrape_barcode_lookup
 
 # Retrieve the backend host from environment variables, default to 'localhost' if using Python locally
 backend_host = os.getenv("BACKEND_HOST", "localhost")
@@ -617,13 +626,12 @@ def main():
             game_options.append(option_text)
             game_map[option_text] = exact_match
 
-        # Add each alternative match to the options list
+        # Add each alternative match
         for alt in alternative_matches:
             option_text = f"Alternative Match: {alt['name']}"
             game_options.append(option_text)
             game_map[option_text] = alt
 
-        # Show the radio button only if there is at least one option
         if game_options:
             selected_option = st.radio("Select a game to add:", game_options, key="selected_game_radio")
             if selected_option in game_map:
@@ -639,7 +647,6 @@ def main():
             st.markdown(f"**Title:** {selected_game_data['name']}")
             st.markdown(f"**Description:** {selected_game_data.get('summary', 'N/A')}")
             st.markdown(f"**Cover URL:** {selected_game_data.get('cover_url', 'N/A')}")
-
             publishers = selected_game_data.get("involved_companies", [])
             if publishers and all(isinstance(p, str) for p in publishers):
                 publisher_text = ", ".join(publishers)
@@ -649,7 +656,7 @@ def main():
                 publisher_text = "N/A"
             st.markdown(f"**Publisher:** {publisher_text}")
 
-            # Instead of simply displaying platforms, let the user select one.
+            # Platform selection
             platforms = selected_game_data.get("platforms", [])
             if platforms and all(isinstance(p, str) for p in platforms):
                 platform_options = platforms
@@ -659,7 +666,6 @@ def main():
                 platform_options = []
 
             if platform_options:
-                # Present a selectbox for the platforms.
                 selected_platform = st.selectbox("Select Platform:", platform_options, key="platform_select")
                 st.markdown(f"**Selected Platform:** {selected_platform}")
             else:
@@ -681,10 +687,24 @@ def main():
             else:
                 release_date = "N/A"
             st.markdown(f"**Release Date:** {release_date}")
+        else:
+            st.error("No game selected.")
 
+        # Now, when the user clicks "Add Selected Game", build the search query and scrape the price from eBay.
         if st.button("Add Selected Game", key="add_selected_game_button"):
             if selected_game_data:
-                # When adding the game, override the platforms with the selected platform (if available).
+                # Build the search query by combining the game name and the selected platform.
+                search_query = selected_game_data["name"]
+                if selected_platform:
+                    search_query += " " + selected_platform
+
+                # Call the eBay scraper using the combined query.
+                scraped_price = scrape_ebay_prices(search_query)
+                if scraped_price is not None:
+                    st.markdown(f"**Scraped Price (to add):** £{scraped_price:.2f}")
+                else:
+                    st.markdown("**Scraped Price (to add):** N/A")
+
                 game_data = {
                     "title": selected_game_data["name"],
                     "cover_image": selected_game_data.get("cover_url"),
@@ -695,7 +715,7 @@ def main():
                     "franchise": selected_game_data.get("franchises", []),
                     "series": selected_game_data.get("series", []),
                     "release_date": None,
-                    "average_price": None,
+                    "average_price": scraped_price,
                 }
                 if selected_game_data.get("release_date"):
                     game_data["release_date"] = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data["release_date"]))
@@ -732,7 +752,7 @@ def main():
                         publishers.append(company_info["name"])
         st.markdown(f"**Publisher:** {', '.join(publishers) if publishers else 'N/A'}")
 
-        # Instead of just displaying platforms, present a selectbox:
+        # Platform select box for IGDB ID results.
         platforms = []
         if isinstance(selected_game_data_by_id.get("platforms"), list):
             for platform in selected_game_data_by_id.get("platforms", []):
@@ -766,42 +786,49 @@ def main():
             release_date = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data_by_id["first_release_date"]))
         st.markdown(f"**Release Date:** {release_date}")
 
+        # On "Add Game by ID", call the eBay scraper with the combined query.
         if st.button("Add Game by ID", key="add_game_by_id_button"):
-            if selected_game_data_by_id:
-                game_data = {
-                    "title": selected_game_data_by_id["name"],
-                    "cover_image": selected_game_data_by_id.get("cover", {}).get("url"),
-                    "description": selected_game_data_by_id.get("summary"),
-                    "publisher": [
-                        company["company"]["name"]
-                        for company in selected_game_data_by_id.get("involved_companies", [])
-                        if "company" in company and "name" in company["company"]
-                    ],
-                    # Override platforms with the selected platform if available
-                    "platforms": [selected_platform_by_id] if selected_platform_by_id else [
-                        platform["name"]
-                        for platform in selected_game_data_by_id.get("platforms", [])
-                        if "name" in platform
-                    ],
-                    "genres": [
-                        genre["name"]
-                        for genre in selected_game_data_by_id.get("genres", [])
-                        if isinstance(genre, dict) and "name" in genre
-                    ],
-                    "series": [
-                        franchise["name"]
-                        for franchise in selected_game_data_by_id.get("franchises", [])
-                        if "name" in franchise
-                    ],
-                    "release_date": None,
-                    "average_price": None,
-                }
-                if selected_game_data_by_id.get("first_release_date"):
-                    game_data["release_date"] = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data_by_id["first_release_date"]))
-                if add_game(game_data):
-                    st.success(f"{selected_game_data_by_id['name']} added successfully!")
-                else:
-                    st.error("Failed to add game.")
+            search_query = selected_game_data_by_id.get("name", "")
+            if selected_platform_by_id:
+                search_query += " " + selected_platform_by_id
+            scraped_price = scrape_ebay_prices(search_query)
+            if scraped_price is not None:
+                st.markdown(f"**Scraped Price (to add):** £{scraped_price:.2f}")
+            else:
+                st.markdown("**Scraped Price (to add):** N/A")
+            game_data = {
+                "title": selected_game_data_by_id["name"],
+                "cover_image": selected_game_data_by_id.get("cover", {}).get("url"),
+                "description": selected_game_data_by_id.get("summary"),
+                "publisher": [
+                    company["company"]["name"]
+                    for company in selected_game_data_by_id.get("involved_companies", [])
+                    if "company" in company and "name" in company["company"]
+                ],
+                "platforms": [selected_platform_by_id] if selected_platform_by_id else [
+                    platform["name"]
+                    for platform in selected_game_data_by_id.get("platforms", [])
+                    if "name" in platform
+                ],
+                "genres": [
+                    genre["name"]
+                    for genre in selected_game_data_by_id.get("genres", [])
+                    if isinstance(genre, dict) and "name" in genre
+                ],
+                "series": [
+                    franchise["name"]
+                    for franchise in selected_game_data_by_id.get("franchises", [])
+                    if "name" in franchise
+                ],
+                "release_date": None,
+                "average_price": scraped_price,
+            }
+            if selected_game_data_by_id.get("first_release_date"):
+                game_data["release_date"] = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data_by_id["first_release_date"]))
+            if add_game(game_data):
+                st.success(f"{selected_game_data_by_id['name']} added successfully!")
+            else:
+                st.error("Failed to add game.")
 
     # -------------------------
     # Overall Totals and Top Games (if no filters are active)

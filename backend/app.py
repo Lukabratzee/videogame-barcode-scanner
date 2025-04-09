@@ -1,5 +1,5 @@
 import json
-import os
+import os, sys
 import random
 import time
 import undetected_chromedriver as uc
@@ -12,6 +12,13 @@ from fuzzywuzzy import process
 import csv
 import io
 
+# Calculate the project root as the parent directory of the frontend folder.
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+print("Project root added to sys.path:", PROJECT_ROOT)
+
 from flask import Flask, request, jsonify, Response
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -23,6 +30,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from dotenv import load_dotenv
+from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices
 
 
 app = Flask(__name__)
