@@ -98,16 +98,27 @@ def scrape_amazon_price(game_title):
     finally:
         driver.quit()
 
+import re
+import time
+import logging
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service as ChromeService
+
 def scrape_ebay_prices(game_title):
     """
-    Opens eBay UK's homepage, searches for the given game title,
-    waits for the results, and returns the first valid price found as a float.
-    The search query is built using the game title.
+    Opens eBay UK homepage, enters the game_title (which may include platform information)
+    in the search box, waits for price elements to become available, and returns the first
+    valid price found as a float. If no valid price is found, returns None.
     """
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--start-maximized")
+    # Set a realistic user agent
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
     
@@ -115,44 +126,38 @@ def scrape_ebay_prices(game_title):
     driver = uc.Chrome(service=service, options=options)
 
     try:
-        # Navigate to eBay UK's homepage and wait for it to load.
         driver.get("https://www.ebay.co.uk/")
-        time.sleep(2)
-
-        # Find the eBay search box (usually with ID 'gh-ac') and enter the game title.
+        time.sleep(2)  # Allow page to load
+        
         search_box = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "gh-ac"))
         )
         search_box.send_keys(game_title)
         time.sleep(1)
         search_box.send_keys(Keys.RETURN)
-        time.sleep(3)
-
-        # Find price elements. eBay listings commonly have a span with class 's-item__price'
-        price_elements = driver.find_elements(By.CSS_SELECTOR, "span.s-item__price")
-        if price_elements:
-            # Debug: Log out all the price elements we find.
-            for el in price_elements:
-                price_str = el.text.strip()
-                logging.debug(f"Found price element: {price_str}")
-
-            # Loop through price elements to extract the first valid numeric value.
-            for el in price_elements:
-                price_str = el.text.strip()
-                # Use regex to extract the first numeric substring (handles cases like "£42.00" or "GBP 42.00")
-                match = re.search(r"[\d,.]+", price_str)
-                if match:
-                    numeric_text = match.group(0).replace(",", "")
-                    try:
-                        return float(numeric_text)
-                    except ValueError:
-                        logging.warning(f"Could not convert extracted text '{numeric_text}' to float.")
-                        continue
-            logging.warning("No valid numeric price found among the price elements.")
-            return None
-        else:
-            logging.warning("No price elements found on eBay search page.")
-            return None
+        
+        # Wait up to 10 seconds for at least one price element
+        price_elements = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "span.s-item__price"))
+        )
+        
+        # Iterate over elements, return the first valid price we can convert.
+        for el in price_elements:
+            price_text = el.text.strip()
+            if not price_text:
+                continue
+            # Remove currency symbols and extra spaces
+            price_text = price_text.replace("£", "").replace("GBP", "").strip()
+            tokens = price_text.split()
+            if tokens:
+                try:
+                    price_value = float(tokens[0].replace(",", ""))
+                    logging.debug(f"Scraped eBay price text: {tokens[0]}")
+                    return price_value
+                except ValueError:
+                    continue
+        logging.warning("No valid numeric price found on eBay search page.")
+        return None
     except Exception as e:
         logging.error(f"Error scraping eBay: {e}")
         return None
