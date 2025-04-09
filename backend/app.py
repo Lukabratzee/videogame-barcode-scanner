@@ -124,7 +124,7 @@ def get_igdb_access_token():
     logging.debug(f"IGDB access token response: {response.json()}")
     return response.json().get("access_token")
 
-def scrape_ebay_prices(game_title):
+# def scrape_ebay_prices(game_title):
     """
     Opens eBay UK homepage, enters the game_title in the search box,
     waits for the results, and returns the first price found as a float.
@@ -323,7 +323,8 @@ def search_igdb_game(game_name, auth_token):
     logging.debug(f"IGDB API Request for {game_name} (Timeout: {timeout_duration}s)")
 
     try:
-        response = requests.post(url, headers=headers, data=body, timeout=timeout_duration)
+        # Encode the body in UTF-8
+        response = requests.post(url, headers=headers, data=body.encode('utf-8'), timeout=timeout_duration)
         response.raise_for_status()
         response_json = response.json()
         return response_json
@@ -382,185 +383,159 @@ class GameScan:
                 logging.error("Failed to retrieve IGDB access token")
                 return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
-            # Barcode lookup:
-            game_title, barcode_average = scrape_barcode_lookup(barcode)
+            # Lookup via barcode to obtain game title (and optional barcode price)
+            game_title, barcode_price = scrape_barcode_lookup(barcode)
             game_title = game_title if game_title else "Unknown Game"
 
-            # Amazon lookup:
-            # amazon_prices = scrape_amazon_prices(game_title)
-            # if amazon_prices:
-            #     price_average = sum(amazon_prices) / len(amazon_prices)
-            # else:
-            #     price_average = None
+            # Check if the game already exists in the database.
+            BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(BASE_DIR, database_path)
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM games WHERE title = ?", (game_title,))
+            existing_game = cursor.fetchone()
+            conn.close()
+            if existing_game:
+                return jsonify({
+                    "error": f"Game with title '{game_title}' already exists in the DB",
+                    "id": existing_game[0]
+                }), 200
 
-            # eBay lookup:
-            ebay_prices = scrape_ebay_prices(game_title)
-            if ebay_prices:
-                price_average = sum(ebay_prices) / len(ebay_prices)
-            else:
-                price_average = None
+            # We do not perform any price scraping here; set combined_price to None.
+            combined_price = None
 
-            # Combine the two averages.
-            if barcode_average is not None and price_average is not None:
-                combined_price = (barcode_average + price_average) / 2
-            elif barcode_average is not None:
-                combined_price = barcode_average
-            elif price_average is not None:
-                combined_price = price_average
-            else:
-                combined_price = None
-
-            logging.debug(f"Barcode average: {barcode_average}, Amazon average: {price_average}, Combined: {combined_price}")
-
-            # Use combined_price in your response. For example:
+            # Perform IGDB fuzzy search using game_title (without platform info)
             exact_match, alternative_matches = search_game_fuzzy_with_alternates(game_title, igdb_access_token)
             if not exact_match and not alternative_matches:
                 return jsonify({"error": "No results found on IGDB"}), 404
 
-            # Store the search results along with the price
+            # Store the IGDB results for later use in /confirm
             GameScan.response_data = {
                 "exact_match": exact_match,
                 "alternative_matches": alternative_matches,
                 "average_price": combined_price,
             }
 
-            # Build response JSON for iOS
-            if exact_match:
-                response_exact = {
+            response = {
+                "exact_match": {
                     "index": 1,
                     "name": exact_match["name"],
                     "platforms": [p["name"] for p in exact_match.get("platforms", [])],
-                }
-            else:
-                response_exact = {}
-
-            response_alternatives = []
-            if alternative_matches:
-                for idx, alt in enumerate(alternative_matches, start=2):
-                    response_alternatives.append({
+                } if exact_match else {},
+                "alternative_matches": [
+                    {
                         "index": idx,
                         "name": alt["name"],
                         "platforms": [p["name"] for p in alt.get("platforms", [])],
-                    })
-
-            response = {
-                "exact_match": response_exact,
-                "alternative_matches": response_alternatives,
+                    }
+                    for idx, alt in enumerate(alternative_matches, start=2)
+                ],
                 "average_price": combined_price,
             }
-
-            logging.debug(f"Returning /scan response: {json.dumps(response, indent=2)}")
+            logging.debug(f"Returning /scan response: {response}")
             return jsonify(response)
         except Exception as e:
             logging.error(f"Error in /scan route: {e}")
             return jsonify({"error": str(e)}), 500
 
-@staticmethod
-@app.route("/confirm", methods=["POST"])
-def confirm():
-    try:
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(BASE_DIR, database_path)
-        logging.debug(f"Database path: {db_path}")
-
-        data = request.json
-        logging.debug(f"Received /confirm payload: {json.dumps(data, indent=2)}")
-
-        # Check that we actually have stored data from /scan
-        if not GameScan.response_data:
-            return jsonify({"error": "No stored game data available"}), 400
-
-        # Convert the selection string to an integer
-        selection_str = data.get("selection")  # e.g. "1", "2", "3"...
-        if not selection_str:
-            return jsonify({"error": "No selection provided"}), 400
-
+    @staticmethod
+    @app.route("/confirm", methods=["POST"])
+    def confirm():
         try:
-            selection_idx = int(selection_str)
-        except ValueError:
-            return jsonify({"error": "Selection must be an integer"}), 400
+            BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(BASE_DIR, database_path)
+            logging.debug(f"Database path: {db_path}")
 
-        # Retrieve what was stored from /scan
-        exact_match = GameScan.response_data.get("exact_match")
-        all_alts = GameScan.response_data.get("alternative_matches", [])
-        average_price = GameScan.response_data.get("average_price")
+            data = request.json
+            logging.debug(f"Received /confirm payload: {json.dumps(data, indent=2)}")
 
-        # Decide which IGDB result to use based on the selection index
-        if selection_idx == 1:
-            # Index 1 => exact match
-            selected_game = exact_match
-        else:
-            # Index >= 2 => an alternative from the alternative_matches list
-            alt_index = selection_idx - 2  # e.g. selection_idx=2 => alt_index=0
-            if alt_index < 0 or alt_index >= len(all_alts):
-                return jsonify({"error": "Invalid selection index"}), 400
-            selected_game = all_alts[alt_index]
+            if not GameScan.response_data:
+                return jsonify({"error": "No stored game data available"}), 400
 
-        if not selected_game:
-            return jsonify({"error": "No game found for that selection"}), 404
+            selection_str = data.get("selection")
+            if not selection_str:
+                return jsonify({"error": "No selection provided"}), 400
 
-        # Build game_data as before
-        game_data = {
-            "title": selected_game.get("name", "").strip(),
-            "cover_image": selected_game.get("cover", {}).get("url"),
-            "description": selected_game.get("summary"),
-            "publisher": [
-                company["company"]["name"]
-                for company in selected_game.get("involved_companies", [])
-            ],
-            "platforms": [
-                platform["name"] for platform in selected_game.get("platforms", [])
-            ],
-            "genres": [genre["name"] for genre in selected_game.get("genres", [])],
-            "series": [
-                series["name"] for series in selected_game.get("franchise", [])
-            ],
-            "release_date": None,
-            "average_price": average_price,
-        }
+            try:
+                selection_idx = int(selection_str)
+            except ValueError:
+                return jsonify({"error": "Selection must be an integer"}), 400
 
-        # If user provided a selected platform, override
-        selected_platform = data.get("selected_platform")
-        if selected_platform:
-            game_data["platforms"] = [selected_platform]
+            exact_match = GameScan.response_data.get("exact_match")
+            all_alts = GameScan.response_data.get("alternative_matches", [])
+            if selection_idx == 1:
+                selected_game = exact_match
+            else:
+                alt_index = selection_idx - 2
+                if alt_index < 0 or alt_index >= len(all_alts):
+                    return jsonify({"error": "Invalid selection index"}), 400
+                selected_game = all_alts[alt_index]
 
-        # If there's a release date
-        if selected_game.get("first_release_date"):
-            game_data["release_date"] = time.strftime(
-                "%Y-%m-%d", time.gmtime(selected_game["first_release_date"])
-            )
+            if not selected_game:
+                return jsonify({"error": "No game found for that selection"}), 404
 
-        # Attempt to save the game (save_game_to_db returns False if it already exists)
-        inserted = save_game_to_db(game_data)
-        if not inserted:
-            return jsonify({
-                "error": f"Game with title '{game_data['title']}' already exists in the database."
-            }), 200
+            # Safely extract cover image
+            cover = selected_game.get("cover")
+            if cover and isinstance(cover, dict):
+                cover_image = cover.get("url", "")
+            else:
+                cover_image = ""
 
-        # If inserted, optionally fetch it from DB to confirm
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, title, average_price FROM games WHERE title = ?",
-            (game_data["title"],)
-        )
-        rows = cursor.fetchall()
-        conn.close()
+            # Build basic game_data
+            game_data = {
+                "title": selected_game.get("name", "").strip(),
+                "cover_image": cover_image,
+                "description": selected_game.get("summary"),
+                "publisher": [
+                    company["company"]["name"]
+                    for company in selected_game.get("involved_companies", [])
+                    if "company" in company and "name" in company["company"]
+                ],
+                "platforms": [
+                    platform["name"] for platform in selected_game.get("platforms", [])
+                    if "name" in platform
+                ],
+                "genres": [genre["name"] for genre in selected_game.get("genres", [])],
+                "series": [
+                    series["name"] for series in selected_game.get("franchise", [])
+                ],
+                "release_date": None,
+                "average_price": None,  # will be updated below
+            }
 
-        games_with_prices = []
-        for row in rows:
-            games_with_prices.append(
-                {"id": row[0], "title": row[1], "average_price": row[2]}
-            )
+            # Override platforms if the user provided a selected platform
+            selected_platform = data.get("selected_platform", "").strip()
+            if selected_platform:
+                game_data["platforms"] = [selected_platform]
 
-        logging.debug(f"Games with prices: {games_with_prices}")
+            if selected_game.get("first_release_date"):
+                game_data["release_date"] = time.strftime("%Y-%m-%d", time.gmtime(selected_game["first_release_date"]))
 
-        return jsonify(game_data)
+            # Build the combined search query using the game title and selected platform
+            search_query = game_data["title"]
+            if selected_platform:
+                search_query += " " + selected_platform
+            logging.debug(f"Using price scrape query: '{search_query}'")
 
-    except Exception as e:
-        logging.error(f"Error in /confirm route: {e}")
-        return jsonify({"error": str(e)}), 500
+            # Perform the eBay price scrape once using the combined query.
+            scraped_price = scrape_ebay_prices(search_query)
+            game_data["average_price"] = scraped_price
 
+            logging.debug(f"Scraped price: {scraped_price}")
+
+            inserted = save_game_to_db(game_data)
+            if not inserted:
+                return jsonify({
+                    "error": f"Game with title '{game_data['title']}' already exists in the database."
+                }), 200
+
+            logging.debug(f"Game '{game_data['title']}' added with price: {scraped_price}")
+            return jsonify(game_data)
+
+        except Exception as e:
+            logging.error(f"Error in /confirm route: {e}")
+            return jsonify({"error": str(e)}), 500
+    
 def search_game_fuzzy_with_alternates(game_name, auth_token, max_attempts=30, fuzzy_threshold=60):
     search_attempts = [game_name]
     attempt_count = 0
@@ -813,18 +788,19 @@ def save_game_to_db(game_data):
         db_path = os.path.join(BASE_DIR, database_path)
         conn = get_db_connection()
         cursor = conn.cursor()
+        # You can remove or lower this debug log to avoid dumping too much info:
         logging.debug(f"Inserting game data: {game_data}")
 
         release_date = game_data.get("release_date") or "1900-01-01"
 
-        # Use TRIM on title to avoid issues with leading/trailing spaces
-        cursor.execute(
-            "SELECT COUNT(*) FROM games WHERE TRIM(title) = ?",
-            (game_data["title"].strip(),)
-        )
+        cursor.execute("SELECT COUNT(*) FROM games WHERE TRIM(title) = ?", (game_data["title"].strip(),))
         count = cursor.fetchone()[0]
 
         if count == 0:
+            # Ensure cover_image is a string
+            cover_image = game_data.get("cover_image")
+            if cover_image is None:
+                cover_image = ""
             cursor.execute(
                 """
                 INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price)
@@ -833,7 +809,7 @@ def save_game_to_db(game_data):
                 (
                     generate_random_id(),
                     game_data["title"],
-                    game_data["cover_image"],
+                    cover_image,
                     game_data["description"],
                     ", ".join(game_data["publisher"]),
                     ", ".join(game_data["platforms"]),
@@ -844,7 +820,7 @@ def save_game_to_db(game_data):
                 ),
             )
             conn.commit()
-            logging.debug("Data committed to the database")
+            logging.debug("Data inserted into database successfully.")
             return True
         else:
             logging.debug(f"Game with title '{game_data['title']}' already exists in the database")
@@ -854,7 +830,6 @@ def save_game_to_db(game_data):
         return False
     finally:
         conn.close()
-
 
 @app.route("/games", methods=["GET"])
 def get_games():
@@ -922,7 +897,7 @@ def get_games():
             }
         )
 
-    logging.debug(f"Fetched games: {game_list}")
+    # logging.debug(f"Fetched games: {game_list}")
     return jsonify(game_list)
 
 
