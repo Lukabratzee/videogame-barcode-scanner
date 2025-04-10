@@ -108,11 +108,21 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service as ChromeService
 
+import re
+import time
+import logging
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service as ChromeService
+
 def scrape_ebay_prices(game_title):
     """
-    Opens eBay UK homepage, enters the game_title (which may include platform information)
-    in the search box, waits for price elements to become available, and returns the first
-    valid price found as a float. If no valid price is found, returns None.
+    Opens eBay UK's homepage, enters the game_title in the search box,
+    scrolls down to load additional results, and then collects all valid price values.
+    Returns the lowest price found as a float, or None if no valid prices are found.
     """
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
@@ -126,38 +136,55 @@ def scrape_ebay_prices(game_title):
     driver = uc.Chrome(service=service, options=options)
 
     try:
+        # 1. Navigate to eBay UK homepage.
         driver.get("https://www.ebay.co.uk/")
-        time.sleep(2)  # Allow page to load
-        
+        time.sleep(2)  # Wait for page load
+
+        # 2. Find the search box (id 'gh-ac') and enter the game title
         search_box = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "gh-ac"))
         )
         search_box.send_keys(game_title)
         time.sleep(1)
         search_box.send_keys(Keys.RETURN)
+        time.sleep(3)  # Wait for results to load
+
+        # 3. Scroll down to load more results (if lazy-loaded)
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(3)
         
-        # Wait up to 10 seconds for at least one price element
-        price_elements = WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "span.s-item__price"))
-        )
-        
-        # Iterate over elements, return the first valid price we can convert.
-        for el in price_elements:
-            price_text = el.text.strip()
-            if not price_text:
-                continue
-            # Remove currency symbols and extra spaces
-            price_text = price_text.replace("£", "").replace("GBP", "").strip()
-            tokens = price_text.split()
-            if tokens:
-                try:
-                    price_value = float(tokens[0].replace(",", ""))
-                    logging.debug(f"Scraped eBay price text: {tokens[0]}")
-                    return price_value
-                except ValueError:
+        # 4. Collect all price elements.
+        price_elements = driver.find_elements(By.CSS_SELECTOR, "span.s-item__price")
+        valid_prices = []
+        if price_elements:
+            for el in price_elements:
+                price_text = el.text.strip()
+                if not price_text:
                     continue
-        logging.warning("No valid numeric price found on eBay search page.")
-        return None
+                # Remove currency symbols and extra text
+                price_text = price_text.replace("£", "").replace("GBP", "").strip()
+                # Sometimes prices come in ranges ("42.00 to 50.00"), so take first token
+                tokens = price_text.split()
+                if tokens:
+                    try:
+                        price = float(tokens[0].replace(",", ""))
+                        valid_prices.append(price)
+                        logging.debug(f"Found price: {price}")
+                    except ValueError:
+                        continue
+            if valid_prices:
+                # Return the average or lowest price from the list of valid prices.
+                lowest_price = min(valid_prices)
+                logging.debug(f"Returning lowest price: {lowest_price}")
+                return sum(valid_prices) / len(valid_prices)
+                # return lowest_price
+            else:
+                logging.warning("No valid numeric prices found among the price elements.")
+                return None
+        else:
+            logging.warning("No price elements found on the eBay search page.")
+            return None
+
     except Exception as e:
         logging.error(f"Error scraping eBay: {e}")
         return None

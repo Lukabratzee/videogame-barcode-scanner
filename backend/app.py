@@ -788,16 +788,24 @@ def save_game_to_db(game_data):
         db_path = os.path.join(BASE_DIR, database_path)
         conn = get_db_connection()
         cursor = conn.cursor()
-        # You can remove or lower this debug log to avoid dumping too much info:
         logging.debug(f"Inserting game data: {game_data}")
 
         release_date = game_data.get("release_date") or "1900-01-01"
-
-        cursor.execute("SELECT COUNT(*) FROM games WHERE TRIM(title) = ?", (game_data["title"].strip(),))
+        
+        # Use TRIM on title and check for matching platform as well.
+        # We'll consider the first platform from the list for comparison.
+        platform_str = ""
+        if game_data["platforms"]:
+            platform_str = game_data["platforms"][0]
+        
+        cursor.execute(
+            "SELECT COUNT(*) FROM games WHERE TRIM(title) = ? AND platforms LIKE ?",
+            (game_data["title"].strip(), f"%{platform_str}%")
+        )
         count = cursor.fetchone()[0]
 
         if count == 0:
-            # Ensure cover_image is a string
+            # Ensure cover_image is a string.
             cover_image = game_data.get("cover_image")
             if cover_image is None:
                 cover_image = ""
@@ -823,7 +831,7 @@ def save_game_to_db(game_data):
             logging.debug("Data inserted into database successfully.")
             return True
         else:
-            logging.debug(f"Game with title '{game_data['title']}' already exists in the database")
+            logging.debug(f"Game with title '{game_data['title']}' and platform '{platform_str}' already exists in the database")
             return False
     except Exception as e:
         logging.error(f"Error saving game to database: {e}")
