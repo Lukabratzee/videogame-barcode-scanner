@@ -35,7 +35,6 @@ from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_
 
 app = Flask(__name__)
 
-# Replace with your actual API keys
 IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
 IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 
