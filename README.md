@@ -113,7 +113,8 @@ Run this: `pip uninstall undetected-chromedriver webdriver-manager`
 
 Issue arises from older versions of selenium. At time of writing 4.23.1 works. May be liable to break again due to how Chrome and ChromeDriver updated and get out of sync.
 
-
 **ChromeOptions error**
 
 pip uninstall -y selenium undetected-chromedriver webdriver-manager
+
+Make sure Chrome is opened and updated to latest version if this problem persists. Chrome is updated frequently.
