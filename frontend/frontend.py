@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 import time
 import os, sys
@@ -113,6 +114,29 @@ st.markdown(
     }
     .search-bar {
         margin-bottom: 20px;
+    }
+    .music-player {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 15px;
+        color: white;
+    }
+    .music-player iframe {
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .music-player-title {
+        text-align: center;
+        margin-bottom: 10px;
+        font-weight: bold;
+        color: white;
+    }
+    .music-player-subtitle {
+        text-align: center;
+        font-size: 0.9em;
+        opacity: 0.9;
+        margin-bottom: 15px;
     }
     </style>
     """,
@@ -240,6 +264,39 @@ def main():
     # Initialize session state for filter mode
     if "filters_active" not in st.session_state:
         st.session_state["filters_active"] = False
+
+    # -------------------------
+    # Sidebar: Music Player Section
+    # -------------------------
+    music_expander = st.sidebar.expander("🎵 Video Game Music Player")
+    with music_expander:
+        st.markdown("### 🎮 VIPVGM - Video Game Music")
+        st.markdown("*Listen to video game music while browsing your collection!*")
+        
+        # Create a container for the iframe with auto-start and shuffle
+        iframe_html = """
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+            <iframe 
+                src="https://www.vipvgm.net/#0" 
+                width="100%" 
+                height="400" 
+                frameborder="0" 
+                scrolling="no"
+                allow="autoplay; encrypted-media"
+                title="VIPVGM Video Game Music Player"
+                loading="lazy"
+                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+            ></iframe>
+        </div>
+        """
+        
+        # Try to embed the iframe with auto-start and shuffle
+        try:
+            components.html(iframe_html, height=450)
+        except Exception as e:
+            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
+            if st.button("🎵 Open VIPVGM Music Player", type="primary"):
+                st.markdown(f'<meta http-equiv="refresh" content="0;url=https://www.vipvgm.net/">', unsafe_allow_html=True)
 
     # -------------------------
     # Sidebar: Search by Title
@@ -596,7 +653,7 @@ def main():
     st.markdown(f"[Install 'Scan Video Games' Shortcut]({ICLOUD_LINK})")
     st.markdown(f"[Install 'Scan Video Games' Shortcut Alternate]({ICLOUD_LINK_ALT})")
 
-    st.markdown("## Search Game by Name")
+    st.markdown("## IGDB: Search Game by Name")
     game_name = st.text_input("Enter Game Name", key="game_name_input")
 
     if "search_results" not in st.session_state:
@@ -724,10 +781,10 @@ def main():
                 else:
                     st.error("Failed to add game.")
 
-    st.markdown("## Search Game by IGDB ID")
+    st.markdown("## IGDB: Search Game by ID")
     igdb_id = st.text_input("Enter IGDB ID", key="igdb_id_input")
 
-    if st.button("Search Game by ID", key="search_game_by_id_button"):
+    if st.button("IGDB: Search Game by ID", key="search_game_by_id_button"):
         search_response = search_game_by_id(igdb_id)
         if search_response:
             st.session_state["selected_game_by_id"] = search_response
