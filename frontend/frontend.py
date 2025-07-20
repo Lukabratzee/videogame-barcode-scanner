@@ -273,6 +273,31 @@ def main():
         st.session_state["filters_active"] = False
 
     # -------------------------
+    # Sidebar: Home Button
+    # -------------------------
+    home_clicked = st.sidebar.button("🏠 Home", type="primary", use_container_width=True)
+    if home_clicked:
+        # Clear all filters and reset to home state
+        st.session_state["filters_active"] = False
+        st.session_state["search_results"] = None
+        st.session_state["selected_game"] = None
+        st.session_state["selected_game_by_id"] = None
+        st.session_state["editing_game_id"] = None
+        st.session_state["bulk_delete_mode"] = False
+        # Increment a counter to force new input keys
+        st.session_state["home_reset_counter"] = st.session_state.get("home_reset_counter", 0) + 1
+        # Clear ALL session state keys that might interfere
+        keys_to_delete = []
+        for key in st.session_state.keys():
+            if key.startswith(("filter_", "search_", "edit_game_data", "confirm_delete_", "add_", "delete_", "edit_", "bulk_delete_", "game_name_", "igdb_id_", "platform_select")):
+                keys_to_delete.append(key)
+        for key in keys_to_delete:
+            del st.session_state[key]
+        st.rerun()
+
+    st.sidebar.markdown("---")  # Add a separator line
+
+    # -------------------------
     # Sidebar: Music Player Section
     # -------------------------
     music_expander = st.sidebar.expander("🎵 Video Game Music Player")
@@ -309,9 +334,10 @@ def main():
     # Sidebar: Search by Title
     # -------------------------
     st.sidebar.title("Filter Games")
-    search_term = st.sidebar.text_input("Search by Title", key="search_title")
+    # Use a dynamic key that changes when home is clicked to force a fresh input
+    search_key = f"search_title_{st.session_state.get('home_reset_counter', 0)}"
+    search_term = st.sidebar.text_input("Search by Title", key=search_key)
     selected_for_deletion = []  # List to hold IDs for games selected for deletion
-
 
     # If a search term is provided, fetch and display matching games with edit/delete options.
     if search_term:
