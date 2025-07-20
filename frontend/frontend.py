@@ -3,6 +3,13 @@ import streamlit.components.v1 as components
 import requests
 import time
 import os, sys
+
+# Configure Streamlit page - MUST be the very first Streamlit command!
+st.set_page_config(
+    page_title="Video Game Catalogue",
+    page_icon="🎮"
+)
+
 # Calculate the project root as the parent directory of the frontend folder.
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
