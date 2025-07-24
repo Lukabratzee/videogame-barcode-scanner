@@ -30,7 +30,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from dotenv import load_dotenv
-from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices
+from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price
 
 
 app = Flask(__name__)
