@@ -17,8 +17,7 @@ if PROJECT_ROOT not in sys.path:
 
 print("Project root added to sys.path:", PROJECT_ROOT)
 
-
-from modules.scrapers import scrape_ebay_prices, scrape_amazon_price, scrape_barcode_lookup
+# All scraping now happens via backend API calls - no direct Chrome usage in frontend
 
 # Retrieve the backend host from environment variables, default to 'localhost' if using Python locally
 backend_host = os.getenv("BACKEND_HOST", "localhost")
@@ -35,6 +34,22 @@ ICLOUD_LINK_ALT = "https://www.icloud.com/shortcuts/bea9f60437194f0fad2f89b87c9d
 # -------------------------
 # Backend API Helper Functions
 # -------------------------
+
+def scrape_ebay_price_via_backend(search_query):
+    """
+    Call the backend API to scrape eBay prices instead of running Chrome in frontend.
+    """
+    try:
+        response = requests.post(f"{BACKEND_URL}/scrape_ebay_price", json={"search_query": search_query})
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("price")
+        else:
+            print(f"Error from backend: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"Error calling backend eBay scraper: {e}")
+        return None
 
 def fetch_games(filters=None):
     response = requests.get(f"{BACKEND_URL}/games", params=filters)
@@ -788,7 +803,7 @@ def main():
                     search_query += " " + selected_platform
 
                 # Call the eBay scraper using the combined query.
-                scraped_price = scrape_ebay_prices(search_query)
+                scraped_price = scrape_ebay_price_via_backend(search_query)
                 if scraped_price is not None:
                     st.markdown(f"**Scraped Price (to add):** £{scraped_price:.2f}")
                 else:
@@ -880,7 +895,7 @@ def main():
             search_query = selected_game_data_by_id.get("name", "")
             if selected_platform_by_id:
                 search_query += " " + selected_platform_by_id
-            scraped_price = scrape_ebay_prices(search_query)
+            scraped_price = scrape_ebay_price_via_backend(search_query)
             if scraped_price is not None:
                 st.markdown(f"**Scraped Price (to add):** £{scraped_price:.2f}")
             else:

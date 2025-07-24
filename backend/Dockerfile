@@ -1,76 +1,67 @@
-# Use a slim Python image
+# Use Python 3.11 slim as base image
 FROM python:3.11-slim
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /app
 
-# Fix permissions and remove broken/multiple sources
-USER root
-RUN mkdir -p /var/lib/apt/lists/partial && chmod -R 777 /var/lib/apt/lists
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DISPLAY=:99
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_BIN=/usr/local/bin/chromedriver
 
-# Fix GPG key issues & force update repositories
-RUN rm -rf /var/lib/apt/lists/* && \
-    apt-get clean && \
-    apt-get update --allow-releaseinfo-change && \
-    apt-get install -y --no-install-recommends gnupg2 dirmngr ca-certificates && \
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 648ACFD622F3D138 || true && \
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9 || true && \
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 605C66F00D6C9793 || true && \
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 8B48AD6246925553 || true && \
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys A379DEFFB3F1BB1E || true
-
-# Update package lists after fixing GPG keys
+# Install system dependencies including Chromium
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    gcc \
-    libffi-dev \
-    libssl-dev \
-    libblas-dev \
-    liblapack-dev \
-    gfortran \
     wget \
+    gnupg \
     unzip \
     curl \
-    ca-certificates \
     xvfb \
+    chromium \
+    chromium-driver \
+    # Additional dependencies for Chromium
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
     libx11-xcb1 \
     libxcb-dri3-0 \
-    libgbm1 \
-    libasound2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libxss1 \
+    libxtst6 \
+    lsb-release \
+    xdg-utils \
+    libu2f-udev \
+    libvulkan1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Add Google Chrome repository & install Chrome
-RUN mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | tee /etc/apt/keyrings/google-chrome.asc > /dev/null && \
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main" | tee /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get update && apt-get install -y google-chrome-stable
+# Create symlinks for compatibility
+RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable && \
+    ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
 
-# Get Chrome version & set ChromeDriver version dynamically
-RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}') && \
-    CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE") && \
-    echo "Using ChromeDriver version: $CHROMEDRIVER_VERSION" && \
-    wget -q "https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip" && \
-    unzip chromedriver_linux64.zip -d /usr/local/bin/ && \
-    rm chromedriver_linux64.zip
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Set Environment Variables
-ENV CHROME_BIN=/usr/bin/google-chrome
-ENV CHROMEDRIVER_BIN=/usr/local/bin/chromedriver
-ENV DISPLAY=:99  
-
-# Copy backend code
+# Copy application code
 COPY . .
 
-# Upgrade pip before installing requirements
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+# Make the start script executable
+RUN chmod +x /app/start.sh
 
-# Install Python dependencies
-COPY requirements.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Expose Flask API port
+# Expose Flask port
 EXPOSE 5001
 
-# Start virtual framebuffer and backend
-CMD ["bash", "-c", "Xvfb :99 -screen 0 1920x1080x16 & flask run --host=0.0.0.0 --port=5001"]
+# Use the start script
+CMD ["/app/start.sh"]
