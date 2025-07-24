@@ -17,7 +17,8 @@ if PROJECT_ROOT not in sys.path:
 
 print("Project root added to sys.path:", PROJECT_ROOT)
 
-# All scraping now happens via backend API calls - no direct Chrome usage in frontend
+
+from modules.scrapers import scrape_ebay_prices, scrape_amazon_price, scrape_barcode_lookup, scrape_cex_price
 
 # Retrieve the backend host from environment variables, default to 'localhost' if using Python locally
 backend_host = os.getenv("BACKEND_HOST", "localhost")
@@ -34,22 +35,6 @@ ICLOUD_LINK_ALT = "https://www.icloud.com/shortcuts/bea9f60437194f0fad2f89b87c9d
 # -------------------------
 # Backend API Helper Functions
 # -------------------------
-
-def scrape_ebay_price_via_backend(search_query):
-    """
-    Call the backend API to scrape eBay prices instead of running Chrome in frontend.
-    """
-    try:
-        response = requests.post(f"{BACKEND_URL}/scrape_ebay_price", json={"search_query": search_query})
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("price")
-        else:
-            print(f"Error from backend: {response.status_code} - {response.text}")
-            return None
-    except Exception as e:
-        print(f"Error calling backend eBay scraper: {e}")
-        return None
 
 def fetch_games(filters=None):
     response = requests.get(f"{BACKEND_URL}/games", params=filters)
@@ -292,6 +277,9 @@ def main():
     # -------------------------
     home_clicked = st.sidebar.button("🏠 Home", type="primary", use_container_width=True)
     if home_clicked:
+        # Preserve the price source selection
+        price_source_backup = st.session_state.get("price_source_selection", "eBay")
+        
         # Clear all filters and reset to home state
         st.session_state["filters_active"] = False
         st.session_state["search_results"] = None
@@ -308,6 +296,10 @@ def main():
                 keys_to_delete.append(key)
         for key in keys_to_delete:
             del st.session_state[key]
+        
+        # Restore the price source selection in both session state and URL
+        st.session_state["price_source_selection"] = price_source_backup
+        st.query_params["price_source"] = price_source_backup
         st.rerun()
 
     st.sidebar.markdown("---")  # Add a separator line
@@ -343,6 +335,88 @@ def main():
             st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
             if st.button("🎵 Open VIPVGM Music Player", type="primary", key="music_player_fallback"):
                 st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
+
+    # -------------------------
+    # Global Price Source Selector
+    # -------------------------
+    st.sidebar.markdown("### 💰 Price Scraping Settings")
+    
+    # Get the current price source from URL parameters or session state
+    price_options = ["eBay", "Amazon", "CeX"]
+    
+    # Initialize from backend if no local preference exists
+    if "price_source_selection" not in st.session_state and "price_source" not in st.query_params:
+        try:
+            response = requests.get(f"{BACKEND_URL}/price_source")
+            if response.status_code == 200:
+                backend_price_source = response.json().get("price_source", "eBay")
+                st.session_state["price_source_selection"] = backend_price_source
+                st.query_params["price_source"] = backend_price_source
+        except Exception:
+            # Fallback to default if backend is unavailable
+            pass
+    
+    # Check URL parameters first for persistence across page refreshes
+    url_params = st.query_params
+    url_price_source = url_params.get("price_source")
+    
+    # Initialize the price source selection with URL parameter priority
+    if url_price_source and url_price_source in price_options:
+        # Use URL parameter if valid
+        current_selection = url_price_source
+        st.session_state["price_source_selection"] = current_selection
+    elif "price_source_selection" not in st.session_state:
+        # Initialize with default if no URL parameter and no session state
+        current_selection = "eBay"
+        st.session_state["price_source_selection"] = current_selection
+        # Set URL parameter to maintain persistence
+        st.query_params["price_source"] = current_selection
+    else:
+        # Use existing session state
+        current_selection = st.session_state.get("price_source_selection", "eBay")
+        # Ensure URL parameter matches session state
+        if current_selection in price_options:
+            st.query_params["price_source"] = current_selection
+    
+    # Ensure the current selection is valid
+    if current_selection not in price_options:
+        current_selection = "eBay"
+        st.session_state["price_source_selection"] = current_selection
+        st.query_params["price_source"] = current_selection
+    
+    # Get the index for the selectbox
+    try:
+        current_index = price_options.index(current_selection)
+    except ValueError:
+        current_index = 0  # Default to eBay if there's any issue
+        st.session_state["price_source_selection"] = "eBay"
+        st.query_params["price_source"] = "eBay"
+    
+    global_price_source = st.sidebar.selectbox(
+        "Default Price Source:", 
+        price_options,
+        index=current_index,
+        key="global_price_source",
+        help="This will be used for all price scraping operations (barcode scanning, IGDB lookups, etc.)"
+    )
+    
+    # Update both session state and URL parameters when selection changes
+    if global_price_source != st.session_state.get("price_source_selection"):
+        st.session_state["price_source_selection"] = global_price_source
+        st.query_params["price_source"] = global_price_source
+        
+        # Also update the backend's price source preference
+        try:
+            response = requests.post(
+                f"{BACKEND_URL}/price_source", 
+                json={"price_source": global_price_source}
+            )
+            if response.status_code == 200:
+                st.sidebar.success(f"Price source updated to {global_price_source}", icon="✅")
+            else:
+                st.sidebar.error(f"Failed to update backend price source", icon="⚠️")
+        except Exception as e:
+            st.sidebar.error(f"Error syncing price source: {e}", icon="⚠️")
 
     # -------------------------
     # Sidebar: Search by Title
@@ -802,12 +876,18 @@ def main():
                 if selected_platform:
                     search_query += " " + selected_platform
 
-                # Call the eBay scraper using the combined query.
-                scraped_price = scrape_ebay_price_via_backend(search_query)
+                # Call the selected price scraper using the combined query.
+                if global_price_source == "eBay":
+                    scraped_price = scrape_ebay_prices(search_query)
+                elif global_price_source == "Amazon":
+                    scraped_price = scrape_amazon_price(search_query)
+                else:  # CeX
+                    scraped_price = scrape_cex_price(search_query)
+                
                 if scraped_price is not None:
-                    st.markdown(f"**Scraped Price (to add):** £{scraped_price:.2f}")
+                    st.markdown(f"**Scraped Price from {global_price_source} (to add):** £{scraped_price:.2f}")
                 else:
-                    st.markdown("**Scraped Price (to add):** N/A")
+                    st.markdown(f"**Scraped Price from {global_price_source} (to add):** N/A")
 
                 game_data = {
                     "title": selected_game_data["name"],
@@ -890,16 +970,24 @@ def main():
             release_date = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data_by_id["first_release_date"]))
         st.markdown(f"**Release Date:** {release_date}")
 
-        # On "Add Game by ID", call the eBay scraper with the combined query.
+        # On "Add Game by ID", call the selected price scraper with the combined query.
         if st.button("Add Game by ID", key="add_game_by_id_button"):
             search_query = selected_game_data_by_id.get("name", "")
             if selected_platform_by_id:
                 search_query += " " + selected_platform_by_id
-            scraped_price = scrape_ebay_price_via_backend(search_query)
+            
+            # Call the selected price scraper using the combined query.
+            if global_price_source == "eBay":
+                scraped_price = scrape_ebay_prices(search_query)
+            elif global_price_source == "Amazon":
+                scraped_price = scrape_amazon_price(search_query)
+            else:  # CeX
+                scraped_price = scrape_cex_price(search_query)
+                
             if scraped_price is not None:
-                st.markdown(f"**Scraped Price (to add):** £{scraped_price:.2f}")
+                st.markdown(f"**Scraped Price from {global_price_source} (to add):** £{scraped_price:.2f}")
             else:
-                st.markdown("**Scraped Price (to add):** N/A")
+                st.markdown(f"**Scraped Price from {global_price_source} (to add):** N/A")
             game_data = {
                 "title": selected_game_data_by_id["name"],
                 "cover_image": selected_game_data_by_id.get("cover", {}).get("url"),
