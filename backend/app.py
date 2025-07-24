@@ -68,6 +68,55 @@ print(f"✅ Final Database Path: {database_path}")
 print(f"🧐 File Exists: {os.path.exists(database_path)}")
 
 ####################
+
+# -------------------------
+# Price Source Configuration Management
+# -------------------------
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+
+def load_config():
+    """Load configuration from JSON file, create default if doesn't exist"""
+    default_config = {"price_source": "eBay"}
+    
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                # Ensure price_source exists and is valid
+                if "price_source" not in config or config["price_source"] not in ["eBay", "Amazon", "CeX"]:
+                    config["price_source"] = "eBay"
+                return config
+        except (json.JSONDecodeError, IOError):
+            pass
+    
+    # Create default config file
+    save_config(default_config)
+    return default_config
+
+def save_config(config):
+    """Save configuration to JSON file"""
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+    except IOError as e:
+        logging.error(f"Failed to save config: {e}")
+
+def get_price_source():
+    """Get current price source preference"""
+    config = load_config()
+    return config.get("price_source", "eBay")
+
+def set_price_source(price_source):
+    """Set price source preference"""
+    if price_source not in ["eBay", "Amazon", "CeX"]:
+        return False
+    
+    config = load_config()
+    config["price_source"] = price_source
+    save_config(config)
+    return True
+
+####################
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -516,11 +565,21 @@ class GameScan:
                 search_query += " " + selected_platform
             logging.debug(f"Using price scrape query: '{search_query}'")
 
-            # Perform the eBay price scrape once using the combined query.
-            scraped_price = scrape_ebay_prices(search_query)
+            # Get the price source from backend configuration
+            price_source = get_price_source()
+            logging.debug(f"Using price source: {price_source}")
+
+            # Perform price scraping using the selected source
+            if price_source == "Amazon":
+                scraped_price = scrape_amazon_price(search_query)
+            elif price_source == "CeX":
+                scraped_price = scrape_cex_price(search_query)
+            else:  # Default to eBay
+                scraped_price = scrape_ebay_prices(search_query)
+            
             game_data["average_price"] = scraped_price
 
-            logging.debug(f"Scraped price: {scraped_price}")
+            logging.debug(f"Scraped price from {price_source}: {scraped_price}")
 
             inserted = save_game_to_db(game_data)
             if not inserted:
@@ -1125,6 +1184,40 @@ def export_csv():
         mimetype="text/csv",
         headers={"Content-disposition": "attachment; filename=games_export.csv"}
     )
+
+# -------------------------
+# Price Source Configuration Endpoints
+# -------------------------
+
+@app.route("/price_source", methods=["GET"])
+def get_price_source_endpoint():
+    """Get current price source preference"""
+    try:
+        current_price_source = get_price_source()
+        return jsonify({"price_source": current_price_source}), 200
+    except Exception as e:
+        logging.error(f"Error getting price source: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/price_source", methods=["POST"])
+def set_price_source_endpoint():
+    """Set price source preference"""
+    try:
+        data = request.json
+        price_source = data.get("price_source")
+        
+        if not price_source:
+            return jsonify({"error": "price_source is required"}), 400
+        
+        if set_price_source(price_source):
+            logging.debug(f"Price source updated to: {price_source}")
+            return jsonify({"message": f"Price source set to {price_source}"}), 200
+        else:
+            return jsonify({"error": "Invalid price source. Must be eBay, Amazon, or CeX"}), 400
+            
+    except Exception as e:
+        logging.error(f"Error setting price source: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)
