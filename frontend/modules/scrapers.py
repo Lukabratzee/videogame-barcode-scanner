@@ -90,21 +90,17 @@ def get_chrome_options():
         options.add_argument("--headless=new")  # Use new headless mode
         logging.info("Running in Docker environment - enabling headless mode")
     
-    return options  
+    return options
 
 def scrape_barcode_lookup(barcode):
     """
     Scrapes the barcode lookup website for the game title and average price.
     Returns a tuple: (game_title, average_price)
     """
-    options = uc.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
-    service = ChromeService(driver_path)
-    driver = uc.Chrome(service=service, options=options)
-    
+    driver = None
     try:
+        driver = get_chrome_driver()
+        
         url = f"https://www.barcodelookup.com/{barcode}"
         driver.get(url)
         time.sleep(2)
@@ -124,7 +120,8 @@ def scrape_barcode_lookup(barcode):
         logging.error(f"Error in scrape_barcode_lookup: {e}")
         game_title, average_price = None, None
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
     return game_title, average_price
 
 def scrape_amazon_price(game_title):
@@ -133,18 +130,10 @@ def scrape_amazon_price(game_title):
     waits for any captcha to be resolved, and returns the first price element
     (converted to a float). Returns None if not found.
     """
-    options = uc.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                         "AppleWebKit/537.36 (KHTML, like Gecko) "
-                         "Chrome/115.0.0.0 Safari/537.36")
-
-    service = ChromeService(driver_path)
-    driver = uc.Chrome(service=service, options=options)
-
+    driver = None
     try:
+        driver = get_chrome_driver()
+
         driver.get("https://www.amazon.co.uk/")
         time.sleep(2)
 
@@ -176,7 +165,8 @@ def scrape_amazon_price(game_title):
         logging.error(f"Error scraping Amazon: {e}")
         return None
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
 
 def scrape_ebay_prices(game_title):
     """
@@ -184,18 +174,10 @@ def scrape_ebay_prices(game_title):
     scrolls down to load additional results, and then collects all valid price values.
     Returns the lowest price found as a float, or None if no valid prices are found.
     """
-    options = uc.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
-    # Set a realistic user agent
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
-    
-    service = ChromeService(driver_path)
-    driver = uc.Chrome(service=service, options=options)
-
+    driver = None
     try:
+        driver = get_chrome_driver()
+
         # 1. Navigate to eBay UK homepage.
         driver.get("https://www.ebay.co.uk/")
         time.sleep(2)  # Wait for page load
@@ -249,7 +231,8 @@ def scrape_ebay_prices(game_title):
         logging.error(f"Error scraping eBay: {e}")
         return None
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
 
 def scrape_cex_price(game_title):
     """
