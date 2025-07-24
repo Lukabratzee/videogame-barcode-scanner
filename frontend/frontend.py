@@ -344,6 +344,18 @@ def main():
     # Get the current price source from URL parameters or session state
     price_options = ["eBay", "Amazon", "CeX"]
     
+    # Initialize from backend if no local preference exists
+    if "price_source_selection" not in st.session_state and "price_source" not in st.query_params:
+        try:
+            response = requests.get(f"{BACKEND_URL}/price_source")
+            if response.status_code == 200:
+                backend_price_source = response.json().get("price_source", "eBay")
+                st.session_state["price_source_selection"] = backend_price_source
+                st.query_params["price_source"] = backend_price_source
+        except Exception:
+            # Fallback to default if backend is unavailable
+            pass
+    
     # Check URL parameters first for persistence across page refreshes
     url_params = st.query_params
     url_price_source = url_params.get("price_source")
@@ -392,6 +404,19 @@ def main():
     if global_price_source != st.session_state.get("price_source_selection"):
         st.session_state["price_source_selection"] = global_price_source
         st.query_params["price_source"] = global_price_source
+        
+        # Also update the backend's price source preference
+        try:
+            response = requests.post(
+                f"{BACKEND_URL}/price_source", 
+                json={"price_source": global_price_source}
+            )
+            if response.status_code == 200:
+                st.sidebar.success(f"Price source updated to {global_price_source}", icon="✅")
+            else:
+                st.sidebar.error(f"Failed to update backend price source", icon="⚠️")
+        except Exception as e:
+            st.sidebar.error(f"Error syncing price source: {e}", icon="⚠️")
 
     # -------------------------
     # Sidebar: Search by Title
