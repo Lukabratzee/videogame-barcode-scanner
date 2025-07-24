@@ -305,30 +305,29 @@ def main():
         st.markdown("### 🎮 VIPVGM - Video Game Music")
         st.markdown("*Listen to video game music while browsing your collection!*")
         
-        # Create a container for the iframe with auto-start and shuffle
+        # Create a container for the iframe with a simpler approach
         iframe_html = """
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
             <iframe 
-                src="https://www.vipvgm.net/#0" 
+                src="https://www.vipvgm.net/" 
                 width="100%" 
                 height="400" 
                 frameborder="0" 
-                scrolling="no"
-                allow="autoplay; encrypted-media"
+                scrolling="yes"
+                allow="autoplay; encrypted-media; fullscreen"
                 title="VIPVGM Video Game Music Player"
-                loading="lazy"
                 style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
             ></iframe>
         </div>
         """
         
-        # Try to embed the iframe with auto-start and shuffle
+        # Try to embed the iframe
         try:
             components.html(iframe_html, height=450)
         except Exception as e:
             st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("🎵 Open VIPVGM Music Player", type="primary"):
-                st.markdown(f'<meta http-equiv="refresh" content="0;url=https://www.vipvgm.net/">', unsafe_allow_html=True)
+            if st.button("🎵 Open VIPVGM Music Player", type="primary", key="music_player_fallback"):
+                st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
 
     # -------------------------
     # Sidebar: Search by Title
