@@ -1,38 +1,58 @@
-version: '3'
-
 services:
   frontend:
-    # Build our Dockerfile from the 'frontend' directory
     build:
-      context: "/root/docker/video_game_catalogue/frontend"
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: videogamescanner-frontend
     restart: unless-stopped
-
-    # Expose Streamlit on port 8501
     ports:
       - "8501:8501"
-
-    # This container relies on 'backend' being ready first
     depends_on:
       - backend
-
-    # Networking
     networks:
       - app-network
-
-    # Pass environment variables to the container
     environment:
       - BACKEND_HOST=backend
-
-    # **Key volume**: mounting /app from the host
-    # Because our venv is at /venv, it isn't overwritten
+      - DISPLAY=:99
+      - CHROME_BIN=/usr/bin/chromium
+      - CHROMEDRIVER_BIN=/usr/local/bin/chromedriver
+      # Complete X11 isolation
+      - XAUTHORITY=/tmp/.docker.xauth
+      - WAYLAND_DISPLAY=""
+      - XDG_SESSION_TYPE=""
+      - XDG_RUNTIME_DIR=/tmp
+      # Block any host display access
+      - CHROME_NO_SANDBOX=true
+      - CHROME_DISABLE_GPU=true
     volumes:
-      - "/root/docker/video_game_catalogue/frontend:/app"
+      - ./frontend:/app
+      - ./modules:/app/modules
+      # Prevent X11 forwarding by not mounting host X11 socket
+    security_opt:
+      - seccomp:unconfined
+      - no-new-privileges:true
+    # Completely isolate from host display system
+    tmpfs:
+      - /tmp:noexec,nosuid,size=2g
+      - /dev/shm:rw,nosuid,nodev,size=2g
+    # Block access to host devices but keep essential capabilities for Chrome
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+      - SYS_CHROOT
+      - SYS_ADMIN  # Needed for Chrome sandbox
+    read_only: false
+    # Prevent mounting host filesystem
+    user: root
 
   backend:
     build:
-      context: "/root/docker/video_game_catalogue/backend"
+      context: ./backend
       dockerfile: Dockerfile
     container_name: videogamescanner-backend
     restart: unless-stopped
@@ -40,13 +60,58 @@ services:
       - "5001:5001"
     environment:
       - FLASK_ENV=development
+      - DISPLAY=:99
+      - CHROME_BIN=/usr/bin/chromium
+      - CHROMEDRIVER_BIN=/usr/local/bin/chromedriver
+      - DATABASE_PATH=games.db
+      # NUCLEAR X11 isolation - prevent ANY host display access
+      - XAUTHORITY=/tmp/.docker.xauth
+      - WAYLAND_DISPLAY=""
+      - XDG_SESSION_TYPE=""
+      - XDG_RUNTIME_DIR=/tmp
+      - XORG_LOCK_DIR=/tmp
+      - TMPDIR=/tmp
+      - HOME=/tmp
+      # Block ALL host display access
+      - CHROME_NO_SANDBOX=true
+      - CHROME_DISABLE_GPU=true
+      # Process isolation
+      - CHROME_DISABLE_X11=true
+      - OZONE_PLATFORM=headless
     networks:
       - app-network
     volumes:
-      # Mount backend code for live dev
-      - "/root/docker/video_game_catalogue/backend:/app"
-      # Mount your database file from the host
-      - "/share/backup_proxmox/lukabratzee/games.db:/app/games.db"
+      - ./backend:/app
+      - ./modules:/app/modules
+      - ./backend/games.db:/app/games.db
+      # COMPLETELY prevent X11 forwarding - no host sockets
+    security_opt:
+      - seccomp:unconfined
+      - no-new-privileges:true
+    # NUCLEAR container isolation
+    tmpfs:
+      - /tmp:noexec,nosuid,size=2g
+      - /dev/shm:rw,nosuid,nodev,size=2g
+      - /run:rw,nosuid,nodev,size=1g
+      - /var/tmp:noexec,nosuid,size=1g
+    # EXTREME capability restrictions
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+      - SYS_CHROOT
+      - SYS_ADMIN  # Chrome sandbox only
+    read_only: false
+    user: root
+    # BLOCK host networking access patterns
+    sysctls:
+      - net.ipv4.ping_group_range=0 2147483647
+    # Prevent any host process interaction
+    ipc: none
 
 networks:
   app-network:

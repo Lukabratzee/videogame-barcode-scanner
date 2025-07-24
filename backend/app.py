@@ -2,12 +2,10 @@ import json
 import os, sys
 import random
 import time
-import undetected_chromedriver as uc
 import requests
 import logging
 import re
 import sqlite3
-import chromedriver_autoinstaller
 from fuzzywuzzy import process
 import csv
 import io
@@ -19,18 +17,27 @@ if PROJECT_ROOT not in sys.path:
 
 print("Project root added to sys.path:", PROJECT_ROOT)
 
+# Import scraper functions from the modules directory
+# Try different import paths for Docker vs local environments
+try:
+    from modules.scrapers import scrape_barcode_lookup, scrape_ebay_prices
+    print("✅ Successfully imported scrapers from modules.scrapers")
+except ImportError:
+    try:
+        # Fallback for Docker environment
+        sys.path.insert(0, '/app')
+        from modules.scrapers import scrape_barcode_lookup, scrape_ebay_prices
+        print("✅ Successfully imported scrapers from /app/modules.scrapers")
+    except ImportError:
+        # Last resort - try absolute import from project root
+        modules_path = os.path.join(PROJECT_ROOT, 'modules')
+        if modules_path not in sys.path:
+            sys.path.insert(0, modules_path)
+        from scrapers import scrape_barcode_lookup, scrape_ebay_prices
+        print("✅ Successfully imported scrapers with absolute path")
+
 from flask import Flask, request, jsonify, Response
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from dotenv import load_dotenv
-from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices
 
 
 app = Flask(__name__)
@@ -38,15 +45,7 @@ app = Flask(__name__)
 IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
 IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 
-# Specify the exact path to the ChromeDriver binary
-driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
-
-# Specify the path to the SQLite database
-
-# External for local
-# database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
-###### DB LOAD ######
-
+# Database configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Load .env variables
@@ -122,183 +121,6 @@ def get_igdb_access_token():
     response = requests.post(url)
     logging.debug(f"IGDB access token response: {response.json()}")
     return response.json().get("access_token")
-
-# def scrape_ebay_prices(game_title):
-    """
-    Opens eBay UK homepage, enters the game_title in the search box,
-    waits for the results, and returns the first price found as a float.
-    """
-    options = uc.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
-    # Set a realistic user agent
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
-    
-    service = ChromeService(driver_path)
-    driver = uc.Chrome(service=service, options=options)
-
-    try:
-        # 1. Navigate to eBay UK homepage.
-        driver.get("https://www.ebay.co.uk/")
-        time.sleep(2)  # Wait for the page to load.
-
-        # 2. Locate the search box. (eBay's search box typically has id 'gh-ac')
-        search_box = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "gh-ac"))
-        )
-        # 3. Enter the game title and press Enter.
-        search_box.send_keys(game_title)
-        time.sleep(1)
-        search_box.send_keys(Keys.RETURN)
-        time.sleep(3)  # Wait for search results to load.
-
-        # 4. Find price elements. Many eBay listings have a price element with class 's-item__price'
-        price_elements = driver.find_elements(By.CSS_SELECTOR, "span.s-item__price")
-        if price_elements:
-            # For now, we return just the first price.
-            price_text = price_elements[0].text.strip()
-            # Clean up the price text by removing currency symbols and extra words.
-            # Typical formats are "£42.00" or "GBP 42.00"
-            price_text = price_text.replace("£", "").replace("GBP", "").strip()
-            # Sometimes the text might include additional text (e.g., "to" a second price), so take the first token.
-            price_token = price_text.split()[0].replace(",", "")
-            logging.debug(f"Scraped eBay price text: {price_token}")
-            return float(price_token)
-        else:
-            logging.warning("No price elements found on eBay search page.")
-            return None
-    except Exception as e:
-        logging.error(f"Error scraping eBay: {e}")
-        return None
-    finally:
-        driver.quit()
-
-# Scrape Amazon for the game price
-def scrape_amazon_prices(game_title):
-    """
-    Opens Amazon's homepage, performs a search for the given game title,
-    waits for any captcha to be resolved manually, and returns a list of price values found.
-    """
-    options = uc.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
-    # Use a realistic user agent:
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                         "AppleWebKit/537.36 (KHTML, like Gecko) "
-                         "Chrome/115.0.0.0 Safari/537.36")
-
-    service = ChromeService(driver_path)
-    driver = uc.Chrome(service=service, options=options)
-    prices = []
-    try:
-        # 1. Go to Amazon's homepage
-        driver.get("https://www.amazon.co.uk/")
-        time.sleep(2)
-
-        # 2. Locate the search box and type the game title, then press Enter
-        search_box = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "twotabsearchtextbox"))
-        )
-        search_box.send_keys(game_title)
-        time.sleep(1)
-        search_box.send_keys(Keys.RETURN)
-
-        # 3. Wait for search results to load and for any captcha to be solved
-        max_wait = 60  # Maximum total wait time (seconds)
-        wait_interval = 5
-        total_wait = 0
-        while "captcha" in driver.page_source.lower() and total_wait < max_wait:
-            logging.info("Captcha detected. Waiting for captcha resolution...")
-            time.sleep(wait_interval)
-            total_wait += wait_interval
-
-        if "captcha" in driver.page_source.lower():
-            logging.error("Captcha still present after waiting; aborting Amazon scrape.")
-            return []  # Or return None to indicate failure
-
-        # 4. Now, attempt to gather all price elements
-        price_elements = driver.find_elements(By.CSS_SELECTOR, "span.a-price-whole")
-        if price_elements:
-            for el in price_elements:
-                price_text = el.text.strip().replace(",", "")
-                try:
-                    price = float(price_text)
-                    prices.append(price)
-                except ValueError:
-                    continue
-        else:
-            logging.warning("No price elements found on Amazon search page.")
-    except Exception as e:
-        logging.error(f"Error scraping Amazon: {e}")
-    finally:
-        driver.quit()
-    return prices
-
-# Scrape the barcode lookup website for the game title using undetected_chromedriver
-def scrape_barcode_lookup(barcode):
-
-    # Set up Chrome options
-    options = uc.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-
-    # Use the Service class to specify the ChromeDriver path and avoid caching issues
-    service = ChromeService(driver_path)
-
-    # Initialize the Chrome browser using undetected_chromedriver with the given service and options
-    driver = uc.Chrome(service=service, options=options)
-
-    url = f"https://www.barcodelookup.com/{barcode}"
-    driver.get(url)
-
-    try:
-        # Wait for the page to load and the expected element to be located
-        try:
-            WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "div.col-50.product-details")
-            )
-            )
-        except Exception as e:
-            logging.error(f"Failed to find barcode")
-            game_title = None
-            average_price = None
-            driver.quit()
-            return game_title, average_price
-
-        # Extract the game title
-        game_title_element = driver.find_element(
-            By.CSS_SELECTOR, "div.col-50.product-details h4"
-        )
-        game_title = game_title_element.text.strip()
-        logging.debug(f"Game title found: {game_title}")
-
-        # Extract prices and calculate the average price
-        price_elements = driver.find_elements(By.CSS_SELECTOR, "div.store-list li")
-        prices = []
-        for price_element in price_elements:
-            price_text = price_element.text
-            # Extract the price using regex (assuming the price is formatted as $X.XX or £X.XX)
-            price_match = re.search(r"[\$\£]\d+(\.\d{2})?", price_text)
-            if price_match:
-                price = float(price_match.group()[1:])
-                prices.append(price)
-
-        average_price = round(sum(prices) / len(prices), 2) if prices else None
-        logging.debug(f"Average price calculated: {average_price}")
-
-    except Exception as e:
-        logging.error(f"Failed to find elements: {e}")
-        game_title = None
-        average_price = None
-    finally:
-        driver.quit()
-
-    return game_title, average_price
-
 
 # Clean the game title by removing console names
 def clean_game_title(game_title):
@@ -1125,6 +947,30 @@ def export_csv():
         mimetype="text/csv",
         headers={"Content-disposition": "attachment; filename=games_export.csv"}
     )
+
+@app.route("/scrape_ebay_price", methods=["POST"])
+def scrape_ebay_price():
+    """
+    API endpoint to scrape eBay prices for a given search query.
+    Runs Chrome inside the backend container with proper isolation.
+    """
+    try:
+        data = request.get_json()
+        search_query = data.get("search_query", "").strip()
+        
+        if not search_query:
+            return jsonify({"error": "search_query is required"}), 400
+        
+        # Call the isolated eBay scraper
+        scraped_price = scrape_ebay_prices(search_query)
+        
+        return jsonify({
+            "search_query": search_query,
+            "price": scraped_price
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)

@@ -1,3 +1,6 @@
 streamlit==1.37.1
 requests==2.32.3
 altair==5.3.0
+selenium==4.23.1
+undetected-chromedriver==3.5.5
+webdriver-manager==4.0.2

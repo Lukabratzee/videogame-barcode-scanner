@@ -1,0 +1,9 @@
+[browser]
+gatherUsageStats = false
+
+[server]
+enableStaticServing = false
+enableXsrfProtection = false
+
+[global]
+showWarningOnDirectExecution = false 
