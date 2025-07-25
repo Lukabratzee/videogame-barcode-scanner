@@ -66,7 +66,7 @@ IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
 IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 
 # Specify the exact path to the ChromeDriver binary
-driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path
+# driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path - NOT USED IN DOCKER
 
 # Specify the path to the SQLite database
 
@@ -253,8 +253,9 @@ def get_igdb_access_token():
     finally:
         driver.quit()
 
-# Scrape Amazon for the game price
-def scrape_amazon_prices(game_title):
+# NOTE: Old functions below are commented out - use modules/scrapers.py instead
+
+# def scrape_amazon_prices(game_title):
     """
     Opens Amazon's homepage, performs a search for the given game title,
     waits for any captcha to be resolved manually, and returns a list of price values found.
