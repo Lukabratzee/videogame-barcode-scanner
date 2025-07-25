@@ -63,15 +63,15 @@ RUN CHROME_VERSION=$(curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE
 RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY backend/ .
 
 # Copy shared modules from parent directory
-COPY ../modules ./modules
+COPY modules ./modules
 
 # Make the start script executable
 RUN chmod +x /app/start.sh
