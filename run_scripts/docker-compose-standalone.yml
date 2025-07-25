@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  backend:
+    image: lukabratzee/video-game-catalogue-backend:latest
+    pull_policy: always
+    container_name: video-game-catalogue-backend
+    ports:
+      - "5001:5001"
+    environment:
+      - DATABASE_PATH=/app/data/games.db
+      - BACKEND_PORT=5001
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    restart: unless-stopped
+
+  frontend:
+    image: lukabratzee/video-game-catalogue-frontend:latest
+    pull_policy: always
+    container_name: video-game-catalogue-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_HOST=backend
+      - BACKEND_PORT=5001
+      - FRONTEND_PORT=8501
+    depends_on:
+      backend:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    restart: unless-stopped
+
+volumes:
+  data:
+    driver: local
+  config:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
