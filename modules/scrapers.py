@@ -3,12 +3,50 @@ import time
 import logging
 import re 
 import requests
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service as ChromeService
+import os
+
+# Conditional imports for Docker vs local environment
+try:
+    # Check for Docker environment first  
+    if os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv'):
+        print("🐳 Docker environment detected in scrapers.py - using standard selenium")
+        from selenium import webdriver
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.chrome.service import Service as ChromeService
+        # Set flag for Docker mode
+        DOCKER_MODE = True
+    else:
+        # Local environment imports
+        print("💻 Local environment detected in scrapers.py - using undetected-chromedriver")
+        import undetected_chromedriver as uc
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.chrome.service import Service as ChromeService
+        # Set flag for local mode
+        DOCKER_MODE = False
+except ImportError as e:
+    print(f"⚠️ Import warning in scrapers.py: {e}")
+    # Fallback to basic selenium 
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.chrome.service import Service as ChromeService
+        DOCKER_MODE = True
+    except ImportError:
+        print("❌ No selenium available in scrapers.py - scraper functions will be disabled")
+        DOCKER_MODE = True
 
 # Use environment variable or default paths for Docker/local development
 import os
@@ -17,40 +55,47 @@ driver_path = os.getenv("CHROMEDRIVER_BIN", "/opt/homebrew/bin/chromedriver")
 def get_chrome_driver():
     """
     Safely initialize Chrome driver with proper error handling and fallback options.
+    Uses Docker-compatible driver in containers and undetected-chromedriver locally.
     """
     options = get_chrome_options()
     
-    try:
-        # Try with specified service path first
-        service = ChromeService(driver_path)
-        driver = uc.Chrome(service=service, options=options)
-        logging.info(f"Successfully initialized Chrome driver with path: {driver_path}")
-        return driver
-    except Exception as e:
-        logging.warning(f"Failed to initialize Chrome driver with path {driver_path}: {e}")
-        
+    if DOCKER_MODE:
+        # Docker environment - use standard WebDriver with explicit path
         try:
-            # Fallback: let undetected_chromedriver manage the driver automatically
-            driver = uc.Chrome(options=options)
-            logging.info("Successfully initialized Chrome driver with automatic path detection")
+            # Use system Chrome and ChromeDriver in Docker with explicit path
+            service = ChromeService("/usr/bin/chromedriver")  # Explicit path for Docker
+            driver = webdriver.Chrome(service=service, options=options)
+            logging.info("Successfully initialized standard Chrome driver for Docker")
             return driver
-        except Exception as e2:
-            logging.error(f"Failed to initialize Chrome driver with automatic detection: {e2}")
+        except Exception as e:
+            logging.error(f"Failed to initialize Chrome driver in Docker: {e}")
+            raise Exception("Could not initialize Chrome driver in Docker environment")
+    else:
+        # Local environment - use undetected_chromedriver
+        try:
+            # Try with specified service path first
+            service = ChromeService(driver_path)
+            driver = uc.Chrome(service=service, options=options)
+            logging.info(f"Successfully initialized undetected Chrome driver with path: {driver_path}")
+            return driver
+        except Exception as e:
+            logging.warning(f"Failed to initialize Chrome driver with path {driver_path}: {e}")
             
             try:
-                # Last resort: try with explicit chromium path
-                options.binary_location = "/usr/bin/chromium"
-                service = ChromeService("/usr/bin/chromedriver")
-                driver = uc.Chrome(service=service, options=options)
-                logging.info("Successfully initialized Chrome driver with explicit chromium path")
+                # Fallback: let undetected_chromedriver manage the driver automatically
+                driver = uc.Chrome(options=options)
+                logging.info("Successfully initialized Chrome driver with automatic path detection")
                 return driver
-            except Exception as e3:
-                logging.error(f"All Chrome driver initialization methods failed: {e3}")
+            except Exception as e2:
+                logging.error(f"Failed to initialize Chrome driver with automatic detection: {e2}")
                 raise Exception("Could not initialize Chrome driver with any method")
 
 def get_chrome_options():
     """Configure Chrome options for both Docker and local environments"""
-    options = uc.ChromeOptions()
+    if DOCKER_MODE:
+        options = Options()  # Standard Chrome options for Docker
+    else:
+        options = uc.ChromeOptions()  # Undetected Chrome options for local
     
     # Essential arguments for headless operation and Docker
     options.add_argument("--no-sandbox")
@@ -86,7 +131,7 @@ def get_chrome_options():
     # Force headless mode in Docker environment
     # Check if we're in a Docker container (DISPLAY env var typically set)
     in_docker = os.getenv("DISPLAY") or os.path.exists("/.dockerenv")
-    if in_docker:
+    if in_docker or DOCKER_MODE:
         options.add_argument("--headless=new")  # Use new headless mode
         logging.info("Running in Docker environment - enabling headless mode")
     
@@ -97,12 +142,7 @@ def scrape_barcode_lookup(barcode):
     Scrapes the barcode lookup website for the game title and average price.
     Returns a tuple: (game_title, average_price)
     """
-    options = uc.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
-    service = ChromeService(driver_path)
-    driver = uc.Chrome(service=service, options=options)
+    driver = get_chrome_driver()  # Use the environment-aware driver function
     
     try:
         url = f"https://www.barcodelookup.com/{barcode}"
@@ -133,16 +173,7 @@ def scrape_amazon_price(game_title):
     waits for any captcha to be resolved, and returns the first price element
     (converted to a float). Returns None if not found.
     """
-    options = uc.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                         "AppleWebKit/537.36 (KHTML, like Gecko) "
-                         "Chrome/115.0.0.0 Safari/537.36")
-
-    service = ChromeService(driver_path)
-    driver = uc.Chrome(service=service, options=options)
+    driver = get_chrome_driver()  # Use the environment-aware driver function
 
     try:
         driver.get("https://www.amazon.co.uk/")
@@ -184,16 +215,7 @@ def scrape_ebay_prices(game_title):
     scrolls down to load additional results, and then collects all valid price values.
     Returns the lowest price found as a float, or None if no valid prices are found.
     """
-    options = uc.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
-    # Set a realistic user agent
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
-    
-    service = ChromeService(driver_path)
-    driver = uc.Chrome(service=service, options=options)
+    driver = get_chrome_driver()  # Use the environment-aware driver function
 
     try:
         # 1. Navigate to eBay UK homepage.
