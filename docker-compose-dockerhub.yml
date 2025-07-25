@@ -3,6 +3,7 @@ version: '3.8'
 services:
   backend:
     image: lukabratzee/video-game-catalogue-backend:latest
+    pull_policy: always
     container_name: video-game-catalogue-backend
     ports:
       - "5001:5001"
@@ -32,6 +33,7 @@ services:
 
   frontend:
     image: lukabratzee/video-game-catalogue-frontend:latest
+    pull_policy: always
     container_name: video-game-catalogue-frontend
     ports:
       - "8501:8501"
