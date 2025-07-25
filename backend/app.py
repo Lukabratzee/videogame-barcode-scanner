@@ -2,15 +2,33 @@ import json
 import os, sys
 import random
 import time
-import undetected_chromedriver as uc
 import requests
 import logging
 import re
 import sqlite3
-import chromedriver_autoinstaller
 from fuzzywuzzy import process
 import csv
 import io
+
+# Conditional imports for Docker vs local environment
+try:
+    # Try Docker-compatible imports first
+    if os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv'):
+        print("🐳 Docker environment detected - using standard selenium")
+        from selenium import webdriver
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.chrome.options import Options
+    else:
+        # Local environment imports
+        print("💻 Local environment detected - using undetected-chromedriver")
+        import undetected_chromedriver as uc
+        import chromedriver_autoinstaller
+except ImportError as e:
+    print(f"⚠️ Import warning: {e}")
+    # Fallback to basic selenium
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
 
 # Calculate the project root as the parent directory of the frontend folder.
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -39,15 +57,6 @@ except ImportError:
         print("✅ Successfully imported scrapers with absolute path")
 
 from flask import Flask, request, jsonify, Response
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from dotenv import load_dotenv
 
 
@@ -189,6 +198,8 @@ def get_igdb_access_token():
     response = requests.post(url)
     logging.debug(f"IGDB access token response: {response.json()}")
     return response.json().get("access_token")
+
+# Clean the game title by removing console names
 
 # def scrape_ebay_prices(game_title):
     """
