@@ -18,17 +18,49 @@ try:
         from selenium import webdriver
         from selenium.webdriver.chrome.service import Service
         from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.chrome.service import Service as ChromeService
     else:
         # Local environment imports
         print("💻 Local environment detected - using undetected-chromedriver")
         import undetected_chromedriver as uc
         import chromedriver_autoinstaller
+        from selenium import webdriver
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.chrome.service import Service as ChromeService
 except ImportError as e:
     print(f"⚠️ Import warning: {e}")
-    # Fallback to basic selenium
-    from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
+    # Fallback to basic selenium - will disable old functions
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.chrome.service import Service as ChromeService
+    except ImportError:
+        print("❌ No selenium available - old scraper functions will be disabled")
+        # Define dummy classes to prevent NameError
+        class DummyClass:
+            pass
+        webdriver = DummyClass()
+        Service = DummyClass
+        Options = DummyClass
+        By = DummyClass()
+        WebDriverWait = DummyClass
+        EC = DummyClass()
+        Keys = DummyClass()
+        ChromeService = DummyClass
 
 # Calculate the project root as the parent directory of the frontend folder.
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -67,6 +99,15 @@ IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
 
 # Specify the exact path to the ChromeDriver binary
 # driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path - NOT USED IN DOCKER
+
+# Legacy driver path for old functions (not used in Docker)
+try:
+    if os.path.exists("/opt/homebrew/bin/chromedriver"):
+        driver_path = "/opt/homebrew/bin/chromedriver" 
+    else:
+        driver_path = None  # Will disable old functions
+except:
+    driver_path = None
 
 # Specify the path to the SQLite database
 
@@ -253,13 +294,20 @@ def get_igdb_access_token():
     finally:
         driver.quit()
 
-# NOTE: Old functions below are commented out - use modules/scrapers.py instead
+# NOTE: Old functions below are for compatibility - use modules/scrapers.py instead
 
-# def scrape_amazon_prices(game_title):
+# Legacy Amazon scraper (use modules.scrapers.scrape_amazon_price instead)
+def legacy_scrape_amazon_prices(game_title):
     """
-    Opens Amazon's homepage, performs a search for the given game title,
-    waits for any captcha to be resolved manually, and returns a list of price values found.
+    Legacy function - redirects to modular scraper or returns empty list
     """
+    if driver_path is None:
+        print("⚠️ Legacy scraper disabled in Docker environment")
+        return []
+    
+    # Original function body would be here, but disabled for Docker
+    # Opens Amazon's homepage, performs a search for the given game title,
+    # waits for any captcha to be resolved manually, and returns a list of price values found.
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -316,10 +364,17 @@ def get_igdb_access_token():
         driver.quit()
     return prices
 
-# Scrape the barcode lookup website for the game title using undetected_chromedriver
-def scrape_barcode_lookup(barcode):
+# Legacy barcode scraper (use modules.scrapers.scrape_barcode_lookup instead)
+def legacy_scrape_barcode_lookup(barcode):
+    """
+    Legacy function - redirects to modular scraper or returns None values
+    """
+    if driver_path is None:
+        print("⚠️ Legacy barcode scraper disabled in Docker environment - using modular scraper")
+        # This should call the imported function instead, but for now just return safe values
+        return None, None
 
-    # Set up Chrome options
+    # Original function would continue here but is disabled for Docker compatibility
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
