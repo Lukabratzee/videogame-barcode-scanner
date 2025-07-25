@@ -856,7 +856,7 @@ def get_top_games():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM games WHERE average_price IS NOT NULL ORDER BY average_price DESC LIMIT 5")
+    cursor.execute("SELECT * FROM games WHERE average_price IS NOT NULL AND id != -1 ORDER BY average_price DESC LIMIT 5")
     games = cursor.fetchall()
     conn.close()
 
@@ -1022,7 +1022,7 @@ def get_games():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    query = "SELECT * FROM games WHERE 1=1"
+    query = "SELECT * FROM games WHERE 1=1 AND id != -1"
     params = []
 
     if publisher:
@@ -1081,7 +1081,7 @@ def get_games():
 def get_consoles():
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT platforms FROM games")
+    cursor.execute("SELECT DISTINCT platforms FROM games WHERE id != -1")
     platforms = cursor.fetchall()
     conn.close()
 
@@ -1104,13 +1104,13 @@ def get_unique_values():
         cursor = conn.cursor()
 
         if value_type == "publisher":
-            cursor.execute("SELECT DISTINCT publisher FROM games")
+            cursor.execute("SELECT DISTINCT publisher FROM games WHERE id != -1")
         elif value_type == "platform":
-            cursor.execute("SELECT DISTINCT platforms FROM games")
+            cursor.execute("SELECT DISTINCT platforms FROM games WHERE id != -1")
         elif value_type == "genre":
-            cursor.execute("SELECT DISTINCT genres FROM games")
+            cursor.execute("SELECT DISTINCT genres FROM games WHERE id != -1")
         elif value_type == "year":
-            cursor.execute('SELECT DISTINCT strftime("%Y", release_date) FROM games')
+            cursor.execute('SELECT DISTINCT strftime("%Y", release_date) FROM games WHERE id != -1')
         else:
             conn.close()
             return jsonify([]), 400
@@ -1122,15 +1122,17 @@ def get_unique_values():
         for value_tuple in values:
             # Get the raw value
             value = value_tuple[0]
-            # Skip if value is None or an empty string
-            if not value or value.strip() == "":
+            # Skip if value is None, empty string, or placeholder
+            if not value or value.strip() == "" or value == "__PLACEHOLDER__":
                 continue
 
             if value_type == "year":
                 unique_values.add(value)
             else:
                 value_list = value.split(", ")
-                unique_values.update(value_list)
+                # Filter out placeholder values from the list
+                filtered_values = [v.strip() for v in value_list if v.strip() != "__PLACEHOLDER__"]
+                unique_values.update(filtered_values)
 
         return jsonify(list(unique_values))
     except Exception as e:
@@ -1260,7 +1262,7 @@ def export_csv():
     cursor = conn.cursor()
 
     # Build a dynamic query
-    query = "SELECT * FROM games WHERE 1=1"
+    query = "SELECT * FROM games WHERE 1=1 AND id != -1"
     params = []
 
     if publisher:
