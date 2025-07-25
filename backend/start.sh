@@ -38,6 +38,10 @@ else
     echo "Chromedriver not found"
 fi
 
+# Initialize database if it doesn't exist
+echo "Initializing database..."
+python database_setup.py
+
 # Start the Flask application
 echo "Starting Flask application..."
 exec python app.py 
