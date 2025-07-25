@@ -34,8 +34,10 @@ conn.commit()
 # Check if database is empty and add placeholder if needed
 cursor.execute("SELECT COUNT(*) FROM games")
 count = cursor.fetchone()[0]
+print(f"DEBUG: Current game count in database: {count}")
 
 if count == 0:
+    print("DEBUG: Database is empty, adding placeholder...")
     # Add a placeholder entry to prevent empty database issues
     placeholder_game = (
         -1,  # id (will be filtered out)
@@ -56,7 +58,14 @@ if count == 0:
     ''', placeholder_game)
     
     conn.commit()
-    print("Added placeholder entry to prevent empty database issues")
+    print("✅ Added placeholder entry to prevent empty database issues")
+    
+    # Verify the placeholder was added
+    cursor.execute("SELECT COUNT(*) FROM games")
+    new_count = cursor.fetchone()[0]
+    print(f"DEBUG: Game count after placeholder insertion: {new_count}")
+else:
+    print(f"DEBUG: Database not empty (count: {count}), skipping placeholder")
 
 # Verify table creation
 cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='games';")
