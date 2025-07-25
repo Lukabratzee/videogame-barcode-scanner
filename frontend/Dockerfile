@@ -7,9 +7,17 @@ USER root
 # Create /app as our working directory
 WORKDIR /app
 
+# Accept build arguments for configuration
+ARG FRONTEND_PORT=8501
+ARG BACKEND_HOST=backend
+ARG BACKEND_PORT=5001
+
 # Set environment variables (NO Chrome environment needed)
 ENV DEBIAN_FRONTEND=noninteractive
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+ENV FRONTEND_PORT=${FRONTEND_PORT}
+ENV BACKEND_HOST=${BACKEND_HOST}
+ENV BACKEND_PORT=${BACKEND_PORT}
 
 # Install system dependencies including X11 for virtual display
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -33,6 +41,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy local frontend code into /app
 COPY . /app
 
+# Copy shared modules from parent directory
+COPY ../modules ./modules
+
 # Create ~/.streamlit folder and copy config
 RUN mkdir -p /root/.streamlit
 RUN if [ -d "/app/.streamlit" ]; then cp -r /app/.streamlit/* /root/.streamlit/; fi
@@ -50,8 +61,8 @@ RUN echo '[browser]' > /root/.streamlit/config.toml && \
 # Make the start script executable
 RUN chmod +x /app/start.sh
 
-# Expose Streamlit port
-EXPOSE 8501
+# Expose Streamlit port (configurable)
+EXPOSE ${FRONTEND_PORT}
 
 # Use the start script
 CMD ["/app/start.sh"]
