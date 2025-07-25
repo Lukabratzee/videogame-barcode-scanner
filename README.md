@@ -10,19 +10,52 @@ This project is a web application for cataloging video games. It includes a fron
 - **Delete Games**: Remove games from the catalogue.
 - **Search and Filter**: Search for games by name and filter by various attributes.
 - **iOS Shortcut Integration**: Use an iOS Shortcut to scan games and add them to the catalogue.
+- **Multi-Architecture Support**: Docker images built for both AMD64 (x86) and ARM64 architectures.
 
 ## Setup and Installation
 
-### 1. Running with Docker
+### 1. Running with Docker (Recommended)
 
-The recommended way to run the application is using Docker and Docker Compose. This setup ensures all dependencies are correctly managed and provides an easy way to deploy the application.
+The application is available as pre-built Docker images from GitHub Container Registry, supporting both AMD64 (x86) and ARM64 architectures.
 
 #### Prerequisites
 
 - Docker
 - Docker Compose
 
-#### Instructions
+#### Quick Start
+
+1. **Create deployment directory**
+
+   ```sh
+   mkdir video-game-catalogue && cd video-game-catalogue
+   ```
+
+2. **Download docker-compose file**
+
+   ```sh
+   curl -O https://raw.githubusercontent.com/lukabratzee/video-game-catalogue/main/docker-compose-ghcr.yml
+   ```
+
+3. **Start the services**
+
+   ```sh
+   docker-compose -f docker-compose-ghcr.yml up -d
+   ```
+
+   This will:
+   - Pull pre-built images from GitHub Container Registry
+   - Automatically select the correct architecture (AMD64 or ARM64)
+   - Start both frontend and backend services
+   - Create local `./data/` and `./config/` directories for persistence
+
+4. **Access the application**
+
+   - **Frontend**: `http://localhost:8501`
+   - **Backend**: `http://localhost:5001`
+   - **Health Check**: `http://localhost:5001/health`
+
+#### Development Setup
 
 1. **Clone the Repository**
 
