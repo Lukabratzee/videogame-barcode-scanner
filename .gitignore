@@ -3,3 +3,8 @@ etc
 .source
 .vscode
 .venv
+
+# Database files
+games.db
+backend/games.db
+data/games.db
