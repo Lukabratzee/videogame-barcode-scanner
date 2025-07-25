@@ -4,11 +4,17 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
+# Accept build arguments for configuration
+ARG BACKEND_PORT=5001
+ARG DATABASE_PATH=games.db
+
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_BIN=/usr/local/bin/chromedriver
+ENV BACKEND_PORT=${BACKEND_PORT}
+ENV DATABASE_PATH=${DATABASE_PATH}
 
 # Install system dependencies including Chromium
 RUN apt-get update && apt-get install -y \
@@ -57,11 +63,14 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy application code
 COPY . .
 
+# Copy shared modules from parent directory
+COPY ../modules ./modules
+
 # Make the start script executable
 RUN chmod +x /app/start.sh
 
-# Expose Flask port
-EXPOSE 5001
+# Expose Flask port (configurable)
+EXPOSE ${BACKEND_PORT}
 
 # Use the start script
 CMD ["/app/start.sh"]

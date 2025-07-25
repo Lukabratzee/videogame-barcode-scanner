@@ -500,6 +500,31 @@ def fuzzy_match_title(search_title, igdb_results):
 def generate_random_id():
     return random.randint(1000, 9999)
 
+# -------------------------
+# Health Check Endpoint
+# -------------------------
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Health check endpoint for Docker/Portainer monitoring"""
+    try:
+        # Check database connectivity
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        conn.close()
+        
+        return jsonify({
+            "status": "healthy",
+            "database": "connected",
+            "timestamp": time.time()
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": time.time()
+        }), 503
+
 class GameScan:
     response_data = None  # Class variable to store response data
 
