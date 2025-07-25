@@ -115,7 +115,8 @@ except:
 # database_path = "/Volumes/backup_proxmox/lukabratzee/games.db"
 ###### DB LOAD ######
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Get the project root directory (one level up from backend)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Load .env variables
 load_dotenv()
@@ -125,11 +126,8 @@ database_path = os.getenv("DATABASE_PATH", "").strip()
 
 print(f"📜 DATABASE_PATH from .env: '{database_path}'")
 
-# If the path is not absolute, then join with BASE_DIR
+# If the path is not absolute, then join with BASE_DIR (project root)
 if not os.path.isabs(database_path):
-    # If database_path already starts with "backend/", remove it
-    if database_path.startswith("backend/"):
-        database_path = database_path.replace("backend/", "", 1)
     database_path = os.path.join(BASE_DIR, database_path)
 
 print(f"✅ Final Database Path: {database_path}")
