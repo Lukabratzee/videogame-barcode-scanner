@@ -39,8 +39,17 @@ else
 fi
 
 # Initialize database if it doesn't exist
-echo "Initializing database..."
+echo "🔍 About to initialize database..."
+echo "🔍 Current working directory: $(pwd)"
+echo "🔍 Files in current directory:"
+ls -la
+echo "🔍 Looking for database_setup.py:"
+ls -la database_setup.py
+echo "🔍 Testing python3 command:"
+python3 --version
+echo "🔍 Now running database_setup.py..."
 python3 database_setup.py
+echo "🔍 Database setup completed with exit code: $?"
 
 # Start the Flask application
 echo "Starting Flask application..."
