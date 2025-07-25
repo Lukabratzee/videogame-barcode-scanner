@@ -1095,43 +1095,47 @@ def get_consoles():
 
 @app.route("/unique_values", methods=["GET"])
 def get_unique_values():
-    value_type = request.args.get("type")
+    try:
+        value_type = request.args.get("type")
 
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(BASE_DIR, database_path)
-    conn = get_db_connection()
-    cursor = conn.cursor()
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(BASE_DIR, database_path)
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    if value_type == "publisher":
-        cursor.execute("SELECT DISTINCT publisher FROM games")
-    elif value_type == "platform":
-        cursor.execute("SELECT DISTINCT platforms FROM games")
-    elif value_type == "genre":
-        cursor.execute("SELECT DISTINCT genres FROM games")
-    elif value_type == "year":
-        cursor.execute('SELECT DISTINCT strftime("%Y", release_date) FROM games')
-    else:
-        conn.close()
-        return jsonify([]), 400
-
-    values = cursor.fetchall()
-    conn.close()
-
-    unique_values = set()
-    for value_tuple in values:
-        # Get the raw value
-        value = value_tuple[0]
-        # Skip if value is None or an empty string
-        if not value or value.strip() == "":
-            continue
-
-        if value_type == "year":
-            unique_values.add(value)
+        if value_type == "publisher":
+            cursor.execute("SELECT DISTINCT publisher FROM games")
+        elif value_type == "platform":
+            cursor.execute("SELECT DISTINCT platforms FROM games")
+        elif value_type == "genre":
+            cursor.execute("SELECT DISTINCT genres FROM games")
+        elif value_type == "year":
+            cursor.execute('SELECT DISTINCT strftime("%Y", release_date) FROM games')
         else:
-            value_list = value.split(", ")
-            unique_values.update(value_list)
+            conn.close()
+            return jsonify([]), 400
 
-    return jsonify(list(unique_values))
+        values = cursor.fetchall()
+        conn.close()
+
+        unique_values = set()
+        for value_tuple in values:
+            # Get the raw value
+            value = value_tuple[0]
+            # Skip if value is None or an empty string
+            if not value or value.strip() == "":
+                continue
+
+            if value_type == "year":
+                unique_values.add(value)
+            else:
+                value_list = value.split(", ")
+                unique_values.update(value_list)
+
+        return jsonify(list(unique_values))
+    except Exception as e:
+        print(f"Error in get_unique_values: {e}")
+        return jsonify([]), 500
 
 
 @app.route("/add_game", methods=["POST"])

@@ -45,8 +45,13 @@ def fetch_consoles():
     return response.json()
 
 def fetch_unique_values(value_type):
-    response = requests.get(f"{BACKEND_URL}/unique_values", params={"type": value_type})
-    return response.json()
+    try:
+        response = requests.get(f"{BACKEND_URL}/unique_values", params={"type": value_type})
+        response.raise_for_status()  # Raise an exception for bad status codes
+        return response.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        print(f"Error fetching unique values for {value_type}: {e}")
+        return []  # Return empty list on error
 
 def calculate_total_cost(games):
     return sum(
