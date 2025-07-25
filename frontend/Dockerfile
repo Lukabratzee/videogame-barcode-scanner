@@ -11,10 +11,12 @@ WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
-# Install system dependencies (NO Chrome - all scraping happens via backend API)
+# Install system dependencies including X11 for virtual display
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
+    xvfb \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a Python virtual environment in /venv
