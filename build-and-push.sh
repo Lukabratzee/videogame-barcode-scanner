@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Manual Build and Push Script for Video Game Catalogue
-# Use this if you want to build and push images manually instead of using GitHub Actions
+# X86 Cross-Compile Build and Push Script for Video Game Catalogue
+# Builds images specifically for AMD64 (x86) architecture for Portainer deployment
 
 set -e
 
@@ -11,12 +11,14 @@ REGISTRY="ghcr.io"
 BACKEND_IMAGE="$REGISTRY/$GITHUB_USERNAME/video-game-catalogue-backend"
 FRONTEND_IMAGE="$REGISTRY/$GITHUB_USERNAME/video-game-catalogue-frontend"
 VERSION="${1:-latest}"
+PLATFORM="linux/amd64"  # x86 only for Portainer
 
-echo "🚀 Building and pushing Video Game Catalogue images"
-echo "=================================================="
+echo "🚀 Building and pushing Video Game Catalogue images (x86 for Portainer)"
+echo "========================================================================"
 echo "Registry: $REGISTRY"
 echo "Username: $GITHUB_USERNAME"
 echo "Version: $VERSION"
+echo "Platform: $PLATFORM (x86 architecture)"
 echo ""
 
 # Check if logged in to registry
@@ -26,29 +28,28 @@ if ! docker info | grep -q "Username"; then
     exit 1
 fi
 
-# Function to build and push an image
+# Enable Docker buildx for cross-platform builds
+echo "🔧 Setting up Docker buildx for x86 cross-compilation..."
+docker buildx create --name x86-builder --driver docker-container --use 2>/dev/null || docker buildx use x86-builder
+docker buildx inspect --bootstrap
+
+# Function to build and push an x86 image
 build_and_push() {
     local context=$1
     local image_name=$2
     local dockerfile="$context/Dockerfile"
     
-    echo "🏗️ Building $image_name:$VERSION..."
+    echo "🏗️ Building x86 $image_name:$VERSION..."
     
-    # Build with build context including modules
-    docker build \
+    # Build and push x86 image
+    docker buildx build \
         -f "$dockerfile" \
         -t "$image_name:$VERSION" \
         -t "$image_name:latest" \
+        --platform "$PLATFORM" \
         --build-arg VERSION="$VERSION" \
+        --push \
         "$context"
-    
-    echo "📤 Pushing $image_name:$VERSION..."
-    docker push "$image_name:$VERSION"
-    
-    if [ "$VERSION" != "latest" ]; then
-        echo "📤 Pushing $image_name:latest..."
-        docker push "$image_name:latest"
-    fi
     
     echo "✅ Successfully built and pushed $image_name"
     echo ""
