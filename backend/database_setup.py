@@ -1,8 +1,14 @@
 import os
 import sqlite3
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-db_path = os.path.join(BASE_DIR, 'games.db')
+# Use DATABASE_PATH environment variable if set, otherwise use local directory
+if 'DATABASE_PATH' in os.environ:
+    db_path = os.environ['DATABASE_PATH']
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(BASE_DIR, 'games.db')
 
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
