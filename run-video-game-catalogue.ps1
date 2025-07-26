@@ -62,6 +62,41 @@ try {
     exit 1
 }
 
+# Check for port conflicts and offer to kill conflicting processes
+Write-Blue "🔍 Checking for port conflicts..."
+$conflicts = @()
+$ports = @(5001, 8501)
+foreach ($port in $ports) {
+    $processes = netstat -ano | Select-String ":$port " | Select-String "LISTENING"
+    if ($processes) {
+        $conflicts += $port
+        Write-Yellow "⚠️  Port $port is in use"
+    }
+}
+
+if ($conflicts.Count -gt 0) {
+    Write-Yellow "Port conflicts detected on: $($conflicts -join ', ')"
+    $response = Read-Host "Would you like to stop conflicting processes? (y/N)"
+    if ($response -match "^[Yy]$") {
+        foreach ($port in $conflicts) {
+            Write-Blue "🛑 Stopping processes on port $port..."
+            $processes = netstat -ano | Select-String ":$port " | Select-String "LISTENING"
+            foreach ($process in $processes) {
+                $pid = ($process -split '\s+')[-1]
+                try {
+                    Stop-Process -Id $pid -Force
+                    Write-Green "✅ Stopped process $pid on port $port"
+                } catch {
+                    Write-Yellow "⚠️  Could not stop process $pid (may require admin rights)"
+                }
+            }
+        }
+    } else {
+        Write-Red "❌ Cannot start application with port conflicts. Please stop the conflicting processes manually."
+        exit 1
+    }
+}
+
 # Check if docker-compose is available
 try {
     docker-compose --version | Out-Null

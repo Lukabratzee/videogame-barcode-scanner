@@ -36,6 +36,41 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
+# Check for port conflicts and offer to kill conflicting processes
+echo -e "${BLUE}🔍 Checking for port conflicts...${NC}"
+conflicts=()
+ports=(5001 8501)
+for port in "${ports[@]}"; do
+    if lsof -i ":$port" >/dev/null 2>&1; then
+        conflicts+=($port)
+        echo -e "${YELLOW}⚠️  Port $port is in use${NC}"
+    fi
+done
+
+if [ ${#conflicts[@]} -gt 0 ]; then
+    echo -e "${YELLOW}Port conflicts detected on: ${conflicts[*]}${NC}"
+    echo "Would you like to stop conflicting processes? (y/N)"
+    read -r response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        for port in "${conflicts[@]}"; do
+            echo -e "${BLUE}🛑 Stopping processes on port $port...${NC}"
+            pids=$(lsof -ti ":$port" 2>/dev/null || true)
+            if [ -n "$pids" ]; then
+                for pid in $pids; do
+                    if kill "$pid" 2>/dev/null; then
+                        echo -e "${GREEN}✅ Stopped process $pid on port $port${NC}"
+                    else
+                        echo -e "${YELLOW}⚠️  Could not stop process $pid (may require sudo)${NC}"
+                    fi
+                done
+            fi
+        done
+    else
+        echo -e "${RED}❌ Cannot start application with port conflicts. Please stop the conflicting processes manually.${NC}"
+        exit 1
+    fi
+fi
+
 # Check if docker-compose is available
 if ! command -v docker-compose >/dev/null 2>&1; then
     echo -e "${RED}❌ docker-compose is not installed. Please install it and try again.${NC}"
