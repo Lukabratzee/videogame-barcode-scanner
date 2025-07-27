@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Video Game Catalogue - Local Development Startup
-# This script runs the application locally for testing
+# Video Game Catalogue - Simple Local Test (Fixed Version)
+# Quick test setup for regional pricing feature
 
 set -e
 
@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}🎮 Video Game Catalogue - Local Development Mode${NC}"
+echo -e "${BLUE}🎮 Video Game Catalogue - Local Test (Fixed)${NC}"
 echo "=============================================="
 
 # Check if virtual environment exists
@@ -25,45 +25,9 @@ fi
 echo -e "${BLUE}🔧 Activating virtual environment...${NC}"
 source .venv/bin/activate
 
-# Check if dependencies are installed
-echo -e "${BLUE}📦 Installing/updating dependencies...${NC}"
-pip install -r backend/requirements.txt
-pip install -r frontend/requirements.txt
-
-# Check for port conflicts
-echo -e "${BLUE}🔍 Checking for port conflicts...${NC}"
-conflicts=()
-ports=(5001 8501)
-for port in "${ports[@]}"; do
-    if lsof -i ":$port" >/dev/null 2>&1; then
-        conflicts+=($port)
-        echo -e "${YELLOW}⚠️  Port $port is in use${NC}"
-    fi
-done
-
-if [ ${#conflicts[@]} -gt 0 ]; then
-    echo -e "${YELLOW}Port conflicts detected on: ${conflicts[*]}${NC}"
-    echo "Would you like to stop conflicting processes? (y/N)"
-    read -r response
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-        for port in "${conflicts[@]}"; do
-            echo -e "${BLUE}🛑 Stopping processes on port $port...${NC}"
-            pids=$(lsof -ti ":$port" 2>/dev/null || true)
-            if [ -n "$pids" ]; then
-                for pid in $pids; do
-                    if kill "$pid" 2>/dev/null; then
-                        echo -e "${GREEN}✅ Stopped process $pid on port $port${NC}"
-                    else
-                        echo -e "${YELLOW}⚠️  Could not stop process $pid (may require sudo)${NC}"
-                    fi
-                done
-            fi
-        done
-    else
-        echo -e "${RED}❌ Cannot start application with port conflicts. Please stop the conflicting processes manually.${NC}"
-        exit 1
-    fi
-fi
+# Install core dependencies only (skip problematic ones)
+echo -e "${BLUE}📦 Installing core dependencies...${NC}"
+pip install -q Flask==3.0.3 Werkzeug==3.0.3 streamlit==1.37.1 requests==2.32.3 selenium==4.23.1 undetected-chromedriver==3.5.5 webdriver-manager==4.0.2 setuptools==72.1.0 python-dotenv==1.0.0
 
 # Create config directory and file if they don't exist
 mkdir -p config data
@@ -76,15 +40,17 @@ if [ ! -f "config/config.json" ]; then
 EOF
 fi
 
+# Kill any existing processes on our ports
+echo -e "${BLUE}🔍 Cleaning up any existing processes...${NC}"
+lsof -ti :5001 | xargs kill -9 2>/dev/null || true
+lsof -ti :8501 | xargs kill -9 2>/dev/null || true
+sleep 2
+
 # Function to cleanup background processes
 cleanup() {
     echo -e "\n${YELLOW}⚠️  Cleaning up...${NC}"
-    if [ ! -z "$BACKEND_PID" ]; then
-        kill $BACKEND_PID 2>/dev/null || true
-    fi
-    if [ ! -z "$FRONTEND_PID" ]; then
-        kill $FRONTEND_PID 2>/dev/null || true
-    fi
+    lsof -ti :5001 | xargs kill -9 2>/dev/null || true
+    lsof -ti :8501 | xargs kill -9 2>/dev/null || true
     exit 0
 }
 
@@ -97,23 +63,33 @@ cd backend
 python3 database_setup.py
 cd ..
 
-# Start backend in background
+# Start backend in background with absolute path
 echo -e "${BLUE}🚀 Starting backend server on port 5001...${NC}"
 cd backend
 export BACKEND_PORT=5001
-export DATABASE_PATH="../data/games.db"
+export DATABASE_PATH="$(pwd)/../data/games.db"
+echo "Database path: $DATABASE_PATH"
 python3 app.py &
 BACKEND_PID=$!
 cd ..
 
-# Wait for backend to start
-echo -e "${BLUE}⏳ Waiting for backend to start...${NC}"
-sleep 3
-
-# Check if backend is running
-if ! curl -s http://localhost:5001/health >/dev/null 2>&1; then
-    echo -e "${YELLOW}⚠️  Backend may not be ready yet, continuing anyway...${NC}"
-fi
+# Wait for backend to be healthy
+echo -e "${BLUE}🔍 Checking backend health...${NC}"
+for i in {1..15}; do
+    if curl -s http://localhost:5001/health 2>/dev/null | grep -q '"status": "healthy"'; then
+        echo -e "${GREEN}✅ Backend is healthy!${NC}"
+        break
+    else
+        echo -e "${YELLOW}⏳ Backend not ready yet (attempt $i/15)...${NC}"
+        sleep 2
+    fi
+    if [ $i -eq 15 ]; then
+        echo -e "${RED}❌ Backend failed to become healthy${NC}"
+        echo "Backend response:"
+        curl -s http://localhost:5001/health 2>/dev/null || echo "No response from backend"
+        cleanup
+    fi
+done
 
 # Start frontend
 echo -e "${BLUE}🖥️  Starting frontend server on port 8501...${NC}"
@@ -125,8 +101,8 @@ streamlit run frontend.py --server.port=8501 --server.address=0.0.0.0 --browser.
 FRONTEND_PID=$!
 cd ..
 
-# Wait for services to be ready
-echo -e "${BLUE}⏳ Waiting for services to be ready...${NC}"
+# Wait for frontend to be ready
+echo -e "${BLUE}⏳ Waiting for frontend to be ready...${NC}"
 sleep 5
 
 echo -e "${GREEN}✅ Video Game Catalogue is running locally!${NC}"
@@ -136,10 +112,11 @@ echo -e "   Frontend: ${GREEN}http://localhost:8501${NC}"
 echo -e "   Backend:  ${GREEN}http://localhost:5001${NC}"
 echo ""
 echo -e "${BLUE}🧪 Test the new PriceCharting region feature:${NC}"
-echo "   1. Go to the frontend URL above"
+echo "   1. Go to http://localhost:8501"
 echo "   2. In the sidebar, select 'PriceCharting' as Price Source"
-echo "   3. You should see a 'PriceCharting Region' dropdown appear"
-echo "   4. Try different regions (PAL, US, Japan) to see pricing differences"
+echo "   3. You should see a 'PriceCharting Region' dropdown appear with 'PAL' as default"
+echo "   4. Try searching for a game like 'Super Mario 64' and see PAL pricing"
+echo "   5. Switch between regions (PAL, US, Japan) to compare prices"
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop both servers${NC}"
 
