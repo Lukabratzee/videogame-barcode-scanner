@@ -317,34 +317,64 @@ def main():
         st.markdown("### 🎮 VIPVGM - Video Game Music")
         st.markdown("*Listen to video game music while browsing your collection!*")
         
-        # Create a container for the iframe with a simpler approach
-        iframe_html = """
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
-            <iframe 
-                src="https://www.vipvgm.net/" 
-                width="100%" 
-                height="400" 
-                frameborder="0" 
-                scrolling="yes"
-                allow="autoplay; encrypted-media; fullscreen"
-                title="VIPVGM Video Game Music Player"
-                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
-            ></iframe>
-        </div>
-        """
+        # Initialize music player state
+        if 'music_player_loaded' not in st.session_state:
+            st.session_state.music_player_loaded = False
         
-        # Try to embed the iframe
-        try:
-            components.html(iframe_html, height=450)
-        except Exception as e:
-            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("🎵 Open VIPVGM Music Player", type="primary", key="music_player_fallback"):
-                st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
+        # Show music player toggle
+        if not st.session_state.music_player_loaded:
+            if st.button("🎵 Load Music Player", type="primary", key="load_music_player"):
+                st.session_state.music_player_loaded = True
+                st.rerun()
+        else:
+            # Create a container for the iframe with no autoplay
+            iframe_html = f"""
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <iframe 
+                    src="https://www.vipvgm.net/" 
+                    width="100%" 
+                    height="400" 
+                    frameborder="0" 
+                    scrolling="yes"
+                    allow="encrypted-media; fullscreen"
+                    title="VIPVGM Video Game Music Player"
+                    style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+                    key="music_iframe_{st.session_state.get('music_session_id', 'default')}"
+                ></iframe>
+            </div>
+            """
+            
+            # Try to embed the iframe with session persistence
+            try:
+                # Use a consistent key to prevent iframe recreation
+                if 'music_session_id' not in st.session_state:
+                    import time
+                    st.session_state.music_session_id = str(int(time.time()))
+                
+                components.html(iframe_html, height=450, key=f"music_player_{st.session_state.music_session_id}")
+                
+                # Add controls
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Restart Player", key="restart_music"):
+                        st.session_state.music_session_id = str(int(time.time()))
+                        st.rerun()
+                with col2:
+                    if st.button("❌ Close Player", key="close_music"):
+                        st.session_state.music_player_loaded = False
+                        if 'music_session_id' in st.session_state:
+                            del st.session_state.music_session_id
+                        st.rerun()
+                        
+            except Exception as e:
+                st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
+                if st.button("🎵 Open VIPVGM Music Player", type="primary", key="music_player_fallback"):
+                    st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
 
     # -------------------------
     # Global Price Source Selector
     # -------------------------
-    st.sidebar.markdown("### 💰 Price Scraping Settings")
+    st.sidebar.markdown("### 💰 Price Scraping ")
     
     # Get the current price source from URL parameters or session state
     price_options = ["eBay", "Amazon", "CeX", "PriceCharting"]
