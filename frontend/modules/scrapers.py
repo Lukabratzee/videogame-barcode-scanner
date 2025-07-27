@@ -172,42 +172,182 @@ def scrape_amazon_price(game_title):
     Opens Amazon UK's homepage, enters the game title into the search box,
     waits for any captcha to be resolved, and returns the first price element
     (converted to a float). Returns None if not found.
+    
+    Enhanced with better resource management and anti-detection measures.
     """
-    driver = get_chrome_driver()  # Use the environment-aware driver function
-
+    driver = None
     try:
-        driver.get("https://www.amazon.co.uk/")
-        time.sleep(2)
-
-        search_box = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "twotabsearchtextbox"))
-        )
-        search_box.send_keys(game_title)
-        time.sleep(1)
-        search_box.send_keys(Keys.RETURN)
-        time.sleep(10)  # Longer wait after search to allow manual captcha resolution
-
-        if "captcha" in driver.page_source.lower():
-            logging.error("Amazon CAPTCHA still present; aborting scrape.")
-            return None
-
-        price_elements = driver.find_elements(By.CSS_SELECTOR, "span.a-price-whole")
-        if price_elements:
-            price_text = price_elements[0].text.strip().replace(",", "")
+        # Get driver with enhanced options for Amazon
+        driver = get_amazon_chrome_driver()
+        
+        # Set page load timeout to prevent hanging
+        driver.set_page_load_timeout(30)
+        
+        # Navigate to Amazon UK with retry logic
+        max_retries = 2
+        for attempt in range(max_retries):
             try:
-                return float(price_text)
-            except ValueError:
-                logging.warning(f"Could not convert Amazon price text '{price_text}' to float.")
-                return None
-        else:
-            logging.warning("No price elements found on Amazon search page.")
+                logging.info(f"Attempting to load Amazon UK (attempt {attempt + 1}/{max_retries})")
+                driver.get("https://www.amazon.co.uk/")
+                break
+            except Exception as e:
+                logging.warning(f"Failed to load Amazon on attempt {attempt + 1}: {e}")
+                if attempt == max_retries - 1:
+                    raise e
+                time.sleep(2)
+        
+        # Wait for page to load and check for CAPTCHA immediately
+        time.sleep(3)
+        
+        # Check for CAPTCHA or robot detection early
+        page_source = driver.page_source.lower()
+        if any(keyword in page_source for keyword in ["captcha", "robot", "verify", "security"]):
+            logging.error("Amazon detected automation or CAPTCHA present; aborting scrape.")
             return None
+        
+        # Find search box with shorter timeout
+        try:
+            search_box = WebDriverWait(driver, 8).until(
+                EC.element_to_be_clickable((By.ID, "twotabsearchtextbox"))
+            )
+        except Exception:
+            logging.error("Could not find Amazon search box within timeout")
+            return None
+        
+        # Clear and enter search term
+        search_box.clear()
+        search_box.send_keys(game_title + " video game")  # Add context to improve results
+        time.sleep(1)
+        
+        # Submit search
+        search_box.send_keys(Keys.RETURN)
+        
+        # Wait for results with timeout
+        try:
+            WebDriverWait(driver, 15).until(
+                lambda d: "s-result-item" in d.page_source or "captcha" in d.page_source.lower()
+            )
+        except Exception:
+            logging.error("Amazon search results did not load within timeout")
+            return None
+        
+        # Check again for CAPTCHA after search
+        if "captcha" in driver.page_source.lower():
+            logging.error("Amazon CAPTCHA appeared after search; aborting scrape.")
+            return None
+        
+        # Try multiple price selectors (Amazon changes them frequently)
+        price_selectors = [
+            "span.a-price-whole",
+            ".a-price-whole", 
+            "span[class*='price-whole']",
+            ".a-price .a-offscreen",
+            "span.a-price.a-text-price.a-size-medium.a-color-base",
+            ".a-price-range .a-price.a-text-normal .a-price-whole"
+        ]
+        
+        price_found = None
+        for selector in price_selectors:
+            try:
+                price_elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                if price_elements:
+                    for element in price_elements[:3]:  # Check first 3 elements
+                        try:
+                            price_text = element.text.strip().replace(",", "")
+                            if price_text and price_text.replace(".", "").isdigit():
+                                price_found = float(price_text)
+                                logging.info(f"Found Amazon price: £{price_found} using selector: {selector}")
+                                break
+                        except (ValueError, AttributeError):
+                            continue
+                    if price_found:
+                        break
+            except Exception:
+                continue
+        
+        return price_found
 
     except Exception as e:
         logging.error(f"Error scraping Amazon: {e}")
         return None
     finally:
-        driver.quit()
+        if driver:
+            try:
+                driver.quit()
+            except Exception:
+                pass  # Ignore errors during cleanup
+
+def get_amazon_chrome_driver():
+    """
+    Get Chrome driver with enhanced options specifically for Amazon scraping.
+    Includes additional anti-detection measures.
+    """
+    if DOCKER_MODE:
+        options = Options()
+        service = ChromeService("/usr/local/bin/chromedriver")
+    else:
+        options = uc.ChromeOptions()
+        driver_path = os.getenv("CHROMEDRIVER_BIN", "/opt/homebrew/bin/chromedriver")
+        service = ChromeService(driver_path)
+    
+    # Enhanced options for Amazon
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-plugins")
+    options.add_argument("--disable-images")  # Reduce resource usage
+    options.add_argument("--disable-javascript")  # Reduce resource usage
+    options.add_argument("--disable-web-security")
+    options.add_argument("--allow-running-insecure-content")
+    options.add_argument("--ignore-certificate-errors")
+    options.add_argument("--ignore-ssl-errors")
+    options.add_argument("--ignore-certificate-errors-spki-list")
+    options.add_argument("--disable-features=VizDisplayCompositor")
+    options.add_argument("--remote-debugging-port=0")
+    options.add_argument("--disable-background-timer-throttling")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--disable-renderer-backgrounding")
+    options.add_argument("--disable-ipc-flooding-protection")
+    
+    # Memory and performance optimizations
+    options.add_argument("--memory-pressure-off")
+    options.add_argument("--max_old_space_size=4096")
+    options.add_argument("--disable-background-networking")
+    options.add_argument("--disable-background-timer-throttling")
+    options.add_argument("--disable-renderer-backgrounding")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--disable-client-side-phishing-detection")
+    
+    # Set smaller window size to reduce memory usage
+    options.add_argument("--window-size=1280,720")
+    
+    # Enhanced user agent for Amazon
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
+    
+    # Set Chrome binary path if provided
+    chrome_bin = os.getenv("CHROME_BIN")
+    if chrome_bin:
+        options.binary_location = chrome_bin
+    
+    # Force headless mode in Docker environment
+    in_docker = os.getenv("DISPLAY") or os.path.exists("/.dockerenv")
+    if in_docker or DOCKER_MODE:
+        options.add_argument("--headless=new")
+        logging.info("Amazon scraper running in Docker environment - enabling headless mode")
+    
+    try:
+        if DOCKER_MODE:
+            driver = webdriver.Chrome(service=service, options=options)
+        else:
+            driver = uc.Chrome(service=service, options=options)
+        
+        logging.info("Successfully initialized enhanced Chrome driver for Amazon")
+        return driver
+    except Exception as e:
+        logging.error(f"Failed to initialize enhanced Chrome driver for Amazon: {e}")
+        raise Exception("Could not initialize enhanced Chrome driver for Amazon")
 
 def scrape_ebay_prices(game_title):
     """
