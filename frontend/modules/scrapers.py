@@ -63,7 +63,7 @@ def get_chrome_driver():
         # Docker environment - use standard WebDriver with explicit path
         try:
             # Use system Chrome and ChromeDriver in Docker with explicit path
-            service = ChromeService("/usr/bin/chromedriver")  # Explicit path for Docker
+            service = ChromeService("/usr/local/bin/chromedriver")  # Explicit path for Docker
             driver = webdriver.Chrome(service=service, options=options)
             logging.info("Successfully initialized standard Chrome driver for Docker")
             return driver
