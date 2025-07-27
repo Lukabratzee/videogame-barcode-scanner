@@ -18,7 +18,7 @@ if PROJECT_ROOT not in sys.path:
 print("Project root added to sys.path:", PROJECT_ROOT)
 
 
-from modules.scrapers import scrape_ebay_prices, scrape_amazon_price, scrape_barcode_lookup, scrape_cex_price
+from modules.scrapers import scrape_ebay_prices, scrape_amazon_price, scrape_barcode_lookup, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price, get_pricecharting_price_by_condition
 
 # Retrieve the backend host from environment variables, default to 'localhost' if using Python locally
 backend_host = os.getenv("BACKEND_HOST", "localhost")
@@ -347,7 +347,7 @@ def main():
     st.sidebar.markdown("### 💰 Price Scraping Settings")
     
     # Get the current price source from URL parameters or session state
-    price_options = ["eBay", "Amazon", "CeX"]
+    price_options = ["eBay", "Amazon", "CeX", "PriceCharting"]
     
     # Initialize from backend if no local preference exists
     if "price_source_selection" not in st.session_state and "price_source" not in st.query_params:
@@ -404,6 +404,41 @@ def main():
         key="global_price_source",
         help="This will be used for all price scraping operations (barcode scanning, IGDB lookups, etc.)"
     )
+    
+    # Region selector for PriceCharting only
+    if global_price_source == "PriceCharting":
+        region_options = ["PAL", "US", "Japan"]
+        
+        # Initialize region selection with PAL as default
+        current_region = st.session_state.get("pricecharting_region", "PAL")
+        if current_region not in region_options:
+            current_region = "PAL"
+        
+        try:
+            region_index = region_options.index(current_region)
+        except ValueError:
+            region_index = 0
+            current_region = "PAL"
+            
+        selected_region = st.sidebar.selectbox(
+            "PriceCharting Region:",
+            region_options,
+            index=region_index,
+            key="pricecharting_region",
+            help="Choose the region for PriceCharting pricing:\n• PAL: European market prices\n• US: North American market prices\n• Japan: Japanese market prices"
+        )
+        
+        # Update session state when region changes
+        if selected_region != current_region:
+            st.session_state["pricecharting_region"] = selected_region
+        
+        # Boxed toggle for PriceCharting condition selection
+        boxed_condition = st.sidebar.checkbox(
+            "Boxed (CiB)",
+            value=st.session_state.get("pricecharting_boxed", True),
+            key="pricecharting_boxed",
+            help="• Checked: Complete in Box (CiB) pricing - includes case/box\n• Unchecked: Loose pricing - game only, no case/box\n\nDefault is CiB as most disc games have cases, but cartridge games often come loose"
+        )
     
     # Update both session state and URL parameters when selection changes
     if global_price_source != st.session_state.get("price_source_selection"):
@@ -886,6 +921,28 @@ def main():
                     scraped_price = scrape_ebay_prices(search_query)
                 elif global_price_source == "Amazon":
                     scraped_price = scrape_amazon_price(search_query)
+                elif global_price_source == "PriceCharting":
+                    # Get the selected region and boxed preference for PriceCharting
+                    selected_region = st.session_state.get("pricecharting_region", "PAL")
+                    prefer_boxed = st.session_state.get("pricecharting_boxed", True)
+                    pricecharting_data = scrape_pricecharting_price(search_query, selected_platform, selected_region)
+                    # Use condition-aware pricing based on user preference
+                    scraped_price = get_pricecharting_price_by_condition(pricecharting_data, prefer_boxed)
+                    
+                    if pricecharting_data:
+                        # Show pricing breakdown in UI with selected condition highlighted
+                        condition_text = "Boxed (CiB)" if prefer_boxed else "Loose"
+                        st.markdown(f"**Selected Condition:** {condition_text}")
+                        
+                        if pricecharting_data.get('loose_price'):
+                            marker = " ← **SELECTED**" if not prefer_boxed and scraped_price == pricecharting_data['loose_price'] else ""
+                            st.markdown(f"**PriceCharting Loose Price:** £{pricecharting_data['loose_price']:.2f}{marker}")
+                        if pricecharting_data.get('cib_price'):
+                            marker = " ← **SELECTED**" if prefer_boxed and scraped_price == pricecharting_data['cib_price'] else ""
+                            st.markdown(f"**PriceCharting CIB Price:** £{pricecharting_data['cib_price']:.2f}{marker}")
+                        if pricecharting_data.get('new_price'):
+                            marker = " ← **SELECTED**" if scraped_price == pricecharting_data['new_price'] else ""
+                            st.markdown(f"**PriceCharting New Price:** £{pricecharting_data['new_price']:.2f}{marker}")
                 else:  # CeX
                     scraped_price = scrape_cex_price(search_query)
                 
@@ -986,6 +1043,28 @@ def main():
                 scraped_price = scrape_ebay_prices(search_query)
             elif global_price_source == "Amazon":
                 scraped_price = scrape_amazon_price(search_query)
+            elif global_price_source == "PriceCharting":
+                # Get the selected region and boxed preference for PriceCharting
+                selected_region = st.session_state.get("pricecharting_region", "PAL")
+                prefer_boxed = st.session_state.get("pricecharting_boxed", True)
+                pricecharting_data = scrape_pricecharting_price(search_query, selected_platform_by_id, selected_region)
+                # Use condition-aware pricing based on user preference
+                scraped_price = get_pricecharting_price_by_condition(pricecharting_data, prefer_boxed)
+                
+                if pricecharting_data:
+                    # Show pricing breakdown in UI with selected condition highlighted
+                    condition_text = "Boxed (CiB)" if prefer_boxed else "Loose"
+                    st.markdown(f"**Selected Condition:** {condition_text}")
+                    
+                    if pricecharting_data.get('loose_price'):
+                        marker = " ← **SELECTED**" if not prefer_boxed and scraped_price == pricecharting_data['loose_price'] else ""
+                        st.markdown(f"**PriceCharting Loose Price:** £{pricecharting_data['loose_price']:.2f}{marker}")
+                    if pricecharting_data.get('cib_price'):
+                        marker = " ← **SELECTED**" if prefer_boxed and scraped_price == pricecharting_data['cib_price'] else ""
+                        st.markdown(f"**PriceCharting CIB Price:** £{pricecharting_data['cib_price']:.2f}{marker}")
+                    if pricecharting_data.get('new_price'):
+                        marker = " ← **SELECTED**" if scraped_price == pricecharting_data['new_price'] else ""
+                        st.markdown(f"**PriceCharting New Price:** £{pricecharting_data['new_price']:.2f}{marker}")
             else:  # CeX
                 scraped_price = scrape_cex_price(search_query)
                 

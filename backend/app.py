@@ -72,20 +72,20 @@ print("Project root added to sys.path:", PROJECT_ROOT)
 # Import scraper functions from the modules directory
 # Try different import paths for Docker vs local environments
 try:
-    from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price
+    from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
     print("✅ Successfully imported scrapers from modules.scrapers")
 except ImportError:
     try:
         # Fallback for Docker environment
         sys.path.insert(0, '/app')
-        from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price
+        from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
         print("✅ Successfully imported scrapers from /app/modules.scrapers")
     except ImportError:
         # Last resort - try absolute import from project root
         modules_path = os.path.join(PROJECT_ROOT, 'modules')
         if modules_path not in sys.path:
             sys.path.insert(0, modules_path)
-        from scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price
+        from scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
         print("✅ Successfully imported scrapers with absolute path")
 
 from flask import Flask, request, jsonify, Response
@@ -149,7 +149,7 @@ def load_config():
             with open(CONFIG_FILE, 'r') as f:
                 config = json.load(f)
                 # Ensure price_source exists and is valid
-                if "price_source" not in config or config["price_source"] not in ["eBay", "Amazon", "CeX"]:
+                if "price_source" not in config or config["price_source"] not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
                     config["price_source"] = "eBay"
                 return config
         except (json.JSONDecodeError, IOError):
@@ -174,7 +174,7 @@ def get_price_source():
 
 def set_price_source(price_source):
     """Set price source preference"""
-    if price_source not in ["eBay", "Amazon", "CeX"]:
+    if price_source not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
         return False
     
     config = load_config()
@@ -682,6 +682,16 @@ class GameScan:
                 scraped_price = scrape_amazon_price(search_query)
             elif price_source == "CeX":
                 scraped_price = scrape_cex_price(search_query)
+            elif price_source == "PriceCharting":
+                # Default to PAL region for backend calls
+                pricecharting_data = scrape_pricecharting_price(search_query, None, "PAL")
+                # Use the best representative price (prioritizes loose -> CIB -> new)
+                scraped_price = get_best_pricecharting_price(pricecharting_data)
+                
+                if pricecharting_data:
+                    logging.debug(f"PriceCharting pricing breakdown - Loose: £{pricecharting_data.get('loose_price')}, "
+                                f"CIB: £{pricecharting_data.get('cib_price')}, New: £{pricecharting_data.get('new_price')}")
+                    logging.debug(f"Selected price: £{scraped_price}")
             else:  # Default to eBay
                 scraped_price = scrape_ebay_prices(search_query)
             
