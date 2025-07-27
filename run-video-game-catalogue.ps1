@@ -114,7 +114,7 @@ Write-Blue "Creating configuration files..."
 # Create config.json
 $configContent = @"
 {
-  "price_source": "eBay"
+  "price_source": "PriceCharting"
 }
 "@
 $configContent | Out-File -FilePath "$ConfigDir\config.json" -Encoding UTF8
