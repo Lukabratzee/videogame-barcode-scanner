@@ -21,4 +21,3 @@ __pycache__/
 page_source.html
 
 # Temporary Docker files
-docker-compose-standalone.yml
