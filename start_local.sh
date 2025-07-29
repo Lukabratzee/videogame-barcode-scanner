@@ -110,14 +110,7 @@ echo ""
 echo "🌐 Access the application at:"
 echo -e "   Frontend: ${GREEN}http://localhost:8501${NC}"
 echo -e "   Backend:  ${GREEN}http://localhost:5001${NC}"
-echo ""
-echo -e "${BLUE}🧪 Test the new PriceCharting region feature:${NC}"
-echo "   1. Go to http://localhost:8501"
-echo "   2. In the sidebar, select 'PriceCharting' as Price Source"
-echo "   3. You should see a 'PriceCharting Region' dropdown appear with 'PAL' as default"
-echo "   4. Try searching for a game like 'Super Mario 64' and see PAL pricing"
-echo "   5. Switch between regions (PAL, US, Japan) to compare prices"
-echo ""
+
 echo -e "${YELLOW}Press Ctrl+C to stop both servers${NC}"
 
 # Keep script running
