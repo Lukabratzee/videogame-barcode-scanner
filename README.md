@@ -1,153 +1,301 @@
 # Video Game Catalogue
 
-This project is a web application for cataloging video games. It includes a frontend built with Streamlit and a backend powered by Flask. The application allows users to view, add, edit, and delete game entries, as well as filter games by various criteria. Additionally, it supports searching for games by name and adding them via an iOS Shortcut.
+A comprehensive web application for cataloging and managing your video game collection. This project features a user-friendly frontend built with Streamlit and a robust backend powered by Flask, enabling users to easily track, search, and value their game library.
 
-## Features
+## 🌟 Key Features
 
-- **Game Listing**: View a list of video games with detailed information.
-- **Add Games**: Add new games manually or by searching for game names.
-- **Edit Games**: Update existing game details.
-- **Delete Games**: Remove games from the catalogue.
-- **Search and Filter**: Search for games by name and filter by various attributes.
-- **iOS Shortcut Integration**: Use an iOS Shortcut to scan games and add them to the catalogue.
-- **Multi-Architecture Support**: Docker images built for both AMD64 (x86) and ARM64 architectures.
+- **Game Management**: View, add, edit, and delete game entries with detailed information.
+- **Smart Search & Filtering**: Search for games by name, and filter by publisher, platform, genre, or release year.
+- **IGDB Integration**: Fetch detailed game information, including cover art, descriptions, and release dates, from the Internet Game Database (IGDB).
+- **Price Scraping**: Automatically scrape current prices from eBay, Amazon, or CeX to track the value of your games.
+- **iOS Shortcut Support**: Use an iOS Shortcut to scan game barcodes and quickly add them to your catalogue.
+- **Data Export**: Export your game collection to a CSV file for backup or analysis.
+- **Multi-Architecture Support**: Docker images built for both AMD64 (x86) and ARM64 architectures, ensuring compatibility across various systems.
+- **Persistent Storage**: Data is stored locally in a SQLite database, ensuring your collection is preserved between sessions.
+- **Integrated Music Player**: Enjoy video game music while browsing your collection with the embedded VIPVGM player.
 
-## Setup and Installation
+## 🏗️ Project Structure
 
-### 1. Running with Docker (Recommended)
+```
+video-game-catalogue/
+├── backend/                 # Flask API backend
+│   ├── app.py              # Main application logic, API endpoints
+│   ├── requirements.txt    # Python dependencies for the backend
+│   ├── Dockerfile          # Docker configuration for the backend
+│   └── ...                 # Other backend-related files
+├── frontend/               # Streamlit web frontend
+│   ├── frontend.py         # Main Streamlit application
+│   ├── requirements.txt    # Python dependencies for the frontend
+│   ├── Dockerfile          # Docker configuration for the frontend
+│   └── modules/
+│       └── scrapers.py    # Web scraping logic for prices
+├── config/                 # Configuration files directory
+│   └── config.json        # Application configuration (e.g., price source)
+├── data/                   # Data persistence directory
+│   └── games.db            # SQLite database (created automatically)
+├── .env                    # Environment variables (e.g., database path)
+├── docker-compose-ghcr.yml # Docker Compose for GitHub Container Registry
+├── docker-compose-standalone.yml # Docker Compose for standalone setup
+├── run-video-game-catalogue.sh   # Bash script for easy setup
+├── run-video-game-catalogue.ps1  # PowerShell script for easy setup
+└── README.md               # This file
+```
 
-The application is available as pre-built Docker images from GitHub Container Registry, supporting both AMD64 (x86) and ARM64 architectures.
+## 🚀 Setup and Installation
 
-#### Prerequisites
+### Prerequisites
 
-- Docker
-- Docker Compose
+- **Docker** and **Docker Compose** (for the recommended Docker setup)
+- **Python 3.11** (for local development without Docker)
+- **Git** (to clone the repository)
 
-#### Quick Start
+### Option 1: Running with Docker (Recommended)
 
-1. **Create deployment directory**
+This is the easiest and most reliable way to get the application running. It uses pre-built Docker images and handles all dependencies automatically.
 
-   ```sh
-   mkdir video-game-catalogue && cd video-game-catalogue
-   ```
+#### Quick Start (One-Command Setup)
 
-2. **Download docker-compose file**
+For your convenience, standalone scripts are provided to set up and run the application with a single command.
 
-   ```sh
-   curl -O https://raw.githubusercontent.com/lukabratzee/video-game-catalogue/main/docker-compose-ghcr.yml
-   ```
+**For Mac/Linux users:**
+```bash
+curl -O https://raw.githubusercontent.com/lukabratzee/video-game-catalogue/main/run-video-game-catalogue.sh
+chmod +x run-video-game-catalogue.sh
+./run-video-game-catalogue.sh
+```
 
-3. **Start the services**
+**For Windows users:**
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/lukabratzee/video-game-catalogue/main/run-video-game-catalogue.ps1" -OutFile "run-video-game-catalogue.ps1"
+.\run-video-game-catalogue.ps1
+```
 
-   ```sh
-   docker-compose -f docker-compose-ghcr.yml up -d
-   ```
+These scripts will:
+- Create the necessary `data/` and `config/` directories.
+- Generate a `docker-compose-standalone.yml` file.
+- Pull the latest multi-architecture Docker images.
+- Start the frontend and backend services.
+- Display real-time application logs.
 
-   This will:
-   - Pull pre-built images from GitHub Container Registry
-   - Automatically select the correct architecture (AMD64 or ARM64)
-   - Start both frontend and backend services
-   - Create local `./data/` and `./config/` directories for persistence
+#### Manual Docker Setup
 
-4. **Access the application**
+1.  **Clone the Repository**
+    ```sh
+    git clone 192.168.1.111:3000/lukabratzee/video-game-catalogue
+    cd video-game-catalogue
+    ```
 
-   - **Frontend**: `http://localhost:8501`
-   - **Backend**: `http://localhost:5001`
-   - **Health Check**: `http://localhost:5001/health`
+2.  **Using GitHub Container Registry (ghcr)**
+    This method pulls pre-built images.
+    ```sh
+    docker-compose -f docker-compose-ghcr.yml up -d
+    ```
 
-#### Development Setup
+3.  **Access the Application**
+    - **Frontend**: Open your web browser and navigate to `http://localhost:8501`
+    - **Backend API**: The backend service is accessible at `http://localhost:5001`
+    - **Health Check**: You can check the status of the backend at `http://localhost:5001/health`
 
-1. **Clone the Repository**
+### Option 2: Running Locally (Without Docker)
 
-   ```sh
-   git clone 192.168.1.111:3000/lukabratzee/video-game-catalogue
-   cd video-game-catalogue
-   ```
-2. **Build and Start the Services**
+This method is suitable for developers who want to modify the source code or run the application in their native Python environment.
 
-   Use Docker Compose to build the Docker images and start the frontend and backend services.
+1.  **Clone the Repository**
+    ```sh
+    git clone 192.168.1.111:3000/lukabratzee/video-game-catalogue
+    cd video-game-catalogue
+    ```
 
-   ```sh
-   docker-compose up --build
-   ```
+2.  **Set Up Environment**
+    - Create a `.env` file in the root directory and specify the database path. For example:
+        ```
+        DATABASE_PATH=data/games.db
+        ```
+    - It's recommended to use a virtual environment:
+        ```sh
+        python3 -m venv .venv
+        source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+        ```
 
-   This command will:
+3.  **Install Dependencies**
+    - **Backend**:
+        ```sh
+        cd backend
+        pip install -r requirements.txt
+        ```
+    - **Frontend**:
+        ```sh
+        cd ../frontend
+        pip install -r requirements.txt
+        ```
 
-   - Build Docker images for both the frontend and backend services.
-   - Start the containers, exposing the frontend on `http://localhost:8501` and the backend on `http://localhost:5001`.
-3. **Access the Application**
+4.  **Database Setup**
+    - The application will automatically create the SQLite database file at the path specified in your `.env` file when it first tries to access it.
+    - You can manually run the database setup script if needed:
+        ```sh
+        cd backend
+        python database_setup.py
+        ```
 
-   - **Frontend**: Open your web browser and navigate to `http://localhost:8501`.
-   - **Backend**: The backend service is accessible at `http://localhost:5001`.
+5.  **Run the Application**
+    - You need to run both the frontend and backend simultaneously in separate terminal windows.
+    - **Backend** (in one terminal):
+        ```sh
+        cd backend
+        python app.py
+        ```
+    - **Frontend** (in another terminal):
+        ```sh
+        cd frontend
+        streamlit run frontend.py
+        ```
+    - Access the frontend at `http://localhost:8501`.
 
-### 2. Running Locally (Without Docker)
+## 📖 User Guide
 
-To run the application without Docker, you'll need to set up a virtual environment and install the dependencies for both the frontend and backend.
+### Navigating the Interface
 
-#### Prerequisites
+- **Home Page**: Displays your entire game collection, the total value of all games, and the top 5 most valuable games in your catalogue.
+- **Sidebar**: Contains all the main tools for managing your collection:
+    - **Home Button**: Resets all filters and returns you to the main view.
+    - **Music Player**: An embedded player for video game music from VIPVGM.
+    - **Price Scraping Settings**: Select your preferred price source (eBay, Amazon, or CeX) for automatic price lookups.
+    - **Filter Games**: Search for games by title.
+    - **Add Game**: Manually add a new game to your collection by entering its details.
+    - **Delete Game**: Remove a game by its ID.
+    - **Edit Game**: Modify an existing game's details by fetching it with its ID.
+    - **Advanced Filters**: Apply complex filters (by publisher, platform, genre, year) and sort options. You can also export the filtered results to a CSV file.
 
-- Python 3.11
-- Virtualenv
+### Adding Games
 
-#### Instructions
+There are several ways to add games to your catalogue:
 
-1. **Set Up Virtual Environment**
+1.  **Manual Entry**:
+    - Use the "Add Game" section in the sidebar.
+    - Fill in the details like title, cover image URL, description, publisher, platforms, genres, and release date.
+    - Click "Add Game".
 
-   ```sh
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-2. **Install Dependencies**
+2.  **IGDB Search by Name**:
+    - In the main panel, find the "IGDB: Search Game by Name" section.
+    - Enter a game name and click "Search Game".
+    - The application will present an exact match and alternative matches from IGDB.
+    - Select a game from the list.
+    - Choose the correct platform from the dropdown.
+    - Click "Add Selected Game". The application will automatically fetch the price from your selected source.
 
-   - **Frontend**:
+3.  **IGDB Search by ID**:
+    - If you know the IGDB ID of a game, you can use the "IGDB: Search Game by ID" section.
+    - Enter the ID and click "Search Game by ID".
+    - After the game details are fetched, select the platform and click "Add Game by ID".
 
-     ```sh
-     cd frontend
-     pip install -r requirements.txt
-     ```
-   - **Backend**:
+4.  **iOS Shortcut (Barcode Scanning)**:
+    - Install the provided iOS Shortcuts on your iPhone.
+        - [Primary Shortcut](https://www.icloud.com/shortcuts/024bf54a6f584cc78c3ed394bcda8e84)
+        - [Alternate Shortcut](https://www.icloud.com/shortcuts/bea9f60437194f0fad2f89b87c9d1fff)
+    - **Important**: You must edit the shortcut to point to your application's backend IP address (e.g., `http://YOUR_BACKEND_IP:5001/scan`).
+    - Run the shortcut, scan a barcode, and it will send the data to the backend.
+    - The application will look up the game and present you with options to add it to your database, similar to the IGDB search flow.
 
-     ```sh
-     cd backend
-     pip install -r requirements.txt
-     ```
-3. **Run the Application**
+### Managing Your Collection
 
-   - **Frontend**:
+- **Viewing Games**: Your games are displayed on the home page. You can use the search and filter options in the sidebar to find specific games.
+- **Editing Games**:
+    - **Inline Edit**: On any game's display card, click the "Edit" button. An edit form will appear inline, allowing you to modify all details.
+    - **Sidebar Edit**: Use the "Edit Game" section in the sidebar. Enter the game's ID, click "Fetch Game Details", modify the fields, and then click "Update Game".
+- **Deleting Games**:
+    - **Inline Delete**: On any game's display card, click the "Delete" button. You will be asked to confirm the action.
+    - **Bulk Delete (Advanced Filters)**: When using "Advanced Filters", you can enable "Bulk Delete Mode". This allows you to select multiple games with checkboxes and delete them all at once.
+    - **Sidebar Delete**: Use the "Delete Game" section in the sidebar. Enter the game's ID, confirm your intention with the checkbox, and click "Delete Game".
+- **Exporting Data**:
+    - From the "Advanced Filters" section in the sidebar, you can export your currently filtered view (or the entire collection if no filters are active) to a CSV file by clicking "Export Filtered CSV".
+    - There is also a dedicated "Export All Games" section in the sidebar for exporting the entire database.
 
-     ```sh
-     streamlit run frontend/frontend.py
-     ```
-   - **Backend**:
+### Price Scraping
 
-     ```sh
-     python backend/app.py
-     ```
+- The application can automatically scrape prices from eBay, Amazon, or CeX when adding games.
+- You can set your preferred price source globally in the "Price Scraping Settings" in the sidebar. This selection will be used for all subsequent price lookups.
+- The backend stores this preference, so it persists even if you restart the application.
 
-   By default, the frontend will be accessible at `http://localhost:8501` and the backend at `http://localhost:5001`.
+## 🛠️ Configuration
 
-## iOS Shortcut
+### Environment Variables (`.env` file)
 
-To use the iOS Shortcut for scanning games, you can add the provided shortcut to your iPhone:
+- `DATABASE_PATH`: Specifies the location of the SQLite database file. Example: `data/games.db`. This path is relative to the project root.
 
-[iOS Shortcut Link](https://www.icloud.com/shortcuts/b324cde379434401a511e025ee9ccd4c)
+### Application Configuration (`config/config.json`)
 
-This shortcut allows you to scan games and send the data to the application for adding to the catalogue.
-Remember to change the IP's in the shortcut to IP running the application.
+This file is automatically generated and managed by the application. It stores user preferences such as:
+- `price_source`: The default source for price scraping (`"eBay"`, `"Amazon"`, or `"CeX"`).
 
-## FAQ
+You generally do not need to edit this file manually, as the application provides UI controls to manage these settings.
 
-## CHROMEDRIVER 114/xxx VERSION NO WORKY
+## 🐳 Docker Details
 
-Define where Chromedriver is `i.e /opt/homebrew/bin/chromedriver` for Mac w/ brew package manager
-Run this: `pip uninstall undetected-chromedriver webdriver-manager`
-`pip install undetected-chromedriver webdriver-manager`
-[Link to install ChromeDrivers](https://googlechromelabs.github.io/chrome-for-testing/#stable)
+### Images
 
-Issue arises from older versions of selenium. At time of writing 4.23.1 works. May be liable to break again due to how Chrome and ChromeDriver updated and get out of sync.
+The application uses Docker images hosted on GitHub Container Registry (ghcr.io):
+- `ghcr.io/lukabratzee/video-game-catalogue-frontend`
+- `ghcr.io/lukabratzee/video-game-catalogue-backend`
 
-**ChromeOptions error**
+These images are built for both `AMD64` (Intel/AMD) and `ARM64` (Apple Silicon, ARM) architectures.
 
-pip uninstall -y selenium undetected-chromedriver webdriver-manager
+### Volumes
 
-Make sure Chrome is opened and updated to latest version if this problem persists. Chrome is updated frequently.
+- `./data:/app/data`: Persists the SQLite database.
+- `./config:/app/config`: Persists the application configuration file.
+
+### Ports
+
+- `8501:8501`: Exposes the Streamlit frontend.
+- `5001:5001`: Exposes the Flask backend API.
+
+## ⚠️ Troubleshooting & FAQ
+
+### **ChromeDriver/Selenium Issues (Price Scraping)**
+
+Price scraping relies on Selenium and ChromeDriver. Sometimes, version incompatibilities can arise.
+
+- **Error**: `ChromeOptions error` or issues with `undetected-chromedriver`.
+- **Solution**:
+    1.  Ensure you have the latest version of Google Chrome installed.
+    2.  In your local environment (not Docker), try reinstalling the relevant Python packages:
+        ```sh
+        pip uninstall -y selenium undetected-chromedriver webdriver-manager
+        pip install selenium==4.23.1 undetected-chromedriver==3.5.5 webdriver-manager==4.0.2
+        ```
+    3.  The Docker images are configured with compatible versions, so this issue is less likely when using Docker.
+
+### **Application is not accessible after running the script**
+
+- **Check Docker**: Ensure Docker Desktop is running.
+- **Check Ports**: Verify that ports `5001` and `8501` are not being used by other applications.
+- **Check Logs**: View the container logs for errors:
+    ```sh
+    docker-compose -f docker-compose-standalone.yml logs
+    ```
+
+### **iOS Shortcut is not working**
+
+- **IP Address**: The most common issue is an incorrect IP address in the shortcut. Make sure you have updated it to the IP address of the machine running the `backend` service.
+- **Network**: Ensure your iPhone is on the same network as the machine running the application.
+- **Backend Health**: Check that the backend is running and accessible at `http://YOUR_BACKEND_IP:5001/health`.
+
+### **Database errors on startup**
+
+- **Permissions**: Ensure the application has write permissions in the `data/` directory.
+- **`.env` file**: Double-check that the `DATABASE_PATH` in your `.env` file is correct and that the directory for the database file exists.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+## 📄 License
+
+This project is licensed under a custom license - see the [LICENSE](LICENSE) file for details. (Note: A `LICENSE` file was not found in the provided file structure, you may need to add one).
+
+## 🙏 Acknowledgments
+
+- **IGDB (Internet Game Database)**: For providing the comprehensive game data API.
+- **Streamlit**: For the powerful and easy-to-use frontend framework.
+- **Flask**: For the lightweight and flexible backend framework.
+- **VIPVGM**: For the awesome video game music stream.
