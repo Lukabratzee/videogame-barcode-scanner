@@ -1,0 +1,52 @@
+services:
+  backend:
+    image: lukabratzee/video-game-catalogue-backend:latest
+    pull_policy: always
+    platform: linux/amd64
+    container_name: video-game-catalogue-backend-debug
+    ports:
+      - "5002:5001"
+    environment:
+      - DATABASE_PATH=/app/data/games.db
+      - BACKEND_PORT=5002
+      - DOCKER_ENV=true
+      - PYTHONUNBUFFERED=1
+      - DEBUG=true
+    volumes:
+      - /root/docker/video-game-catalogue/data:/app/data:rw
+      - /root/docker/video-game-catalogue/config:/app/config:rw
+    # Simplified health check for debugging
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep app.py"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: "no"  # Don't restart so we can see the logs
+
+  frontend:
+    image: lukabratzee/video-game-catalogue-frontend:latest
+    pull_policy: always
+    platform: linux/amd64
+    container_name: video-game-catalogue-frontend-debug
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_HOST=backend
+      - BACKEND_PORT=5002
+      - FRONTEND_PORT=8501
+    # Remove dependency for now to test backend separately
+    # depends_on:
+    #   backend:
+    #     condition: service_healthy
+    restart: "no"
+
+volumes:
+  data:
+    driver: local
+  config:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
