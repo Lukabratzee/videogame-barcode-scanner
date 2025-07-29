@@ -504,24 +504,45 @@ def generate_random_id():
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint for Docker/Portainer monitoring"""
+    health_data = {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "python_version": sys.version,
+        "working_directory": os.getcwd(),
+        "database_path": database_path,
+    }
+    
     try:
+        # Check if database file exists
+        health_data["database_exists"] = os.path.exists(database_path)
+        health_data["database_readable"] = os.access(database_path, os.R_OK) if os.path.exists(database_path) else False
+        health_data["database_writable"] = os.access(database_path, os.W_OK) if os.path.exists(database_path) else False
+        
         # Check database connectivity
         conn = sqlite3.connect(database_path)
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
+        cursor.execute("SELECT COUNT(*) FROM games")
+        game_count = cursor.fetchone()[0]
         conn.close()
         
-        return jsonify({
-            "status": "healthy",
-            "database": "connected",
-            "timestamp": time.time()
-        }), 200
+        health_data["database"] = "connected"
+        health_data["game_count"] = game_count
+        
+        return jsonify(health_data), 200
     except Exception as e:
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e),
-            "timestamp": time.time()
-        }), 503
+        health_data["status"] = "unhealthy"
+        health_data["error"] = str(e)
+        health_data["error_type"] = type(e).__name__
+        
+        # Additional debug info on failure
+        try:
+            health_data["database_dir_exists"] = os.path.exists(os.path.dirname(database_path))
+            health_data["database_dir_writable"] = os.access(os.path.dirname(database_path), os.W_OK) if os.path.exists(os.path.dirname(database_path)) else False
+        except:
+            pass
+            
+        return jsonify(health_data), 503
 
 class GameScan:
     response_data = None  # Class variable to store response data
