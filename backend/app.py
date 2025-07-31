@@ -1447,5 +1447,459 @@ def update_game_price(game_id):
         logging.error(f"Error updating game price: {e}")
         return jsonify({"error": str(e)}), 500
 
+# -------------------------
+# Gallery API Endpoints - Phase 1
+# -------------------------
+
+@app.route('/api/gallery/games', methods=['GET'])
+def get_gallery_games():
+    """
+    Get paginated gallery view of games with enhanced metadata and filtering
+    
+    Query parameters:
+    - page: Page number (default: 1)
+    - per_page: Games per page (default: 20, max: 100)
+    - title: Filter by title (partial match)
+    - platform: Filter by platform
+    - genre: Filter by genre
+    - tags: Filter by tags (comma-separated)
+    - year_min: Minimum release year
+    - year_max: Maximum release year
+    - completion_status: Filter by completion status
+    - sort: Sort order (title_asc, title_desc, date_desc, date_asc, rating_desc, rating_asc, price_desc, price_asc, priority_desc)
+    """
+    try:
+        # Parse query parameters
+        page = int(request.args.get('page', 1))
+        per_page = min(int(request.args.get('per_page', 20)), 100)  # Cap at 100
+        
+        # Filter parameters
+        title_filter = request.args.get('title', '').strip()
+        platform_filter = request.args.get('platform', '').strip()
+        genre_filter = request.args.get('genre', '').strip()
+        tags_filter = request.args.get('tags', '').strip()
+        year_min = request.args.get('year_min')
+        year_max = request.args.get('year_max')
+        completion_status = request.args.get('completion_status', '').strip()
+        sort_order = request.args.get('sort', 'title_asc')
+        
+        # Convert tags filter to list
+        tags_list = [tag.strip() for tag in tags_filter.split(',') if tag.strip()] if tags_filter else []
+        
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Build the base query with JOINs for gallery metadata and tags
+        base_query = """
+        FROM games g
+        LEFT JOIN game_gallery_metadata ggm ON g.id = ggm.game_id
+        LEFT JOIN game_tag_associations gta ON g.id = gta.game_id
+        LEFT JOIN game_tags gt ON gta.tag_id = gt.id
+        """
+        
+        # Build WHERE conditions
+        where_conditions = []
+        params = []
+        
+        if title_filter:
+            where_conditions.append("g.title LIKE ?")
+            params.append(f"%{title_filter}%")
+        
+        if platform_filter:
+            # Platform filtering with support for both string and JSON array data
+            # Handle both simple strings and JSON arrays
+            where_conditions.append("""
+                (g.platforms IS NOT NULL AND (
+                    g.platforms = ? OR
+                    (g.platforms LIKE '[%' AND EXISTS (
+                        SELECT 1 FROM json_each(g.platforms) 
+                        WHERE json_each.value = ?
+                    ))
+                ))
+            """)
+            params.extend([platform_filter, platform_filter])
+        
+        if genre_filter:
+            where_conditions.append("g.genres LIKE ?")
+            params.append(f"%{genre_filter}%")
+        
+        if tags_list:
+            # For tags, we need to find games that have ALL the specified tags
+            tag_placeholders = ','.join(['?' for _ in tags_list])
+            where_conditions.append(f"""
+                g.id IN (
+                    SELECT gta2.game_id 
+                    FROM game_tag_associations gta2 
+                    JOIN game_tags gt2 ON gta2.tag_id = gt2.id 
+                    WHERE gt2.tag_name IN ({tag_placeholders})
+                    GROUP BY gta2.game_id 
+                    HAVING COUNT(DISTINCT gt2.tag_name) = ?
+                )
+            """)
+            params.extend(tags_list)
+            params.append(len(tags_list))
+        
+        if year_min:
+            where_conditions.append("CAST(substr(g.release_date, 1, 4) AS INTEGER) >= ?")
+            params.append(int(year_min))
+        
+        if year_max:
+            where_conditions.append("CAST(substr(g.release_date, 1, 4) AS INTEGER) <= ?")
+            params.append(int(year_max))
+        
+        if completion_status:
+            where_conditions.append("ggm.completion_status = ?")
+            params.append(completion_status)
+        
+        # Combine WHERE conditions
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions)
+        
+        # Count total games matching filters
+        count_query = f"SELECT COUNT(DISTINCT g.id) {base_query} {where_clause}"
+        cursor.execute(count_query, params)
+        total_games = cursor.fetchone()[0]
+        
+        # Calculate pagination
+        total_pages = (total_games + per_page - 1) // per_page
+        offset = (page - 1) * per_page
+        
+        # Build sort order
+        sort_mapping = {
+            'title_asc': 'g.title ASC',
+            'title_desc': 'g.title DESC',
+            'date_desc': 'g.release_date DESC',
+            'date_asc': 'g.release_date ASC',
+            'rating_desc': 'ggm.personal_rating DESC',
+            'rating_asc': 'ggm.personal_rating ASC',
+            'price_desc': 'g.average_price DESC',
+            'price_asc': 'g.average_price ASC',
+            'priority_desc': 'ggm.display_priority DESC'
+        }
+        
+        order_by = sort_mapping.get(sort_order, 'g.title ASC')
+        
+        # Main query to fetch games with gallery metadata
+        main_query = f"""
+        SELECT DISTINCT
+            g.id,
+            g.title,
+            g.cover_image,
+            g.description,
+            g.publisher,
+            g.platforms,
+            g.genres,
+            g.series,
+            g.release_date,
+            g.average_price,
+            ggm.completion_status,
+            ggm.personal_rating,
+            ggm.play_time_hours,
+            ggm.notes,
+            ggm.display_priority,
+            ggm.favorite,
+            ggm.date_acquired,
+            ggm.date_completed
+        {base_query}
+        {where_clause}
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+        """
+        
+        cursor.execute(main_query, params + [per_page, offset])
+        games_data = cursor.fetchall()
+        
+        # Process games and add tags
+        games = []
+        for game_row in games_data:
+            game_id = game_row[0]
+            
+            # Get tags for this game
+            tags_query = """
+            SELECT gt.tag_name 
+            FROM game_tag_associations gta 
+            JOIN game_tags gt ON gta.tag_id = gt.id 
+            WHERE gta.game_id = ?
+            ORDER BY gt.tag_name
+            """
+            cursor.execute(tags_query, (game_id,))
+            tags = [row[0] for row in cursor.fetchall()]
+            
+            # Parse release year
+            release_year = None
+            if game_row[8]:  # release_date
+                try:
+                    release_year = int(game_row[8][:4])
+                except (ValueError, TypeError):
+                    pass
+            
+            # Format platform (take first platform if multiple)
+            platform = ""
+            if game_row[5]:  # platforms
+                try:
+                    platforms = json.loads(game_row[5])
+                    if isinstance(platforms, list) and platforms:
+                        platform = platforms[0]
+                    elif isinstance(platforms, str):
+                        platform = platforms
+                except (json.JSONDecodeError, TypeError):
+                    platform = str(game_row[5])
+            
+            game = {
+                'id': game_id,
+                'title': game_row[1],
+                'cover_image': game_row[2],
+                'description': game_row[3],
+                'publisher': game_row[4],
+                'platform': platform,  # Single platform for display
+                'platforms': game_row[5],  # Full platforms data
+                'genres': game_row[6],
+                'series': game_row[7],
+                'release_date': game_row[8],
+                'release_year': release_year,
+                'average_price': game_row[9],
+                'completion_status': game_row[10],
+                'personal_rating': game_row[11],
+                'play_time_hours': game_row[12],
+                'notes': game_row[13],
+                'display_priority': game_row[14],
+                'is_favorite': bool(game_row[15]),
+                'date_acquired': game_row[16],
+                'date_completed': game_row[17],
+                'tags': tags
+            }
+            games.append(game)
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'games': games,
+            'pagination': {
+                'current_page': page,
+                'per_page': per_page,
+                'total_games': total_games,
+                'total_pages': total_pages,
+                'has_prev': page > 1,
+                'has_next': page < total_pages
+            },
+            'filters_applied': {
+                'title': title_filter,
+                'platform': platform_filter,
+                'genre': genre_filter,
+                'tags': tags_list,
+                'year_min': year_min,
+                'year_max': year_max,
+                'completion_status': completion_status,
+                'sort': sort_order
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/gallery/game/<int:game_id>', methods=['GET'])
+def get_gallery_game_detail(game_id):
+    """Get detailed information for a single game including gallery metadata"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Get game with gallery metadata
+        query = """
+        SELECT 
+            g.id, g.title, g.cover_image, g.description, g.publisher,
+            g.platforms, g.genres, g.series, g.release_date, g.average_price,
+            ggm.completion_status, ggm.personal_rating, ggm.play_time_hours,
+            ggm.notes, ggm.display_priority, ggm.favorite,
+            ggm.date_acquired, ggm.date_completed
+        FROM games g
+        LEFT JOIN game_gallery_metadata ggm ON g.id = ggm.game_id
+        WHERE g.id = ?
+        """
+        
+        cursor.execute(query, (game_id,))
+        game_row = cursor.fetchone()
+        
+        if not game_row:
+            return jsonify({
+                'success': False,
+                'error': 'Game not found'
+            }), 404
+        
+        # Get tags for this game
+        tags_query = """
+        SELECT gt.id, gt.tag_name, gt.tag_description 
+        FROM game_tag_associations gta 
+        JOIN game_tags gt ON gta.tag_id = gt.id 
+        WHERE gta.game_id = ?
+        ORDER BY gt.tag_name
+        """
+        cursor.execute(tags_query, (game_id,))
+        tags = [{'id': row[0], 'name': row[1], 'description': row[2]} for row in cursor.fetchall()]
+        
+        # Parse release year
+        release_year = None
+        if game_row[8]:  # release_date
+            try:
+                release_year = int(game_row[8][:4])
+            except (ValueError, TypeError):
+                pass
+        
+        game = {
+            'id': game_row[0],
+            'title': game_row[1],
+            'cover_image': game_row[2],
+            'description': game_row[3],
+            'publisher': game_row[4],
+            'platforms': game_row[5],
+            'genres': game_row[6],
+            'series': game_row[7],
+            'release_date': game_row[8],
+            'release_year': release_year,
+            'average_price': game_row[9],
+            'gallery_metadata': {
+                'completion_status': game_row[10],
+                'personal_rating': game_row[11],
+                'play_time_hours': game_row[12],
+                'notes': game_row[13],
+                'display_priority': game_row[14],
+                'is_favorite': bool(game_row[15]),
+                'date_acquired': game_row[16],
+                'date_completed': game_row[17]
+            },
+            'tags': tags
+        }
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'game': game
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/gallery/filters', methods=['GET'])
+def get_gallery_filters():
+    """Get all available filter options for the gallery"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Get unique platforms from both string and JSON data
+        cursor.execute("""
+            SELECT DISTINCT platforms 
+            FROM games 
+            WHERE platforms IS NOT NULL AND platforms != '' AND platforms != '__PLACEHOLDER__'
+            ORDER BY platforms
+        """)
+        platform_rows = cursor.fetchall()
+        platforms = []
+        for row in platform_rows:
+            platform_data = row[0]
+            if platform_data.startswith('['):
+                # Handle JSON array data
+                try:
+                    parsed_data = json.loads(platform_data)
+                    if isinstance(parsed_data, list):
+                        platforms.extend(parsed_data)
+                    elif isinstance(parsed_data, str):
+                        platforms.append(parsed_data)
+                except (json.JSONDecodeError, TypeError):
+                    # If JSON parsing fails, treat as string
+                    platforms.append(platform_data)
+            else:
+                # Handle simple string data
+                if ',' in platform_data:
+                    # Split comma-separated platforms
+                    split_platforms = [p.strip() for p in platform_data.split(',') if p.strip()]
+                    platforms.extend(split_platforms)
+                else:
+                    platforms.append(platform_data.strip())
+        
+        # Remove duplicates and filter out empty entries
+        unique_platforms = []
+        for platform in platforms:
+            platform = platform.strip()
+            if platform and platform not in unique_platforms:
+                unique_platforms.append(platform)
+        
+        platforms = sorted(unique_platforms)
+        
+        # Get unique genres  
+        cursor.execute("""
+            SELECT DISTINCT genres 
+            FROM games 
+            WHERE genres IS NOT NULL AND genres != ''
+            ORDER BY genres
+        """)
+        genre_rows = cursor.fetchall()
+        genres = []
+        for row in genre_rows:
+            try:
+                genre_data = json.loads(row[0])
+                if isinstance(genre_data, list):
+                    genres.extend(genre_data)
+                elif isinstance(genre_data, str):
+                    genres.append(genre_data)
+            except (json.JSONDecodeError, TypeError):
+                genres.append(str(row[0]))
+        genres = sorted(list(set(genres)))
+        
+        # Get available tags
+        cursor.execute("""
+            SELECT tag_name 
+            FROM game_tags 
+            ORDER BY tag_name
+        """)
+        tags = [row[0] for row in cursor.fetchall()]
+        
+        # Get release years
+        cursor.execute("""
+            SELECT DISTINCT CAST(substr(release_date, 1, 4) AS INTEGER) as year
+            FROM games 
+            WHERE release_date IS NOT NULL 
+            AND release_date != '' 
+            AND length(release_date) >= 4
+            AND substr(release_date, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
+            ORDER BY year
+        """)
+        release_years = [row[0] for row in cursor.fetchall()]
+        
+        # Get completion statuses
+        cursor.execute("""
+            SELECT DISTINCT completion_status 
+            FROM game_gallery_metadata 
+            WHERE completion_status IS NOT NULL AND completion_status != ''
+            ORDER BY completion_status
+        """)
+        completion_statuses = [row[0] for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'platforms': platforms,
+            'genres': genres,  
+            'tags': tags,
+            'release_years': release_years,
+            'completion_statuses': completion_statuses
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)

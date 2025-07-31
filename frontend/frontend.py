@@ -121,6 +121,29 @@ def scan_game(barcode):
     return response.json()
 
 # -------------------------
+# Gallery API Helper Functions
+# -------------------------
+
+def fetch_gallery_games(filters=None, page=1, per_page=20):
+    """Fetch games for gallery display with pagination and filtering"""
+    params = {"page": page, "per_page": per_page}
+    if filters:
+        params.update(filters)
+    response = requests.get(f"{BACKEND_URL}/api/gallery/games", params=params)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return {"games": [], "total_games": 0, "total_pages": 0}
+
+def fetch_gallery_filters():
+    """Fetch available filter options for gallery"""
+    response = requests.get(f"{BACKEND_URL}/api/gallery/filters")
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return {"tags": [], "platforms": [], "publishers": [], "genres": [], "release_years": []}
+
+# -------------------------
 # CSS Styling for Layout
 # -------------------------
 st.markdown(
@@ -168,6 +191,68 @@ st.markdown(
         font-size: 0.9em;
         opacity: 0.9;
         margin-bottom: 15px;
+    }
+    
+    /* Gallery-specific styles */
+    .gallery-tile {
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 15px;
+        background: linear-gradient(145deg, #f0f2f6, #ffffff);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+        text-align: center;
+        height: 400px;
+        overflow: hidden;
+        cursor: pointer;
+    }
+    .gallery-tile:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        border-color: #4CAF50;
+    }
+    .gallery-tile img {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        transition: transform 0.3s ease;
+    }
+    .gallery-tile:hover img {
+        transform: scale(1.05);
+    }
+    .gallery-tag {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 9px;
+        margin: 1px;
+        color: white;
+        font-weight: bold;
+    }
+    .gallery-grid {
+        display: grid;
+        gap: 15px;
+        margin: 20px 0;
+    }
+    .gallery-controls {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 15px 0;
+        border-left: 4px solid #4CAF50;
+    }
+    .filter-chip {
+        display: inline-block;
+        background: #e3f2fd;
+        color: #1976d2;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        margin: 2px;
+        border: 1px solid #bbdefb;
     }
     </style>
     """,
@@ -310,6 +395,649 @@ def display_game_item(game):
                 st.error("Failed to update game")
 
 # -------------------------
+# Game Detail Page Function  
+# -------------------------
+def game_detail_page():
+    """Individual game detail page with external links and comprehensive information"""
+    game = st.session_state.get("selected_game_detail")
+    if not game:
+        st.error("No game selected. Returning to gallery...")
+        st.session_state["page"] = "gallery"
+        st.rerun()
+        return
+    
+    # Header with back button
+    col_back, col_title = st.columns([1, 4])
+    with col_back:
+        if st.button("⬅️ Back to Gallery", key="back_to_gallery"):
+            st.session_state["page"] = "gallery"
+            st.rerun()
+    
+    with col_title:
+        st.title(game.get("title", "Unknown Game"))
+    
+    # Main layout: Image + Details
+    col_image, col_details = st.columns([1, 2])
+    
+    with col_image:
+        # Game cover image
+        cover_url = game.get("cover_image", "")
+        if cover_url and cover_url.startswith("//"):
+            cover_url = f"https:{cover_url}"
+        elif not cover_url:
+            cover_url = "https://via.placeholder.com/400x600?text=No+Image"
+        
+        st.image(cover_url, caption=game.get("title", "Unknown Game"), use_column_width=True)
+        
+        # Price and rating section
+        st.markdown("### 💰 Price & Rating")
+        price = game.get("average_price")
+        if price:
+            st.metric("Current Price", f"£{price:.2f}")
+        else:
+            st.info("No price data available")
+        
+        # Personal rating
+        personal_rating = game.get("personal_rating")
+        if personal_rating:
+            stars = "⭐" * personal_rating + "☆" * (10 - personal_rating)
+            st.markdown(f"**Personal Rating:** {stars} ({personal_rating}/10)")
+        
+        # Completion status
+        completion_status = game.get("completion_status", "not_started")
+        status_icons = {
+            "not_started": "⏸️ Not Started",
+            "in_progress": "▶️ In Progress", 
+            "completed": "✅ Completed",
+            "abandoned": "❌ Abandoned"
+        }
+        st.markdown(f"**Status:** {status_icons.get(completion_status, completion_status)}")
+        
+        # Play time
+        play_time = game.get("play_time_hours")
+        if play_time:
+            st.markdown(f"**Play Time:** {play_time} hours")
+    
+    with col_details:
+        # Game information
+        st.markdown("### 📖 Game Information")
+        
+        # Basic details in organized format
+        col_left, col_right = st.columns(2)
+        
+        with col_left:
+            st.markdown(f"**Platform:** {game.get('platform', 'Unknown')}")
+            
+            # Release date and year
+            release_date = game.get("release_date")
+            release_year = game.get("release_year")
+            if release_date:
+                st.markdown(f"**Release Date:** {release_date}")
+            elif release_year:
+                st.markdown(f"**Release Year:** {release_year}")
+            
+            # Publisher
+            publisher = game.get("publisher", "")
+            if publisher:
+                if isinstance(publisher, str):
+                    st.markdown(f"**Publisher:** {publisher}")
+                elif isinstance(publisher, list):
+                    st.markdown(f"**Publisher:** {', '.join(publisher)}")
+        
+        with col_right:
+            # Series
+            series = game.get("series", "")
+            if series and series != "":
+                if isinstance(series, str):
+                    st.markdown(f"**Series:** {series}")
+                elif isinstance(series, list) and series:
+                    st.markdown(f"**Series:** {', '.join(series)}")
+            
+            # Genres
+            genres = game.get("genres", "")
+            if genres:
+                if isinstance(genres, str):
+                    st.markdown(f"**Genres:** {genres}")
+                elif isinstance(genres, list):
+                    st.markdown(f"**Genres:** {', '.join(genres)}")
+            
+            # Favorite status
+            is_favorite = game.get("is_favorite", False)
+            if is_favorite:
+                st.markdown("**❤️ Favorite Game**")
+        
+        # Description
+        description = game.get("description", "")
+        if description and description.strip():
+            st.markdown("### 📝 Description")
+            st.markdown(description)
+        
+        # Tags
+        tags = game.get("tags", [])
+        if tags:
+            st.markdown("### 🏷️ Tags")
+            tag_colors = ["#ff6b6b", "#4ecdc4", "#45b7d1", "#96ceb4", "#ffeaa7", "#dda0dd", "#f093fb", "#74b9ff"]
+            
+            tag_html = ""
+            for i, tag in enumerate(tags):
+                color = tag_colors[i % len(tag_colors)]
+                tag_html += f'<span style="background: {color}; color: white; padding: 4px 8px; border-radius: 15px; font-size: 12px; margin: 3px; display: inline-block;">{tag}</span> '
+            
+            st.markdown(tag_html, unsafe_allow_html=True)
+        
+        # Personal notes
+        notes = game.get("notes", "")
+        if notes and notes.strip():
+            st.markdown("### 📝 Personal Notes")
+            st.markdown(notes)
+    
+    # YouTube Trailer Section
+    st.markdown("---")
+    st.markdown("### 🎬 Game Trailer & Videos")
+    
+    # Create search query for YouTube trailer
+    game_title = game.get("title", "")
+    platform = game.get("platform", "")
+    search_query = f"{game_title} {platform}".strip()
+    
+    # Create YouTube search URLs
+    trailer_query = f"{search_query} trailer".replace(" ", "+")
+    gameplay_query = f"{search_query} gameplay".replace(" ", "+")
+    review_query = f"{search_query} review".replace(" ", "+")
+    
+    # Display video section
+    col_video_main, col_video_links = st.columns([3, 1])
+    
+    with col_video_main:
+        st.markdown("#### 🎥 Video Content")
+        st.markdown(f"**Search for videos of:** *{game_title}*")
+        
+        # Since we can't reliably embed specific YouTube videos without API,
+        # we'll provide organized video search links
+        video_tabs = st.tabs(["🎬 Trailers", "🎮 Gameplay", "⭐ Reviews"])
+        
+        with video_tabs[0]:
+            trailer_url = f"https://www.youtube.com/results?search_query={trailer_query}"
+            st.markdown(f"""
+            <div style="text-align: center; padding: 20px; background: #f0f0f0; border-radius: 10px; margin: 10px 0;">
+                <h4>🎬 Game Trailers</h4>
+                <p>Click below to search for official trailers and promotional videos</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.link_button(f"🎬 Search '{game_title}' Trailers", trailer_url, use_container_width=True)
+        
+        with video_tabs[1]:
+            gameplay_url = f"https://www.youtube.com/results?search_query={gameplay_query}"
+            st.markdown(f"""
+            <div style="text-align: center; padding: 20px; background: #f0f0f0; border-radius: 10px; margin: 10px 0;">
+                <h4>🎮 Gameplay Videos</h4>
+                <p>Watch gameplay footage and walkthroughs</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.link_button(f"🎮 Search '{game_title}' Gameplay", gameplay_url, use_container_width=True)
+        
+        with video_tabs[2]:
+            review_url = f"https://www.youtube.com/results?search_query={review_query}"
+            st.markdown(f"""
+            <div style="text-align: center; padding: 20px; background: #f0f0f0; border-radius: 10px; margin: 10px 0;">
+                <h4>⭐ Game Reviews</h4>
+                <p>Professional and community reviews</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.link_button(f"⭐ Search '{game_title}' Reviews", review_url, use_container_width=True)
+    
+    with col_video_links:
+        st.markdown("#### 🔗 Quick Video Links")
+        
+        # Twitch streams
+        twitch_url = f"https://www.twitch.tv/search?term={search_query.replace(' ', '+')}"
+        st.link_button("� Twitch Streams", twitch_url, use_container_width=True)
+        
+        # Gaming video sites
+        gamespot_url = f"https://www.gamespot.com/search/?q={search_query.replace(' ', '+')}"
+        st.link_button("📺 GameSpot Videos", gamespot_url, use_container_width=True)
+        
+        ign_url = f"https://www.ign.com/search?q={search_query.replace(' ', '+')}"
+        st.link_button("🎮 IGN Videos", ign_url, use_container_width=True)
+        
+        # General video search
+        google_video_url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}+video&tbm=vid"
+        st.link_button("🔍 Google Videos", google_video_url, use_container_width=True)
+
+    # External links section
+    st.markdown("---")
+    st.markdown("### 🔗 External Links & Resources")
+    
+    # Create search queries for external sites
+    url_safe_query = search_query.replace(" trailer", "").replace(" ", "+")
+    
+    # External links in organized columns
+    col_guides, col_stores, col_social = st.columns(3)
+    
+    with col_guides:
+        st.markdown("#### 📚 Guides & Info")
+        
+        # GameFAQs
+        gamefaqs_url = f"https://gamefaqs.gamespot.com/search?game={url_safe_query}"
+        st.link_button("🎮 GameFAQs", gamefaqs_url, use_container_width=True)
+        
+        # PowerPyx (for trophies/achievements)
+        powerpyx_url = f"https://www.powerpyx.com/?s={url_safe_query}"
+        st.link_button("🏆 PowerPyx Guides", powerpyx_url, use_container_width=True)
+        
+        # Metacritic
+        metacritic_url = f"https://www.metacritic.com/search/{url_safe_query}/"
+        st.link_button("📊 Metacritic", metacritic_url, use_container_width=True)
+    
+    with col_stores:
+        st.markdown("#### 🛒 Digital Stores")
+        
+        # Platform-specific stores
+        if "PlayStation" in platform or "PS" in platform:
+            ps_store_url = f"https://store.playstation.com/en-gb/search/{url_safe_query}"
+            st.link_button("🎮 PlayStation Store", ps_store_url, use_container_width=True)
+        
+        if "Xbox" in platform:
+            xbox_url = f"https://www.microsoft.com/en-us/search/shop/games?q={url_safe_query}"
+            st.link_button("� Xbox Store", xbox_url, use_container_width=True)
+        
+        if "Nintendo" in platform or "Switch" in platform or "Game Boy" in platform:
+            nintendo_url = f"https://www.nintendo.com/us/search/?q={url_safe_query}"
+            st.link_button("🎮 Nintendo eShop", nintendo_url, use_container_width=True)
+        
+        # Steam (for PC games or general search)
+        steam_url = f"https://store.steampowered.com/search/?term={url_safe_query}"
+        st.link_button("🟦 Steam Store", steam_url, use_container_width=True)
+        
+        # General digital stores
+        gog_url = f"https://www.gog.com/en/games?search={url_safe_query}"
+        st.link_button("� GOG.com", gog_url, use_container_width=True)
+    
+    with col_social:
+        st.markdown("#### 🌐 Community & Social")
+        
+        # Reddit search
+        reddit_url = f"https://www.reddit.com/search/?q={url_safe_query}"
+        st.link_button("🔴 Reddit Discussions", reddit_url, use_container_width=True)
+        
+        # Twitch
+        twitch_url = f"https://www.twitch.tv/search?term={url_safe_query}"
+        st.link_button("� Twitch Streams", twitch_url, use_container_width=True)
+        
+        # GameDev/Creator social
+        twitter_url = f"https://twitter.com/search?q={url_safe_query}"
+        st.link_button("🐦 Twitter/X Search", twitter_url, use_container_width=True)
+    
+    # Price comparison section
+    st.markdown("---")
+    st.markdown("### 💸 Price Comparison")
+    
+    price_col1, price_col2, price_col3 = st.columns(3)
+    
+    with price_col1:
+        # eBay
+        ebay_url = f"https://www.ebay.co.uk/sch/i.html?_nkw={url_safe_query}"
+        st.link_button("🛒 eBay UK", ebay_url, use_container_width=True)
+        
+        # Amazon
+        amazon_url = f"https://www.amazon.co.uk/s?k={url_safe_query}"
+        st.link_button("📦 Amazon UK", amazon_url, use_container_width=True)
+    
+    with price_col2:
+        # CeX
+        cex_url = f"https://uk.webuy.com/search?stext={url_safe_query}"
+        st.link_button("💿 CeX UK", cex_url, use_container_width=True)
+        
+        # PriceCharting
+        pricecharting_url = f"https://www.pricecharting.com/search-products?type=prices&q={url_safe_query}"
+        st.link_button("📈 PriceCharting", pricecharting_url, use_container_width=True)
+    
+    with price_col3:
+        # GAME
+        game_uk_url = f"https://www.game.co.uk/webapp/wcs/stores/servlet/SearchDisplay?searchTerm={url_safe_query}"
+        st.link_button("🎮 GAME UK", game_uk_url, use_container_width=True)
+        
+        # Argos
+        argos_url = f"https://www.argos.co.uk/search/{url_safe_query}/"
+        st.link_button("🏪 Argos", argos_url, use_container_width=True)
+    
+    # Quick actions
+    st.markdown("---")
+    st.markdown("### ⚡ Quick Actions")
+    
+    action_col1, action_col2, action_col3 = st.columns(3)
+    
+    with action_col1:
+        if st.button("✏️ Edit Game Details", key="edit_from_detail", use_container_width=True):
+            st.session_state["editing_game_id"] = game["id"]
+            st.session_state["page"] = "home"
+            st.rerun()
+    
+    with action_col2:
+        if st.button("💰 Update Price", key="update_price_from_detail", use_container_width=True):
+            # You could implement a price update function here
+            st.info("Price update functionality can be implemented here")
+    
+    with action_col3:
+        if st.button("🏷️ Manage Tags", key="manage_tags_from_detail", use_container_width=True):
+            # You could implement tag management here
+            st.info("Tag management functionality can be implemented here")
+
+# -------------------------
+# Gallery Page Function
+# -------------------------
+def gallery_page():
+    """Gallery page with visual game display, filtering, and 3D-ready layout"""
+    st.title("🖼️ Game Gallery")
+    st.markdown("*Visual game collection browser with advanced filtering*")
+    
+    # Initialize gallery session state
+    if "gallery_page" not in st.session_state:
+        st.session_state["gallery_page"] = 1
+    if "gallery_per_page" not in st.session_state:
+        st.session_state["gallery_per_page"] = 20
+    if "gallery_filters" not in st.session_state:
+        st.session_state["gallery_filters"] = {}
+    
+    # Load filter options
+    filter_options = fetch_gallery_filters()
+    
+    # Create filter interface in sidebar
+    st.sidebar.markdown("### 🎯 Gallery Filters")
+    
+    # Search by title
+    title_search = st.sidebar.text_input("🔍 Search titles", key="gallery_title_search")
+    
+    # Tag filters (multi-select)
+    available_tags = filter_options.get("tags", [])
+    selected_tags = st.sidebar.multiselect(
+        "🏷️ Tags", 
+        available_tags,
+        key="gallery_tags_filter",
+        help="Select multiple tags to filter games"
+    )
+    
+    # Platform filter
+    available_platforms = filter_options.get("platforms", [])
+    selected_platform = st.sidebar.selectbox(
+        "🎮 Platform", 
+        ["All"] + available_platforms,
+        key="gallery_platform_filter"
+    )
+    
+    # Genre filter
+    available_genres = filter_options.get("genres", [])
+    selected_genre = st.sidebar.selectbox(
+        "🎲 Genre", 
+        ["All"] + available_genres,
+        key="gallery_genre_filter"
+    )
+    
+    # Release year range
+    available_years = filter_options.get("release_years", [])
+    if available_years:
+        min_year, max_year = min(available_years), max(available_years)
+        year_range = st.sidebar.slider(
+            "📅 Release Year Range",
+            min_value=min_year,
+            max_value=max_year,
+            value=(min_year, max_year),
+            key="gallery_year_range"
+        )
+    else:
+        year_range = None
+    
+    # Gallery view options
+    st.sidebar.markdown("### 📊 Display Options")
+    per_page = st.sidebar.selectbox(
+        "Games per page",
+        [12, 20, 40, 60],
+        index=1,  # Default to 20
+        key="gallery_per_page_select"
+    )
+    
+    # Grid columns selector
+    grid_cols = st.sidebar.selectbox(
+        "Grid columns",
+        [3, 4, 5, 6],
+        index=1,  # Default to 4 columns
+        key="gallery_grid_cols"
+    )
+    
+    # Clear filters button
+    if st.sidebar.button("🗑️ Clear All Filters", key="gallery_clear_filters"):
+        # Reset page to 1
+        st.session_state["gallery_page"] = 1
+        # Use a rerun approach instead of directly modifying session state
+        for key in list(st.session_state.keys()):
+            if key.startswith("gallery_") and key not in ["gallery_page", "gallery_per_page"]:
+                del st.session_state[key]
+        st.rerun()
+    
+    # -------------------------
+    # Gallery Music Player Section
+    # -------------------------
+    st.sidebar.markdown("---")  # Add a separator line
+    music_expander = st.sidebar.expander("🎵 Video Game Music Player")
+    with music_expander:
+        st.markdown("### 🎮 VIPVGM - Video Game Music")
+        st.markdown("*Listen to video game music while browsing your collection!*")
+        
+        # Create a container for the iframe without autoplay
+        iframe_html = """
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+            <iframe 
+                src="https://www.vipvgm.net/" 
+                width="100%" 
+                height="400" 
+                frameborder="0" 
+                scrolling="yes"
+                allow="encrypted-media; fullscreen"
+                title="VIPVGM Video Game Music Player"
+                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+            ></iframe>
+        </div>
+        """
+        
+        # Try to embed the iframe
+        try:
+            components.html(iframe_html, height=450)
+        except Exception as e:
+            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
+            if st.button("🎵 Open VIPVGM Music Player", type="primary", key="gallery_music_player_fallback"):
+                st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
+    
+    # Build filters dictionary
+    filters = {}
+    if title_search:
+        filters["title"] = title_search
+    if selected_tags:
+        filters["tags"] = selected_tags
+    if selected_platform != "All":
+        filters["platform"] = selected_platform
+    if selected_genre != "All":
+        filters["genre"] = selected_genre
+    if year_range and year_range != (min_year, max_year):
+        filters["year_min"] = year_range[0]
+        filters["year_max"] = year_range[1]
+    
+    # Update session state
+    st.session_state["gallery_filters"] = filters
+    st.session_state["gallery_per_page"] = per_page
+    
+    # Fetch gallery data
+    gallery_data = fetch_gallery_games(
+        filters=filters,
+        page=st.session_state["gallery_page"],
+        per_page=per_page
+    )
+    
+    games = gallery_data.get("games", [])
+    pagination = gallery_data.get("pagination", {})
+    total_games = pagination.get("total_games", 0)
+    total_pages = pagination.get("total_pages", 1)
+    
+    # Display results summary
+    col_summary, col_stats = st.columns([2, 1])
+    with col_summary:
+        if filters:
+            active_filters = []
+            if title_search:
+                active_filters.append(f"Title: '{title_search}'")
+            if selected_tags:
+                active_filters.append(f"Tags: {', '.join(selected_tags)}")
+            if selected_platform != "All":
+                active_filters.append(f"Platform: {selected_platform}")
+            if selected_genre != "All":
+                active_filters.append(f"Genre: {selected_genre}")
+            if year_range and year_range != (min_year, max_year):
+                active_filters.append(f"Years: {year_range[0]}-{year_range[1]}")
+            
+            st.markdown(f"**Found {total_games} games** matching: {' | '.join(active_filters)}")
+        else:
+            st.markdown(f"**Showing all {total_games} games** in your collection")
+    
+    with col_stats:
+        if games:
+            # Calculate total value of filtered games
+            total_value = sum(
+                game.get("average_price", 0) or 0 
+                for game in games
+            )
+            st.metric("Page Value", f"£{total_value:.2f}")
+    
+    # Display games in grid layout
+    if games:
+        # Create grid layout
+        rows = [games[i:i + grid_cols] for i in range(0, len(games), grid_cols)]
+        
+        for row in rows:
+            cols = st.columns(grid_cols)
+            for idx, game in enumerate(row):
+                if idx < len(cols):
+                    display_gallery_tile(cols[idx], game)
+        
+        # Pagination controls
+        if total_pages > 1:
+            st.markdown("---")
+            col_prev, col_info, col_next = st.columns([1, 2, 1])
+            
+            with col_prev:
+                if st.session_state["gallery_page"] > 1:
+                    if st.button("⬅️ Previous", key="gallery_prev"):
+                        st.session_state["gallery_page"] -= 1
+                        st.rerun()
+            
+            with col_info:
+                st.markdown(f"**Page {st.session_state['gallery_page']} of {total_pages}**")
+                
+                # Page jump selector
+                page_options = list(range(1, total_pages + 1))
+                if len(page_options) <= 10:  # Only show if reasonable number of pages
+                    selected_page = st.selectbox(
+                        "Jump to page:",
+                        page_options,
+                        index=st.session_state["gallery_page"] - 1,
+                        key="gallery_page_jump"
+                    )
+                    if selected_page != st.session_state["gallery_page"]:
+                        st.session_state["gallery_page"] = selected_page
+                        st.rerun()
+            
+            with col_next:
+                if st.session_state["gallery_page"] < total_pages:
+                    if st.button("Next ➡️", key="gallery_next"):
+                        st.session_state["gallery_page"] += 1
+                        st.rerun()
+    else:
+        st.info("🎮 No games found matching your filters. Try adjusting the criteria above.")
+        
+        if filters:
+            st.markdown("""
+            **Tips for better results:**
+            - Try removing some filters
+            - Check spelling in the search box
+            - Use broader tag selections
+            """)
+
+def display_gallery_tile(column, game):
+    """Display individual game tile in gallery grid"""
+    with column:
+        # Game cover image
+        cover_url = game.get("cover_image", "")
+        if cover_url and cover_url.startswith("//"):
+            cover_url = f"https:{cover_url}"
+        elif not cover_url:
+            cover_url = "https://via.placeholder.com/200x280?text=No+Image"
+        
+        # Create clickable tile with hover effect
+        st.markdown(f"""
+        <div style="
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 15px;
+            background: linear-gradient(145deg, #f0f2f6, #ffffff);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+            text-align: center;
+            height: 400px;
+            overflow: hidden;
+        " onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+            <img src="{cover_url}" style="
+                width: 100%;
+                height: 200px;
+                object-fit: cover;
+                border-radius: 8px;
+                margin-bottom: 10px;
+            ">
+            <div style="height: 140px; overflow: hidden;">
+        """, unsafe_allow_html=True)
+        
+        # Clickable game title that opens detail page
+        if st.button(f"🎮 {game.get('title', 'Unknown Game')}", 
+                    key=f"title_{game['id']}", 
+                    help="Click to view game details",
+                    use_container_width=True):
+            st.session_state["selected_game_detail"] = game
+            st.session_state["page"] = "game_detail"
+            st.rerun()
+        
+        # Platform display
+        platform_text = game.get('platform', 'Unknown Platform')
+        st.markdown(f'<p style="margin: 5px 0; font-size: 11px; color: #666; line-height: 1.1;">{platform_text}</p>', unsafe_allow_html=True)
+        
+        # Tags display
+        tags = game.get("tags", [])
+        if tags:
+            # Show first 3 tags
+            display_tags = tags[:3]
+            tag_colors = ["#ff6b6b", "#4ecdc4", "#45b7d1", "#96ceb4", "#ffeaa7", "#dda0dd"]
+            
+            tag_html = ""
+            for i, tag in enumerate(display_tags):
+                color = tag_colors[i % len(tag_colors)]
+                tag_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin: 1px;">{tag}</span> '
+            
+            if len(tags) > 3:
+                tag_html += f'<span style="color: #999; font-size: 9px;">+{len(tags) - 3} more</span>'
+            
+            st.markdown(f'<div style="margin: 5px 0; line-height: 1.4;">{tag_html}</div>', unsafe_allow_html=True)
+        
+        # Price and year
+        price = game.get("average_price")
+        year = game.get("release_year")
+        
+        price_text = f"£{price:.2f}" if price else "No price"
+        year_text = f" • {year}" if year else ""
+        
+        st.markdown(f"""
+            <p style="margin: 5px 0; font-size: 11px; color: #333; font-weight: bold;">{price_text}{year_text}</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+# -------------------------
 # Main Application Function
 # -------------------------
 def main():
@@ -318,16 +1046,29 @@ def main():
     if "bulk_delete_mode" not in st.session_state:
         st.session_state["bulk_delete_mode"] = False
 
-    # Initialize session state for filter mode
+    # Initialize session state for filter mode and page navigation
     if "filters_active" not in st.session_state:
         st.session_state["filters_active"] = False
+    if "page" not in st.session_state:
+        st.session_state["page"] = "home"
 
     # -------------------------
-    # Sidebar: Home Button
+    # Sidebar: Navigation Buttons
     # -------------------------
-    home_clicked = st.sidebar.button("🏠 Home", type="primary", use_container_width=True)
+    col_home, col_gallery = st.sidebar.columns(2)
+    
+    with col_home:
+        home_clicked = st.button("🏠 Home", type="primary", use_container_width=True)
+    with col_gallery:
+        gallery_clicked = st.button("🖼️ Gallery", type="secondary", use_container_width=True)
+    
+    if gallery_clicked:
+        st.session_state["page"] = "gallery"
+        st.rerun()
+    
     if home_clicked:
-        # Preserve the price source selection
+        # Switch to home page and preserve the price source selection
+        st.session_state["page"] = "home"
         price_source_backup = st.session_state.get("price_source_selection", "eBay")
         
         # Clear all filters and reset to home state
@@ -353,6 +1094,18 @@ def main():
         st.rerun()
 
     st.sidebar.markdown("---")  # Add a separator line
+
+    # -------------------------
+    # Page Routing Logic
+    # -------------------------
+    if st.session_state.get("page") == "gallery":
+        gallery_page()
+        return  # Exit main function to show only gallery page
+    elif st.session_state.get("page") == "game_detail":
+        game_detail_page()
+        return  # Exit main function to show only game detail page
+    
+    # Otherwise, show the home page content below...
 
     # -------------------------
     # Sidebar: Music Player Section
