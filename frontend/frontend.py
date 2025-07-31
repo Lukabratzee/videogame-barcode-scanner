@@ -72,6 +72,25 @@ def update_game(game_id, game_data):
     response = requests.put(f"{BACKEND_URL}/update_game/{game_id}", json=game_data)
     return response.status_code == 200
 
+def update_game_price(game_id):
+    """Update the price of a game using the current price source configuration"""
+    response = requests.post(f"{BACKEND_URL}/update_game_price/{game_id}")
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return None
+
+def get_price_source():
+    """Get the current price source from backend configuration"""
+    try:
+        response = requests.get(f"{BACKEND_URL}/price_source")
+        if response.status_code == 200:
+            return response.json().get("price_source", "eBay")
+        else:
+            return "eBay"  # fallback
+    except:
+        return "eBay"  # fallback
+
 def search_game_by_name(game_name):
     response = requests.post(f"{BACKEND_URL}/search_game_by_name", json={"game_name": game_name})
     if response.status_code == 200:
@@ -217,6 +236,32 @@ def display_game_item(game):
             # Edit button as before.
             if st.button("Edit", key=f"edit_{game.get('id')}"):
                 st.session_state.editing_game_id = game.get("id")
+
+            # Update Price button with confirmation
+            if st.button("Update Price", key=f"update_price_{game.get('id')}"):
+                st.session_state[f"confirm_update_price_{game.get('id')}"] = True
+
+            # If the confirmation flag is set, display confirmation buttons.
+            if st.session_state.get(f"confirm_update_price_{game.get('id')}", False):
+                current_price_source = get_price_source()
+                st.write(f"Update price using **{current_price_source}**?")
+                confirm_col, cancel_col = st.columns(2)
+                with confirm_col:
+                    if st.button("Yes", key=f"yes_update_price_{game.get('id')}"):
+                        with st.spinner(f"Updating price using {current_price_source}..."):
+                            result = update_game_price(game.get("id"))
+                            if result:
+                                st.success(f"✅ Price updated!")
+                                old_price = f"£{result['old_price']:.2f}" if result['old_price'] else "Not set"
+                                new_price = f"£{result['new_price']:.2f}" if result['new_price'] else "Not found"
+                                st.info(f"**{result['game_title']}**: {old_price} → {new_price}")
+                            else:
+                                st.error("Failed to update price!")
+                        st.session_state[f"confirm_update_price_{game.get('id')}"] = False
+                        st.rerun()  # Refresh to show updated price
+                with cancel_col:
+                    if st.button("Cancel", key=f"cancel_update_price_{game.get('id')}"):
+                        st.session_state[f"confirm_update_price_{game.get('id')}"] = False
 
     # Inline edit form (only shown if this game is marked for editing)
     if st.session_state.get("editing_game_id") == game.get("id"):
@@ -633,6 +678,71 @@ def main():
                     st.success("Game updated successfully")
                 else:
                     st.error("Failed to update game")
+
+            # Add "Update Price" button to the edit section
+            st.markdown("---")
+            st.markdown("**Or update just the price:**")
+            current_price_source = get_price_source()
+            st.info(f"Will use current price source: **{current_price_source}**")
+            
+            if st.button("Update Price Only", key="update_price_only_button"):
+                with st.spinner(f"Updating price using {current_price_source}..."):
+                    result = update_game_price(edit_game_id)
+                    if result:
+                        st.success(f"✅ Price updated successfully!")
+                        st.write(f"**Game:** {result['game_title']}")
+                        st.write(f"**Old Price:** £{result['old_price']:.2f}" if result['old_price'] else "**Old Price:** Not set")
+                        st.write(f"**New Price:** £{result['new_price']:.2f}" if result['new_price'] else "**New Price:** Not found")
+                        st.write(f"**Source:** {result['price_source']}")
+                        
+                        # Update the session state with new price
+                        if "edit_game_data" in st.session_state:
+                            st.session_state["edit_game_data"]["average_price"] = result['new_price']
+                        st.rerun()  # Refresh to show updated data
+                    else:
+                        st.error("Failed to update game price.")
+
+    # -------------------------
+    # Sidebar: Update Game Price Section
+    # -------------------------
+    update_price_expander = st.sidebar.expander("Update Game Price")
+    with update_price_expander:
+        st.markdown("**Update price using current price source configuration**")
+        
+        # Get current price source for display
+        current_price_source = get_price_source()
+        st.info(f"Current price source: **{current_price_source}**")
+        
+        update_price_game_id = st.text_input("Game ID to Update Price", key="update_price_game_id")
+        confirm_update_price = st.checkbox("I confirm that I want to update this game's price", key="update_price_confirm")
+        
+        if st.button("Update Price", key="update_price_button") and confirm_update_price:
+            if update_price_game_id:
+                with st.spinner(f"Updating price using {current_price_source}..."):
+                    result = update_game_price(update_price_game_id)
+                    if result:
+                        st.success(f"✅ Price updated successfully!")
+                        st.write(f"**Game:** {result['game_title']}")
+                        st.write(f"**Old Price:** £{result['old_price']:.2f}" if result['old_price'] else "**Old Price:** Not set")
+                        st.write(f"**New Price:** £{result['new_price']:.2f}" if result['new_price'] else "**New Price:** Not found")
+                        st.write(f"**Source:** {result['price_source']}")
+                        
+                        # Rebuild the filters and refresh games list
+                        filters = {}
+                        if st.session_state.get("filter_publisher"):
+                            filters["publisher"] = st.session_state["filter_publisher"]
+                        if st.session_state.get("filter_platform"):
+                            filters["platform"] = st.session_state["filter_platform"]
+                        if st.session_state.get("filter_genre"):
+                            filters["genre"] = st.session_state["filter_genre"]
+                        if st.session_state.get("filter_year"):
+                            filters["year"] = st.session_state["filter_year"]
+                        # Re-fetch games to show updated price
+                        games = fetch_games(filters)
+                    else:
+                        st.error("Failed to update game price. Please check the Game ID and try again.")
+            else:
+                st.warning("Please enter a Game ID.")
 
     # -------------------------
     # Sidebar: Advanced Filters Section with Export, Bulk Delete, and Display of Filtered Games
