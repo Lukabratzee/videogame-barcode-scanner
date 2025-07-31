@@ -1364,5 +1364,88 @@ def set_price_source_endpoint():
         logging.error(f"Error setting price source: {e}")
         return jsonify({"error": str(e)}), 500
 
+# -------------------------
+# Update Game Price Endpoint
+# -------------------------
+
+@app.route("/update_game_price/<int:game_id>", methods=["POST"])
+def update_game_price(game_id):
+    """Update the price of an existing game based on current price source configuration"""
+    try:
+        # Get the current game data
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+        game = cursor.fetchone()
+        conn.close()
+        
+        if not game:
+            return jsonify({"error": "Game not found"}), 404
+        
+        # Extract game info for price lookup
+        game_title = game[1]  # title column
+        platforms = game[5]   # platforms column
+        
+        # Use the first platform for price lookup
+        selected_platform = ""
+        if platforms:
+            platform_list = platforms.split(", ")
+            if platform_list:
+                selected_platform = platform_list[0]
+        
+        # Build search query
+        search_query = game_title
+        if selected_platform:
+            search_query += " " + selected_platform
+        
+        logging.debug(f"Updating price for game ID {game_id}: '{search_query}'")
+        
+        # Get the current price source configuration
+        price_source = get_price_source()
+        logging.debug(f"Using price source: {price_source}")
+        
+        # Perform price scraping based on current configuration
+        new_price = None
+        if price_source == "Amazon":
+            new_price = scrape_amazon_price(search_query)
+        elif price_source == "CeX":
+            new_price = scrape_cex_price(search_query)
+        elif price_source == "PriceCharting":
+            # Default to PAL region for backend calls
+            pricecharting_data = scrape_pricecharting_price(search_query, None, "PAL")
+            # Use the best representative price (prioritizes loose -> CIB -> new)
+            new_price = get_best_pricecharting_price(pricecharting_data)
+            
+            if pricecharting_data:
+                logging.debug(f"PriceCharting pricing breakdown - Loose: £{pricecharting_data.get('loose_price')}, "
+                            f"CIB: £{pricecharting_data.get('cib_price')}, New: £{pricecharting_data.get('new_price')}")
+        else:  # Default to eBay
+            new_price = scrape_ebay_prices(search_query)
+        
+        logging.debug(f"Scraped new price from {price_source}: {new_price}")
+        
+        # Update the game's price in the database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE games SET average_price = ? WHERE id = ?",
+            (new_price, game_id)
+        )
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "message": f"Price updated successfully using {price_source}",
+            "game_id": game_id,
+            "game_title": game_title,
+            "old_price": game[9],  # average_price column
+            "new_price": new_price,
+            "price_source": price_source
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error updating game price: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)

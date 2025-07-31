@@ -602,7 +602,7 @@ def scrape_cex_price(game_title):
 
 def scrape_pricecharting_price(game_title, platform=None, region=None):
     """
-    LATEST VERSION - 2025-07-27 - Fixed graded price exclusion and variable reference errors
+    LATEST VERSION - 2025-07-31 - Added platform aliases for better PriceCharting compatibility
     
     Scrapes PriceCharting.com for video game pricing data.
     
@@ -630,6 +630,91 @@ def scrape_pricecharting_price(game_title, platform=None, region=None):
         # Default to PAL region if not specified
         if region is None:
             region = "PAL"
+        
+        # Platform aliases mapping - converts database platform names to PriceCharting-expected names
+        # This ensures better search accuracy by using the exact platform names PriceCharting recognizes
+        PLATFORM_ALIASES = {
+            # Sony Platforms
+            "PlayStation Portable": "PSP",
+            "PlayStation": "PlayStation",
+            "PlayStation 2": "PlayStation 2", 
+            "PlayStation 3": "PlayStation 3",
+            "PlayStation 4": "PlayStation 4",
+            "PlayStation 5": "PlayStation 5",
+            "PlayStation Vita": "Vita",
+            "PSP": "PSP",
+            "PS1": "PlayStation",
+            "PS2": "PlayStation 2",
+            "PS3": "PlayStation 3", 
+            "PS4": "PlayStation 4",
+            "PS5": "PlayStation 5",
+            "PSVita": "Vita",
+            "Vita": "Vita",
+            
+            # Nintendo Platforms
+            "Nintendo 64": "Nintendo 64",
+            "Nintendo GameCube": "GameCube",
+            "Nintendo Wii": "Wii",
+            "Nintendo Wii U": "Wii U", 
+            "Nintendo Switch": "Switch",
+            "Nintendo DS": "DS",
+            "Nintendo 3DS": "3DS",
+            "Game Boy": "Game Boy",
+            "Game Boy Color": "Game Boy Color",
+            "Game Boy Advance": "Game Boy Advance",
+            "Nintendo Entertainment System": "NES",
+            "Super Nintendo Entertainment System": "Super Nintendo",
+            "N64": "Nintendo 64",
+            "GameCube": "GameCube",
+            "Wii": "Wii",
+            "Wii U": "Wii U",
+            "Switch": "Switch",
+            "DS": "DS",
+            "3DS": "3DS",
+            "GBA": "Game Boy Advance",
+            "GBC": "Game Boy Color",
+            "GB": "Game Boy",
+            "NES": "NES",
+            "SNES": "Super Nintendo",
+            
+            # Microsoft Platforms
+            "Xbox": "Xbox",
+            "Xbox 360": "Xbox 360",
+            "Xbox One": "Xbox One",
+            "Xbox Series X": "Xbox Series X",
+            "Xbox Series S": "Xbox Series X",  # PriceCharting groups Series S with Series X
+            
+            # Sega Platforms
+            "Sega Genesis": "Sega Genesis",
+            "Sega Dreamcast": "Dreamcast",
+            "Sega Saturn": "Sega Saturn",
+            "Sega Master System": "Sega Master System",
+            "Sega Game Gear": "Game Gear",
+            "Genesis": "Sega Genesis",
+            "Dreamcast": "Dreamcast",
+            "Saturn": "Sega Saturn",
+            
+            # Atari Platforms
+            "Atari 2600": "Atari 2600",
+            "Atari 7800": "Atari 7800",
+            
+            # PC Platforms  
+            "PC": "PC",
+            "Windows": "PC",
+            "Mac": "Mac",
+            "Linux": "PC",
+            
+            # Other Platforms
+            "Neo Geo": "Neo Geo",
+            "TurboGrafx-16": "TurboGrafx-16",
+            "Arcade": "Arcade"
+        }
+        
+        # Apply platform alias if platform is provided
+        if platform and platform in PLATFORM_ALIASES:
+            original_platform = platform
+            platform = PLATFORM_ALIASES[platform]
+            logging.info(f"Platform alias applied: '{original_platform}' -> '{platform}'")
         
         # Search for the game on PriceCharting with regional specificity
         search_query = game_title
