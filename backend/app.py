@@ -172,7 +172,20 @@ CONFIG_FILE = os.path.join(BASE_DIR, "config", "config.json")
 
 def load_config():
     """Load configuration from JSON file, create default if doesn't exist"""
-    default_config = {"price_source": "eBay"}
+    default_config = {
+        "price_source": "PriceCharting",
+        "steamgriddb_api_key": "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api"
+    }
+    
+    # Ensure config directory exists
+    config_dir = os.path.dirname(CONFIG_FILE)
+    if not os.path.exists(config_dir):
+        try:
+            os.makedirs(config_dir, exist_ok=True)
+            logging.info(f"Created config directory: {config_dir}")
+        except OSError as e:
+            logging.error(f"Failed to create config directory: {e}")
+            return default_config
     
     if os.path.exists(CONFIG_FILE):
         try:
@@ -180,27 +193,42 @@ def load_config():
                 config = json.load(f)
                 # Ensure price_source exists and is valid
                 if "price_source" not in config or config["price_source"] not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
-                    config["price_source"] = "eBay"
+                    config["price_source"] = "PriceCharting"
+                
+                # Ensure steamgriddb_api_key exists (add placeholder if missing)
+                if "steamgriddb_api_key" not in config:
+                    config["steamgriddb_api_key"] = "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api"
+                    # Save the updated config
+                    save_config(config)
+                
                 return config
-        except (json.JSONDecodeError, IOError):
-            pass
+        except (json.JSONDecodeError, IOError) as e:
+            logging.warning(f"Failed to load config file: {e}, creating default config")
     
     # Create default config file
+    logging.info(f"Creating default config file at: {CONFIG_FILE}")
     save_config(default_config)
     return default_config
 
 def save_config(config):
     """Save configuration to JSON file"""
     try:
+        # Ensure config directory exists
+        config_dir = os.path.dirname(CONFIG_FILE)
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir, exist_ok=True)
+            logging.info(f"Created config directory: {config_dir}")
+        
         with open(CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
+        logging.info(f"Config saved to: {CONFIG_FILE}")
     except IOError as e:
         logging.error(f"Failed to save config: {e}")
 
 def get_price_source():
     """Get current price source preference"""
     config = load_config()
-    return config.get("price_source", "eBay")
+    return config.get("price_source", "PriceCharting")
 
 def set_price_source(price_source):
     """Set price source preference"""
@@ -2381,4 +2409,15 @@ def check_high_res_artwork_status():
         }), 500
 
 if __name__ == "__main__":
+    # Initialize configuration on startup
+    print("🔧 Initializing configuration...")
+    config = load_config()
+    print(f"✅ Configuration loaded. Price source: {config.get('price_source', 'Unknown')}")
+    if 'steamgriddb_api_key' in config:
+        if config['steamgriddb_api_key'].startswith('your_steamgriddb_api_key'):
+            print("⚠️  SteamGridDB API key is set to placeholder. Update config/config.json with your actual API key.")
+        else:
+            print("✅ SteamGridDB API key configured")
+    
+    print("🚀 Starting Flask application...")
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)
