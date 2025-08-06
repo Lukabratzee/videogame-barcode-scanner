@@ -54,14 +54,23 @@ class SteamGridDBClient:
             # Try to load from environment or config
             api_key = os.getenv('STEAMGRIDDB_API_KEY')
             if not api_key:
-                config_path = os.path.join(PROJECT_ROOT, "config", "config.json")
+                # Smart config path detection for Docker vs local
+                if os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv'):
+                    # In Docker, the config is mounted at /app/config
+                    config_path = "/app/config/config.json"
+                else:
+                    # Local development - config is relative to project root
+                    config_path = os.path.join(PROJECT_ROOT, "config", "config.json")
+                
                 if os.path.exists(config_path):
                     try:
                         with open(config_path, 'r') as f:
                             config = json.load(f)
                             api_key = config.get('steamgriddb_api_key')
                     except Exception as e:
-                        print(f"Warning: Could not load config: {e}")
+                        print(f"Warning: Could not load config from {config_path}: {e}")
+                else:
+                    print(f"Warning: Config file not found at {config_path}")
         
         if not api_key:
             raise ValueError(

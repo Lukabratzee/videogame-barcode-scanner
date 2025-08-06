@@ -1648,7 +1648,11 @@ def update_game_artwork_endpoint(game_id):
         # Get API key from config.json
         config = load_config()
         api_key = config.get("steamgriddb_api_key")
-        if not api_key:
+        
+        # Debug logging for API key
+        logging.info(f"SteamGridDB API key from config: {'***' + api_key[-4:] if api_key and len(api_key) > 4 else 'None/Empty'}")
+        
+        if not api_key or api_key.startswith("your_steamgriddb_api_key"):
             return jsonify({
                 "error": "SteamGridDB API key not configured in config.json",
                 "instructions": "Add 'steamgriddb_api_key' to your config.json file. Get your API key from https://www.steamgriddb.com/profile/preferences/api"
