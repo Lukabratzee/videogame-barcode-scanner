@@ -56,11 +56,17 @@ def fetch_unique_values(value_type):
         return []  # Return empty list on error
 
 def calculate_total_cost(games):
-    return sum(
-        game.get("average_price", 0)
-        for game in games
-        if game.get("average_price") is not None
-    )
+    total = 0
+    for game in games:
+        price = game.get("average_price")
+        if price is not None:
+            try:
+                # Convert to float in case it's a string
+                total += float(price)
+            except (ValueError, TypeError):
+                # Skip invalid price values
+                continue
+    return total
 
 def add_game(game_data):
     response = requests.post(f"{BACKEND_URL}/add_game", json=game_data)
@@ -375,11 +381,14 @@ def display_game_item(game):
             cover_image_url = get_best_cover_image(game)
             
             # Format the average price display
-            average_price = (
-                f"£{game.get('average_price', 0):.2f}"
-                if game.get("average_price") is not None
-                else "N/A"
-            )
+            price_value = game.get("average_price")
+            if price_value is not None:
+                try:
+                    average_price = f"£{float(price_value):.2f}"
+                except (ValueError, TypeError):
+                    average_price = "N/A"
+            else:
+                average_price = "N/A"
             # Display game details using HTML formatting
             st.markdown(
                 f"""
@@ -455,7 +464,6 @@ def display_game_item(game):
         st.markdown("#### Edit Game")
         new_title = st.text_input("Title", game.get("title"), key=f"edit_title_{game.get('id')}")
         new_desc = st.text_area("Description", game.get("description"), key=f"edit_desc_{game.get('id')}")
-        new_cover = st.text_input("Cover Image URL", game.get("cover_image"), key=f"edit_cover_{game.get('id')}")
         new_pub = st.text_input("Publisher", game.get("publisher"), key=f"edit_pub_{game.get('id')}")
         
         # Handle platforms: convert string to list if needed
@@ -477,11 +485,11 @@ def display_game_item(game):
         new_series = st.text_input("Series", game.get("series"), key=f"edit_series_{game.get('id')}")
         new_release = st.text_input("Release Date", game.get("release_date"), key=f"edit_release_{game.get('id')}")
         new_price = st.number_input("Average Price", value=game.get("average_price") or 0.0, step=0.01, format="%.2f", key=f"edit_price_{game.get('id')}")
+        new_youtube_url = st.text_input("YouTube Trailer URL", game.get("youtube_trailer_url", ""), key=f"edit_youtube_{game.get('id')}", help="Full YouTube URL (e.g., https://www.youtube.com/watch?v=...)")
         
         if st.button("Save", key=f"save_{game.get('id')}"):
             updated_game_data = {
                 "title": new_title,
-                "cover_image": new_cover,
                 "description": new_desc,
                 "publisher": [new_pub],
                 "platforms": new_platforms_list,
@@ -489,6 +497,7 @@ def display_game_item(game):
                 "series": [new_series],
                 "release_date": new_release,
                 "average_price": new_price,
+                "youtube_trailer_url": new_youtube_url,
             }
             if update_game(game.get("id"), updated_game_data):
                 st.success("Game updated successfully!")
@@ -550,7 +559,7 @@ def game_detail_page():
     st.sidebar.markdown("### Library Filters")
     
     # Search by title
-    title_search = st.sidebar.text_input("Search titles", key="detail_gallery_title_search")
+    title_search = st.sidebar.text_input("Search titles", key="detail_gallery_title_search", on_change=lambda: st.session_state.update({"gallery_page": 1}))
     
     # Tag filters (multi-select)
     available_tags = filter_options.get("tags", [])
@@ -601,10 +610,11 @@ def game_detail_page():
     )
     
     # Grid columns selector
+    default_detail_grid_cols = st.session_state.get("detail_gallery_grid_cols", 4)  # Get existing value or default to 4
     grid_cols = st.sidebar.selectbox(
         "Grid columns",
         [3, 4, 5, 6],
-        index=1,  # Default to 4 columns
+        index=[3, 4, 5, 6].index(default_detail_grid_cols) if default_detail_grid_cols in [3, 4, 5, 6] else 1,
         key="detail_gallery_grid_cols"
     )
     
@@ -649,7 +659,7 @@ def game_detail_page():
     
     # Clear filters button
     if st.sidebar.button("Clear All Filters", key="detail_gallery_clear_filters"):
-        # Clear all filter session state keys for detail page
+        # Clear all filter session state keys for detail page (including year range)
         for key in list(st.session_state.keys()):
             if key.startswith("detail_gallery_"):
                 del st.session_state[key]
@@ -1003,7 +1013,7 @@ def gallery_page():
     st.sidebar.markdown("### Library Filters")
     
     # Search by title
-    title_search = st.sidebar.text_input("Search titles", key="gallery_title_search")
+    title_search = st.sidebar.text_input("Search titles", key="gallery_title_search", on_change=lambda: st.session_state.update({"gallery_page": 1}))
     
     # Tag filters (multi-select)
     available_tags = filter_options.get("tags", [])
@@ -1054,10 +1064,11 @@ def gallery_page():
     )
     
     # Grid columns selector
+    default_grid_cols = st.session_state.get("gallery_grid_cols", 4)  # Get existing value or default to 4
     grid_cols = st.sidebar.selectbox(
         "Grid columns",
         [3, 4, 5, 6],
-        index=1,  # Default to 4 columns
+        index=[3, 4, 5, 6].index(default_grid_cols) if default_grid_cols in [3, 4, 5, 6] else 1,
         key="gallery_grid_cols"
     )
     
@@ -1065,7 +1076,8 @@ def gallery_page():
     if st.sidebar.button("Clear All Filters", key="gallery_clear_filters"):
         # Reset page to 1
         st.session_state["gallery_page"] = 1
-        # Use a rerun approach instead of directly modifying session state
+        
+        # Clear all filter session state keys (including year range)
         for key in list(st.session_state.keys()):
             if key.startswith("gallery_") and key not in ["gallery_page", "gallery_per_page"]:
                 del st.session_state[key]
@@ -1581,7 +1593,7 @@ def main():
             games = []
         total_cost = calculate_total_cost(games)
         st.markdown(
-            f"<h3>Total Cost of Search Results: <strong style='color: red;'>£{total_cost:.2f}</strong></h3>",
+            f"<h3>Total Cost of Search Results: <strong style='color: red;'>£{float(total_cost):.2f}</strong></h3>",
             unsafe_allow_html=True
         )
         if games:
@@ -1885,7 +1897,7 @@ def main():
     if st.session_state["filters_active"]:
         total_cost = calculate_total_cost(games)
         st.markdown(
-            f"<h3>Total Cost of Displayed Games: <strong style='color: red;'>£{total_cost:.2f}</strong></h3>",
+            f"<h3>Total Cost of Displayed Games: <strong style='color: red;'>£{float(total_cost):.2f}</strong></h3>",
             unsafe_allow_html=True
         )
         if games:
@@ -2288,11 +2300,14 @@ def main():
         top_games = fetch_top_games()
         for game in top_games:
             cover_image_url = get_best_cover_image(game)
-            average_price = (
-                f"£{game['average_price']:.2f}"
-                if game.get("average_price") is not None
-                else "N/A"
-            )
+            price_value = game.get("average_price")
+            if price_value is not None:
+                try:
+                    average_price = f"£{float(price_value):.2f}"
+                except (ValueError, TypeError):
+                    average_price = "N/A"
+            else:
+                average_price = "N/A"
             st.markdown(
                 f"""
                 <div class="game-container">
