@@ -645,90 +645,18 @@ def game_detail_page():
         st.image(cover_url, caption=game.get("title", "Unknown Game"), use_column_width=True)
         
         # Price and rating section
-        st.markdown("### 💰 Price & Rating")
+        st.markdown("### Price & Rating")
         price = game.get("average_price")
         if price:
             st.metric("Current Price", f"£{price:.2f}")
         else:
             st.info("No price data available")
         
-        # Price History Chart
-        st.markdown("#### 📈 Price History")
-        price_history_data = fetch_price_history(game.get("id"))
-        
-        if price_history_data.get("success") and price_history_data.get("price_history"):
-            history = price_history_data["price_history"]
-            
-            # Create a simple price history display
-            if len(history) > 1:
-                try:
-                    # Convert to DataFrame for easier handling
-                    df = pd.DataFrame(history)
-                    df['date_recorded'] = pd.to_datetime(df['date_recorded'])
-                    df = df.sort_values('date_recorded')
-                    
-                    # Create the chart
-                    fig, ax = plt.subplots(figsize=(8, 4))
-                    ax.plot(df['date_recorded'], df['price'], marker='o', linewidth=2, markersize=6)
-                    ax.set_title(f'Price History for {game.get("title", "Game")}')
-                    ax.set_xlabel('Date')
-                    ax.set_ylabel('Price (£)')
-                    ax.grid(True, alpha=0.3)
-                    
-                    # Rotate date labels for better readability
-                    plt.xticks(rotation=45)
-                    plt.tight_layout()
-                    
-                    # Display the chart
-                    st.pyplot(fig)
-                    
-                    # Show price statistics
-                    min_price = df['price'].min()
-                    max_price = df['price'].max()
-                    avg_price = df['price'].mean()
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Lowest Price", f"£{min_price:.2f}")
-                    with col2:
-                        st.metric("Highest Price", f"£{max_price:.2f}")
-                    with col3:
-                        st.metric("Average Price", f"£{avg_price:.2f}")
-                        
-                except Exception as e:
-                    # Fallback if there's any issue with the chart
-                    st.warning(f"Could not create price chart: {str(e)}")
-                    # Show simple table instead
-                    st.markdown("**Recent Price Updates:**")
-                    for entry in history[-5:]:  # Show last 5 entries
-                        date_str = entry['date_recorded'][:10]  # Just the date part
-                        st.markdown(f"- £{entry['price']:.2f} ({entry['price_source']}) on {date_str}")
-                        
-            else:
-                # Single price entry
-                if history:
-                    entry = history[0]
-                    st.markdown(f"**Single Price Record:** £{entry['price']:.2f} from {entry['price_source']}")
-                else:
-                    st.info("No price history available yet")
-        else:
-            st.info("No price history available yet")
-        
         # Personal rating
         personal_rating = game.get("personal_rating")
         if personal_rating:
-            stars = "⭐" * personal_rating + "☆" * (10 - personal_rating)
+            stars = "★" * personal_rating + "☆" * (10 - personal_rating)
             st.markdown(f"**Personal Rating:** {stars} ({personal_rating}/10)")
-        
-        # Completion status
-        completion_status = game.get("completion_status", "not_started")
-        status_icons = {
-            "not_started": "⏸️ Not Started",
-            "in_progress": "▶️ In Progress", 
-            "completed": "✅ Completed",
-            "abandoned": "❌ Abandoned"
-        }
-        st.markdown(f"**Status:** {status_icons.get(completion_status, completion_status)}")
         
         # Play time
         play_time = game.get("play_time_hours")
@@ -737,7 +665,7 @@ def game_detail_page():
     
     with col_details:
         # Game information
-        st.markdown("### 📖 Game Information")
+        st.markdown("### Game Information")
         
         # Basic details in organized format
         col_left, col_right = st.columns(2)
@@ -781,18 +709,18 @@ def game_detail_page():
             # Favorite status
             is_favorite = game.get("is_favorite", False)
             if is_favorite:
-                st.markdown("**❤️ Favorite Game**")
+                st.markdown("**Favorite Game**")
         
         # Description
         description = game.get("description", "")
         if description and description.strip():
-            st.markdown("### 📝 Description")
+            st.markdown("### Description")
             st.markdown(description)
         
         # Tags
         tags = game.get("tags", [])
         if tags:
-            st.markdown("### 🏷️ Tags")
+            st.markdown("### Tags")
             tag_colors = ["#ff6b6b", "#4ecdc4", "#45b7d1", "#96ceb4", "#ffeaa7", "#dda0dd", "#f093fb", "#74b9ff"]
             
             tag_html = ""
@@ -805,55 +733,71 @@ def game_detail_page():
         # Personal notes
         notes = game.get("notes", "")
         if notes and notes.strip():
-            st.markdown("### 📝 Personal Notes")
+            st.markdown("### Personal Notes")
             st.markdown(notes)
     
     # YouTube Trailer Section
     st.markdown("---")
-    st.markdown("### 🎬 Game Trailer")
+    st.markdown("### Game Trailer")
     
-    # Create search query for YouTube trailer
-    game_title = game.get("title", "")
-    platform = game.get("platform", "")
-    search_query = f"{game_title} {platform}".strip()
+    # Check if we have a YouTube trailer URL
+    youtube_url = game.get("youtube_trailer_url")
     
-    # Create YouTube trailer search URL
-    trailer_query = f"{search_query} trailer".replace(" ", "+")
-    
-    # Display enhanced video section - full width with better styling
-    st.markdown(f"""
-    <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea, #764ba2); 
-                border-radius: 15px; margin: 15px 0; color: white; box-shadow: 0 8px 32px rgba(0,0,0,0.1);">
-        <h3 style="margin-bottom: 15px; color: white;">🎬 Official Trailer</h3>
-        <p style="margin-bottom: 20px; opacity: 0.9;">Watch the official trailer for <strong>{game_title}</strong></p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Enhanced YouTube trailer button with better styling
-    trailer_url = f"https://www.youtube.com/results?search_query={trailer_query}"
-    
-    st.markdown(f"""
-    <div style="text-align: center; margin: 20px 0;">
-        <a href="{trailer_url}" target="_blank" style="
-            display: inline-block;
-            background: linear-gradient(135deg, #ff0000, #cc0000);
-            color: white;
-            padding: 15px 30px;
-            border-radius: 25px;
-            text-decoration: none;
-            font-weight: bold;
-            font-size: 16px;
-            box-shadow: 0 4px 15px rgba(255,0,0,0.3);
-            transition: all 0.3s ease;
-        " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-            🎬 Watch '{game_title}' Trailer on YouTube
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
+    if youtube_url:
+        # Extract video ID from YouTube URL
+        import re
+        video_id_match = re.search(r'(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)', youtube_url)
+        
+        if video_id_match:
+            video_id = video_id_match.group(1)
+            
+            # Embed the YouTube video
+            st.markdown(f"""
+            <div style="text-align: center; margin: 20px 0;">
+                <iframe 
+                    width="100%" 
+                    height="400" 
+                    src="https://www.youtube.com/embed/{video_id}" 
+                    frameborder="0" 
+                    allowfullscreen
+                    style="border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                </iframe>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # If URL format is unexpected, show link
+            st.markdown(f"[Watch Trailer on YouTube]({youtube_url})")
+    else:
+        # Fallback: show search button
+        game_title = game.get("title", "")
+        platform = game.get("platform", "")
+        search_query = f"{game_title} {platform}".strip()
+        trailer_query = f"{search_query} trailer".replace(" ", "+")
+        trailer_url = f"https://www.youtube.com/results?search_query={trailer_query}"
+        
+        st.info("No trailer found for this game yet.")
+        st.markdown(f"""
+        <div style="text-align: center; margin: 20px 0;">
+            <a href="{trailer_url}" target="_blank" style="
+                display: inline-block;
+                background: linear-gradient(135deg, #ff0000, #cc0000);
+                color: white;
+                padding: 15px 30px;
+                border-radius: 25px;
+                text-decoration: none;
+                font-weight: bold;
+                font-size: 16px;
+                box-shadow: 0 4px 15px rgba(255,0,0,0.3);
+                transition: all 0.3s ease;
+            " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                Search for '{game_title}' Trailer on YouTube
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
 
     # External links section
     st.markdown("---")
-    st.markdown("<h3 style='text-align: center;'>🔗 External Links & Resources</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center;'>External Links & Resources</h3>", unsafe_allow_html=True)
     
     # Create search queries for external sites
     url_safe_query = search_query.replace(" trailer", "").replace(" ", "+")
@@ -862,19 +806,19 @@ def game_detail_page():
     col_guides, col_spacer = st.columns([2, 1])
     
     with col_guides:
-        st.markdown("#### 📚 Guides & Info")
+        st.markdown("#### Guides & Info")
         
         # GameFAQs
         gamefaqs_url = f"https://gamefaqs.gamespot.com/search?game={url_safe_query}"
-        st.link_button("🎮 GameFAQs", gamefaqs_url, use_container_width=True)
+        st.link_button("GameFAQs", gamefaqs_url, use_container_width=True)
         
         # PowerPyx (for trophies/achievements)
         powerpyx_url = f"https://www.powerpyx.com/?s={url_safe_query}"
-        st.link_button("🏆 PowerPyx Guides", powerpyx_url, use_container_width=True)
+        st.link_button("PowerPyx Guides", powerpyx_url, use_container_width=True)
         
         # Metacritic
         metacritic_url = f"https://www.metacritic.com/search/{url_safe_query}/"
-        st.link_button("📊 Metacritic", metacritic_url, use_container_width=True)
+        st.link_button("Metacritic", metacritic_url, use_container_width=True)
 
     # Price comparison section
         # Removed Digital Stores section as requested
@@ -886,58 +830,36 @@ def game_detail_page():
     
     # Price comparison section
     st.markdown("---")
-    st.markdown("### 💸 Price Comparison")
+    st.markdown("### Price Comparison")
     
     price_col1, price_col2, price_col3 = st.columns(3)
     
     with price_col1:
         # eBay
         ebay_url = f"https://www.ebay.co.uk/sch/i.html?_nkw={url_safe_query}"
-        st.link_button("🛒 eBay UK", ebay_url, use_container_width=True)
+        st.link_button("eBay UK", ebay_url, use_container_width=True)
         
         # Amazon
         amazon_url = f"https://www.amazon.co.uk/s?k={url_safe_query}"
-        st.link_button("📦 Amazon UK", amazon_url, use_container_width=True)
+        st.link_button("Amazon UK", amazon_url, use_container_width=True)
     
     with price_col2:
         # CeX
         cex_url = f"https://uk.webuy.com/search?stext={url_safe_query}"
-        st.link_button("💿 CeX UK", cex_url, use_container_width=True)
+        st.link_button("CeX UK", cex_url, use_container_width=True)
         
         # PriceCharting
         pricecharting_url = f"https://www.pricecharting.com/search-products?type=prices&q={url_safe_query}"
-        st.link_button("📈 PriceCharting", pricecharting_url, use_container_width=True)
+        st.link_button("PriceCharting", pricecharting_url, use_container_width=True)
     
     with price_col3:
         # GAME
         game_uk_url = f"https://www.game.co.uk/webapp/wcs/stores/servlet/SearchDisplay?searchTerm={url_safe_query}"
-        st.link_button("🎮 GAME UK", game_uk_url, use_container_width=True)
+        st.link_button("GAME UK", game_uk_url, use_container_width=True)
         
         # Argos
         argos_url = f"https://www.argos.co.uk/search/{url_safe_query}/"
-        st.link_button("🏪 Argos", argos_url, use_container_width=True)
-    
-    # Quick actions
-    st.markdown("---")
-    st.markdown("### ⚡ Quick Actions")
-    
-    action_col1, action_col2, action_col3 = st.columns(3)
-    
-    with action_col1:
-        if st.button("Edit Game Details", key="edit_from_detail", use_container_width=True):
-            st.session_state["editing_game_id"] = game["id"]
-            st.session_state["page"] = "home"
-            st.rerun()
-    
-    with action_col2:
-        if st.button("Update Price", key="update_price_from_detail", use_container_width=True):
-            # You could implement a price update function here
-            st.info("Price update functionality can be implemented here")
-    
-    with action_col3:
-        if st.button("Manage Tags", key="manage_tags_from_detail", use_container_width=True):
-            # You could implement tag management here
-            st.info("Tag management functionality can be implemented here")
+        st.link_button("Argos", argos_url, use_container_width=True)
 
 # -------------------------
 # Gallery Page Function

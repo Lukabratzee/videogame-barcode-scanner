@@ -10,6 +10,14 @@ from fuzzywuzzy import process
 import csv
 import io
 
+# Import YouTube trailer fetcher function
+try:
+    from fetch_youtube_trailers import get_youtube_video_id
+except ImportError:
+    print("Warning: YouTube trailer fetcher not available")
+    def get_youtube_video_id(query):
+        return None
+
 # Conditional imports for Docker vs local environment
 try:
     # Try Docker-compatible imports first
@@ -1006,10 +1014,26 @@ def save_game_to_db(game_data):
             cover_image = game_data.get("cover_image")
             if cover_image is None:
                 cover_image = ""
+            
+            # Generate YouTube trailer URL
+            youtube_trailer_url = None
+            title = game_data.get("title", "")
+            platforms = game_data.get("platforms", [])
+            if title and platforms:
+                platform = platforms[0] if platforms else ""
+                search_query = f"{title} {platform}"
+                try:
+                    video_id = get_youtube_video_id(search_query)
+                    if video_id:
+                        youtube_trailer_url = f"https://www.youtube.com/watch?v={video_id}"
+                        logging.debug(f"Found YouTube trailer: {youtube_trailer_url}")
+                except Exception as e:
+                    logging.warning(f"Failed to fetch YouTube trailer for {title}: {e}")
+            
             cursor.execute(
                 """
-                INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     generate_random_id(),
@@ -1022,6 +1046,7 @@ def save_game_to_db(game_data):
                     ", ".join(game_data["series"]),
                     game_data["release_date"],
                     game_data["average_price"],
+                    youtube_trailer_url,
                 ),
             )
             conn.commit()
@@ -1269,6 +1294,7 @@ def fetch_game_by_id(game_id):
                 "series": game[7].split(", "),
                 "release_date": game[8],
                 "average_price": game[9],
+                "youtube_trailer_url": game[10] if len(game) > 10 else None,
             }), 200
         else:
             return jsonify({"error": "Game not found"}), 404
@@ -1593,6 +1619,7 @@ def get_gallery_games():
             g.series,
             g.release_date,
             g.average_price,
+            g.youtube_trailer_url,
             ggm.completion_status,
             ggm.personal_rating,
             ggm.play_time_hours,
@@ -1659,14 +1686,15 @@ def get_gallery_games():
                 'release_date': game_row[8],
                 'release_year': release_year,
                 'average_price': game_row[9],
-                'completion_status': game_row[10],
-                'personal_rating': game_row[11],
-                'play_time_hours': game_row[12],
-                'notes': game_row[13],
-                'display_priority': game_row[14],
-                'is_favorite': bool(game_row[15]),
-                'date_acquired': game_row[16],
-                'date_completed': game_row[17],
+                'youtube_trailer_url': game_row[10],
+                'completion_status': game_row[11],
+                'personal_rating': game_row[12],
+                'play_time_hours': game_row[13],
+                'notes': game_row[14],
+                'display_priority': game_row[15],
+                'is_favorite': bool(game_row[16]),
+                'date_acquired': game_row[17],
+                'date_completed': game_row[18],
                 'tags': tags
             }
             games.append(game)
