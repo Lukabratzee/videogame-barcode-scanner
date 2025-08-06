@@ -50,14 +50,14 @@ RUN apt-get update && apt-get install -y \
     libvulkan1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ChromeDriver for x86 architecture (cross-compile target)
-RUN CHROME_VERSION=$(curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE) && \
+# Install ChromeDriver for the target architecture - use Chrome for Testing API for newer versions
+RUN CHROME_VERSION="138.0.7204.168" && \
     echo "Downloading ChromeDriver version: $CHROME_VERSION for linux64" && \
-    wget -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/${CHROME_VERSION}/chromedriver_linux64.zip" && \
-    unzip /tmp/chromedriver.zip -d /tmp && \
-    mv /tmp/chromedriver /usr/local/bin/chromedriver && \
+    wget -O /tmp/chromedriver-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" && \
+    unzip /tmp/chromedriver-linux64.zip -d /tmp && \
+    mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
     chmod +x /usr/local/bin/chromedriver && \
-    rm /tmp/chromedriver.zip
+    rm -rf /tmp/chromedriver-linux64.zip /tmp/chromedriver-linux64
 
 # Create symlinks for compatibility
 RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable
