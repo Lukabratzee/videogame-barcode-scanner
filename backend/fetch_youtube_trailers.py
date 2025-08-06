@@ -66,7 +66,7 @@ def get_youtube_video_id(search_query):
 
 def get_games_without_trailers():
     """Get all games that don't have YouTube trailer URLs"""
-    db_path = os.path.join(current_dir, "games.db")
+    db_path = os.path.join(parent_dir, "data", "games.db")
     
     try:
         conn = sqlite3.connect(db_path)
@@ -91,7 +91,7 @@ def get_games_without_trailers():
 
 def update_game_trailer(game_id, youtube_url):
     """Update a game's YouTube trailer URL in the database"""
-    db_path = os.path.join(current_dir, "games.db")
+    db_path = os.path.join(parent_dir, "data", "games.db")
     
     try:
         conn = sqlite3.connect(db_path)
@@ -188,7 +188,7 @@ def fetch_trailers_for_games(limit=None, delay=2):
 
 def fetch_trailer_for_single_game(game_id):
     """Fetch trailer for a specific game by ID"""
-    db_path = os.path.join(current_dir, "games.db")
+    db_path = os.path.join(parent_dir, "data", "games.db")
     
     try:
         conn = sqlite3.connect(db_path)
