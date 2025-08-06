@@ -112,8 +112,16 @@ def search_game_by_id(igdb_id):
         return None
 
 def fetch_top_games():
-    response = requests.get(f"{BACKEND_URL}/top_games")
-    return response.json()
+    try:
+        response = requests.get(f"{BACKEND_URL}/top_games")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Error fetching top games: {response.status_code}")
+            return []
+    except Exception as e:
+        print(f"Error fetching top games: {e}")
+        return []
 
 def fetch_game_by_id(game_id):
     response = requests.get(f"{BACKEND_URL}/game/{game_id}")
@@ -2296,36 +2304,39 @@ def main():
     if not st.session_state["filters_active"]:
         st.markdown("## Top 5 Games by Average Price")
         top_games = fetch_top_games()
-        for game in top_games:
-            cover_image_url = get_best_cover_image(game)
-            price_value = game.get("average_price")
-            if price_value is not None:
-                try:
-                    average_price = f"£{float(price_value):.2f}"
-                except (ValueError, TypeError):
+        if top_games:  # Only display if we have games
+            for game in top_games:
+                cover_image_url = get_best_cover_image(game)
+                price_value = game.get("average_price")
+                if price_value is not None:
+                    try:
+                        average_price = f"£{float(price_value):.2f}"
+                    except (ValueError, TypeError):
+                        average_price = "N/A"
+                else:
                     average_price = "N/A"
-            else:
-                average_price = "N/A"
-            st.markdown(
-                f"""
-                <div class="game-container">
-                    <img src="{cover_image_url}" class="game-image">
-                    <div class="game-details">
-                        <div><strong>ID:</strong> {game['id']}</div>
-                        <div><strong>Title:</strong> {game['title']}</div>
-                        <div><strong>Description:</strong> {game['description']}</div>
-                        <div><strong>Publisher:</strong> {game['publisher']}</div>
-                        <div><strong>Platforms:</strong> {game['platforms']}</div>
-                        <div><strong>Genres:</strong> {game['genres']}</div>
-                        <div><strong>Series:</strong> {game['series']}</div>
-                        <div><strong>Release Date:</strong> {game['release_date']}</div>
-                        <div><strong>Average Price:</strong> {average_price}</div>
+                st.markdown(
+                    f"""
+                    <div class="game-container">
+                        <img src="{cover_image_url}" class="game-image">
+                        <div class="game-details">
+                            <div><strong>ID:</strong> {game['id']}</div>
+                            <div><strong>Title:</strong> {game['title']}</div>
+                            <div><strong>Description:</strong> {game['description']}</div>
+                            <div><strong>Publisher:</strong> {game['publisher']}</div>
+                            <div><strong>Platforms:</strong> {game['platforms']}</div>
+                            <div><strong>Genres:</strong> {game['genres']}</div>
+                            <div><strong>Series:</strong> {game['series']}</div>
+                            <div><strong>Release Date:</strong> {game['release_date']}</div>
+                            <div><strong>Average Price:</strong> {average_price}</div>
+                        </div>
                     </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            
+                    """,
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.info("No games with prices found yet. Add some games to see the top 5!")
+
 
 if __name__ == "__main__":
     main()
