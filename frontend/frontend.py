@@ -781,6 +781,7 @@ def game_detail_page():
         col_left, col_right = st.columns(2)
         
         with col_left:
+            st.markdown(f"**Game ID:** {game.get('id', 'Unknown')}")
             st.markdown(f"**Platform:** {game.get('platform', 'Unknown')}")
             
             # Release date and year
@@ -1381,7 +1382,9 @@ def display_gallery_tile(column, game):
 # Main Application Function
 # -------------------------
 def main():
-    st.title("Video Game Catalogue")
+    # Only show main title when not on gallery/library page
+    if st.session_state.get("page") != "gallery":
+        st.title("Video Game Catalogue")
 
     if "bulk_delete_mode" not in st.session_state:
         st.session_state["bulk_delete_mode"] = False
