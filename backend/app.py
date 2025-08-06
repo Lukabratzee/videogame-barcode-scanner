@@ -264,11 +264,14 @@ def get_price_source():
 def set_price_source(price_source):
     """Set price source preference"""
     if price_source not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
+        logging.warning(f"Invalid price source attempted: {price_source}")
         return False
     
+    logging.info(f"Setting price source to: {price_source}")
     config = load_config()
     config["price_source"] = price_source
     save_config(config)
+    logging.info(f"Price source saved successfully to config")
     return True
 
 ####################
@@ -2288,12 +2291,9 @@ def fetch_artwork_for_game(game_id):
         # Try to get API key from config file
         if not api_key:
             try:
-                config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json')
-                if os.path.exists(config_path):
-                    import json
-                    with open(config_path, 'r') as f:
-                        config = json.load(f)
-                        api_key = config.get('steamgriddb_api_key')
+                # Use the same config loading logic as other functions
+                config = load_config()
+                api_key = config.get('steamgriddb_api_key')
             except Exception:
                 pass
         
