@@ -206,7 +206,6 @@ st.markdown(
         margin-bottom: 15px;
     }
     
-    /* Enhanced 3D Gallery-specific styles */
     .gallery-tile {
         border: 1px solid #ddd;
         border-radius: 15px;
@@ -294,6 +293,41 @@ st.markdown(
         font-size: 12px;
         margin: 2px;
         border: 1px solid #bbdefb;
+    }
+    
+    /* Enhanced clickable tile styles */
+    .clickable-game-tile {
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        cursor: pointer;
+        position: relative;
+        transform-style: preserve-3d;
+        perspective: 1000px;
+    }
+    .clickable-game-tile::before {
+        content: '';
+        position: absolute;
+        top: -2px;
+        left: -2px;
+        right: -2px;
+        bottom: -2px;
+        background: linear-gradient(45deg, #667eea, #764ba2, #f093fb, #f5576c);
+        border-radius: 15px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        z-index: -1;
+    }
+    .clickable-game-tile:hover::before {
+        opacity: 1;
+    }
+    .clickable-game-tile:hover {
+        border-color: transparent;
+    }
+    .clickable-game-tile img {
+        transition: all 0.4s ease;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    .clickable-game-tile:hover img {
+        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
     }
     </style>
     """,
@@ -1008,7 +1042,7 @@ def gallery_page():
             """)
 
 def display_gallery_tile(column, game):
-    """Display individual game tile in enhanced 3D gallery grid with clickable artwork"""
+    """Display individual game tile with clickable artwork using HTML/CSS hover effects"""
     with column:
         # Game cover image
         cover_url = game.get("cover_image", "")
@@ -1017,40 +1051,232 @@ def display_gallery_tile(column, game):
         elif not cover_url:
             cover_url = "https://via.placeholder.com/200x280?text=No+Image"
         
-        # Create simple clickable tile using st.image and st.button
-        st.image(cover_url, use_column_width=True)
+        # Game details
+        game_id = game.get('id')
+        game_title = game.get('title', 'Unknown Game')
+        platform = game.get('platform', 'Unknown Platform')
         
-        # Game title
-        st.markdown(f"**{game.get('title', 'Unknown Game')}**")
-        
-        # Platform
-        st.markdown(f"*{game.get('platform', 'Unknown Platform')}*")
-        
-        # Tags
+        # Tags HTML
+        tags_html = ""
         tags = game.get("tags", [])
         if tags:
             display_tags = tags[:2]
             tag_colors = ["#667eea", "#764ba2", "#f093fb", "#f5576c", "#4ecdc4", "#45b7d1"]
-            tag_html = ""
             for i, tag in enumerate(display_tags):
                 color = tag_colors[i % len(tag_colors)]
-                tag_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin-right: 4px; display: inline-block;">{tag}</span>'
+                tags_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin-right: 4px; display: inline-block;">{tag}</span>'
             if len(tags) > 2:
-                tag_html += f'<span style="color: #888; font-size: 9px; font-style: italic;">+{len(tags) - 2}</span>'
-            st.markdown(tag_html, unsafe_allow_html=True)
+                tags_html += f'<span style="color: #888; font-size: 9px; font-style: italic;">+{len(tags) - 2}</span>'
         
         # Price and year
         price = game.get("average_price")
         year = game.get("release_year")
         price_text = f"£{price:.2f}" if price else "No price"
         year_text = f" • {year}" if year else ""
-        st.markdown(f"**{price_text}{year_text}**")
         
-        # Click button
-        if st.button("View Details", key=f"game_tile_{game['id']}", use_container_width=True):
-            st.session_state["selected_game_detail"] = game
-            st.session_state["page"] = "game_detail"
-            st.rerun()
+        # Create the tile with enhanced styling
+        with st.container():
+            # Add custom CSS for this specific tile
+            st.markdown(f"""
+            <style>
+            .game-tile-{game_id} {{
+                border: 1px solid #ddd;
+                border-radius: 15px;
+                padding: 0;
+                margin-bottom: 20px;
+                background: linear-gradient(145deg, #f8f9fa, #ffffff);
+                box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+                transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                text-align: center;
+                overflow: hidden;
+                cursor: pointer;
+                position: relative;
+                transform-style: preserve-3d;
+                perspective: 1000px;
+            }}
+            .game-tile-{game_id}:hover {{
+                transform: translateY(-8px) rotateX(2deg) rotateY(2deg) scale(1.02);
+                box-shadow: 0 20px 60px rgba(0,0,0,0.25), 0 8px 20px rgba(102, 126, 234, 0.3);
+                border-color: #667eea;
+            }}
+            .game-tile-{game_id}::before {{
+                content: '';
+                position: absolute;
+                top: -2px;
+                left: -2px;
+                right: -2px;
+                bottom: -2px;
+                background: linear-gradient(45deg, #667eea, #764ba2, #f093fb, #f5576c);
+                border-radius: 15px;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+                z-index: -1;
+            }}
+            .game-tile-{game_id}:hover::before {{
+                opacity: 1;
+            }}
+            .game-tile-{game_id} img {{
+                width: 100%;
+                height: 220px;
+                object-fit: cover;
+                border-radius: 15px 15px 0 0;
+                margin-bottom: 0;
+                transition: all 0.4s ease;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            }}
+            .game-tile-{game_id}:hover img {{
+                transform: scale(1.05);
+                box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            }}
+            .game-tile-content-{game_id} {{
+                padding: 15px;
+                transform-style: preserve-3d;
+                transition: transform 0.4s ease;
+            }}
+            .game-tile-{game_id}:hover .game-tile-content-{game_id} {{
+                transform: translateZ(10px);
+            }}
+            </style>
+            """, unsafe_allow_html=True)
+            
+            # Create a unique iframe-based clickable tile with proper Streamlit communication
+            tile_component_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ margin: 0; padding: 0; font-family: sans-serif; }}
+                    .game-tile {{
+                        border: 1px solid #ddd;
+                        border-radius: 15px;
+                        padding: 0;
+                        background: linear-gradient(145deg, #f8f9fa, #ffffff);
+                        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+                        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                        text-align: center;
+                        overflow: hidden;
+                        cursor: pointer;
+                        position: relative;
+                        transform-style: preserve-3d;
+                        perspective: 1000px;
+                        height: 420px;
+                    }}
+                    .game-tile:hover {{
+                        transform: translateY(-8px) rotateX(2deg) rotateY(2deg) scale(1.02);
+                        box-shadow: 0 20px 60px rgba(0,0,0,0.25), 0 8px 20px rgba(102, 126, 234, 0.3);
+                        border-color: #667eea;
+                    }}
+                    .game-tile::before {{
+                        content: '';
+                        position: absolute;
+                        top: -2px;
+                        left: -2px;
+                        right: -2px;
+                        bottom: -2px;
+                        background: linear-gradient(45deg, #667eea, #764ba2, #f093fb, #f5576c);
+                        border-radius: 15px;
+                        opacity: 0;
+                        transition: opacity 0.3s ease;
+                        z-index: -1;
+                    }}
+                    .game-tile:hover::before {{
+                        opacity: 1;
+                    }}
+                    .game-tile img {{
+                        width: 100%;
+                        height: 220px;
+                        object-fit: cover;
+                        border-radius: 15px 15px 0 0;
+                        margin-bottom: 0;
+                        transition: all 0.4s ease;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                    }}
+                    .game-tile:hover img {{
+                        transform: scale(1.05);
+                        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+                    }}
+                    .game-tile-content {{
+                        padding: 15px;
+                        transform-style: preserve-3d;
+                        transition: transform 0.4s ease;
+                    }}
+                    .game-tile:hover .game-tile-content {{
+                        transform: translateZ(10px);
+                    }}
+                    .tag {{
+                        display: inline-block;
+                        color: white;
+                        padding: 2px 6px;
+                        border-radius: 10px;
+                        font-size: 9px;
+                        margin-right: 4px;
+                    }}
+                </style>
+                <script src="https://unpkg.com/streamlit-component-lib@1.3.0/dist/streamlit-component-lib.js"></script>
+            </head>
+            <body>
+                <div class="game-tile" onclick="handleClick()">
+                    <img src="{cover_url}" alt="{game_title}">
+                    <div class="game-tile-content">
+                        <h4 style="margin: 5px 0 8px 0; font-size: 14px; color: #333; font-weight: 600; line-height: 1.2;">
+                            {game_title}
+                        </h4>
+                        <p style="margin: 0 0 8px 0; font-size: 12px; color: #666;">
+                            {platform}
+                        </p>
+                        <div style="margin-bottom: 8px;">
+                            {tags_html}
+                        </div>
+                        <div style="margin-top: 8px; font-weight: bold; color: #333; font-size: 12px;">
+                            {price_text}{year_text}
+                        </div>
+                    </div>
+                </div>
+                
+                <script>
+                    function handleClick() {{
+                        console.log('Tile clicked for game {game_id}');
+                        // Use Streamlit's component communication
+                        if (window.Streamlit) {{
+                            window.Streamlit.setComponentValue({game_id});
+                        }} else {{
+                            // Fallback: direct postMessage
+                            window.parent.postMessage({{
+                                type: 'streamlit:setComponentValue',
+                                data: {game_id}
+                            }}, '*');
+                        }}
+                    }}
+                    
+                    // Initialize Streamlit communication
+                    window.onload = function() {{
+                        if (window.Streamlit) {{
+                            window.Streamlit.setComponentReady();
+                            window.Streamlit.setFrameHeight(420);
+                        }}
+                    }};
+                    
+                    // Add visual feedback
+                    document.querySelector('.game-tile').addEventListener('mousedown', function() {{
+                        this.style.transform = 'translateY(-6px) rotateX(1deg) rotateY(1deg) scale(0.98)';
+                    }});
+                    
+                    document.querySelector('.game-tile').addEventListener('mouseup', function() {{
+                        this.style.transform = 'translateY(-8px) rotateX(2deg) rotateY(2deg) scale(1.02)';
+                    }});
+                </script>
+            </body>
+            </html>
+            """
+            
+            # Render the component and capture the click event
+            component_value = components.html(tile_component_html, height=420)
+            
+            # Handle navigation when component is clicked
+            if component_value == game_id:
+                st.session_state["selected_game_detail"] = game
+                st.session_state["page"] = "game_detail"
+                st.rerun()
 
 # -------------------------
 # Main Application Function
