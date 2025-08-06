@@ -168,7 +168,14 @@ def normalize_for_search(text):
 # -------------------------
 # Price Source Configuration Management
 # -------------------------
-CONFIG_FILE = os.path.join(BASE_DIR, "config", "config.json")
+
+# Determine config file path based on environment
+if os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv'):
+    # In Docker, the config is mounted at /app/config
+    CONFIG_FILE = "/app/config/config.json"
+else:
+    # Local development - config is relative to project root
+    CONFIG_FILE = os.path.join(BASE_DIR, "config", "config.json")
 
 def load_config():
     """Load configuration from JSON file, create default if doesn't exist"""
@@ -177,8 +184,14 @@ def load_config():
         "steamgriddb_api_key": "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api"
     }
     
+    # Debug logging
+    logging.info(f"Loading config from: {CONFIG_FILE}")
+    logging.info(f"Docker environment: {os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv')}")
+    
     # Ensure config directory exists
     config_dir = os.path.dirname(CONFIG_FILE)
+    logging.info(f"Config directory: {config_dir}")
+    
     if not os.path.exists(config_dir):
         try:
             os.makedirs(config_dir, exist_ok=True)
@@ -189,6 +202,7 @@ def load_config():
     
     if os.path.exists(CONFIG_FILE):
         try:
+            logging.info(f"Config file exists, loading...")
             with open(CONFIG_FILE, 'r') as f:
                 config = json.load(f)
                 # Ensure price_source exists and is valid
@@ -201,9 +215,12 @@ def load_config():
                     # Save the updated config
                     save_config(config)
                 
+                logging.info(f"Config loaded successfully")
                 return config
         except (json.JSONDecodeError, IOError) as e:
             logging.warning(f"Failed to load config file: {e}, creating default config")
+    else:
+        logging.info(f"Config file does not exist at {CONFIG_FILE}")
     
     # Create default config file
     logging.info(f"Creating default config file at: {CONFIG_FILE}")
@@ -219,11 +236,25 @@ def save_config(config):
             os.makedirs(config_dir, exist_ok=True)
             logging.info(f"Created config directory: {config_dir}")
         
+        # Debug logging
+        logging.info(f"Attempting to save config to: {CONFIG_FILE}")
+        logging.info(f"Config directory exists: {os.path.exists(config_dir)}")
+        logging.info(f"Config directory writable: {os.access(config_dir, os.W_OK) if os.path.exists(config_dir) else False}")
+        
         with open(CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
-        logging.info(f"Config saved to: {CONFIG_FILE}")
+        logging.info(f"Config saved successfully to: {CONFIG_FILE}")
     except IOError as e:
-        logging.error(f"Failed to save config: {e}")
+        logging.error(f"Failed to save config to {CONFIG_FILE}: {e}")
+        # In Docker, try to use a fallback location
+        if os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv'):
+            try:
+                fallback_config = "/tmp/config.json"
+                with open(fallback_config, 'w') as f:
+                    json.dump(config, f, indent=2)
+                logging.warning(f"Config saved to fallback location: {fallback_config}")
+            except Exception as fallback_error:
+                logging.error(f"Failed to save config to fallback location: {fallback_error}")
 
 def get_price_source():
     """Get current price source preference"""
