@@ -19,6 +19,26 @@ import sqlite3
 import os
 from datetime import datetime
 import json
+import unicodedata
+
+# Text normalization helper
+def normalize_for_search(text):
+    """
+    Normalize text for search by removing accents and special characters.
+    This allows 'Pokemon' to match 'Pokémon', etc.
+    """
+    if not text:
+        return ""
+    
+    # Normalize unicode characters (NFD = decomposed form)
+    normalized = unicodedata.normalize('NFD', text)
+    
+    # Remove combining characters (accents)
+    ascii_text = ''.join(char for char in normalized 
+                        if unicodedata.category(char) != 'Mn')
+    
+    # Convert to lowercase for case-insensitive search
+    return ascii_text.lower()
 
 # Database connection helper
 def get_db_connection():
@@ -166,9 +186,20 @@ def get_gallery_games():
             query_params.append(tag_filter)
             
         if search_query:
-            base_query += " AND g.title LIKE ?"
-            count_query += " AND g.title LIKE ?"
-            query_params.append(f"%{search_query}%")
+            # Enhanced search with special character normalization
+            normalized_search = normalize_for_search(search_query)
+            
+            # Search using both the original term and the accent-stripped version
+            search_condition = """ AND (
+                LOWER(g.title) LIKE ? OR 
+                LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    g.title, 'é', 'e'), 'è', 'e'), 'ê', 'e'), 'ë', 'e'), 
+                    'á', 'a'), 'à', 'a'), 'ä', 'a'), 'â', 'a'),
+                    'ó', 'o'), 'ò', 'o')) LIKE ?
+            )"""
+            base_query += search_condition
+            count_query += search_condition
+            query_params.extend([f"%{search_query.lower()}%", f"%{normalized_search}%"])
         
         # Add sorting
         sort_mapping = {

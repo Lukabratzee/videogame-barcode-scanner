@@ -9,6 +9,7 @@ import sqlite3
 from fuzzywuzzy import process
 import csv
 import io
+import unicodedata
 
 # Import YouTube trailer fetcher function
 try:
@@ -142,6 +143,27 @@ print(f"✅ Final Database Path: {database_path}")
 print(f"🧐 File Exists: {os.path.exists(database_path)}")
 
 ####################
+
+# -------------------------
+# Text Normalization for Search
+# -------------------------
+def normalize_for_search(text):
+    """
+    Normalize text for search by removing accents and special characters.
+    This allows 'Pokemon' to match 'Pokémon', etc.
+    """
+    if not text:
+        return ""
+    
+    # Normalize unicode characters (NFD = decomposed form)
+    normalized = unicodedata.normalize('NFD', text)
+    
+    # Remove combining characters (accents)
+    ascii_text = ''.join(char for char in normalized 
+                        if unicodedata.category(char) != 'Mn')
+    
+    # Convert to lowercase for case-insensitive search
+    return ascii_text.lower()
 
 # -------------------------
 # Price Source Configuration Management
@@ -903,14 +925,18 @@ def get_top_games():
             {
                 "id": game[0],
                 "title": game[1],
-                "cover_image": game[2],
-                "description": game[3],
-                "publisher": game[4],
-                "platforms": game[5],
-                "genres": game[6],
-                "series": game[7],
-                "release_date": game[8],
-                "average_price": game[9],
+                "description": game[2],
+                "publisher": game[3],
+                "platforms": game[4],
+                "genres": game[5],
+                "series": game[6],
+                "release_date": game[7],
+                "average_price": game[8],
+                "youtube_trailer_url": game[9],
+                "high_res_cover_url": game[10],
+                "hero_image_url": game[12],
+                "logo_image_url": game[14],
+                "icon_image_url": game[16],
             }
         )
 
@@ -1105,8 +1131,21 @@ def get_games():
         params.append(year)
 
     if title:
-        query += " AND title LIKE ?"
-        params.append(f"%{title}%")  # Allow partial matches
+        # Enhanced search with special character normalization
+        # This allows "Pokemon" to find "Pokémon" and vice versa
+        normalized_search = normalize_for_search(title)
+        
+        # Search using both the original term and the accent-stripped version
+        # Use REPLACE to strip accents from database titles for comparison
+        query += """ AND (
+            LOWER(title) LIKE ? OR 
+            LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                title, 'é', 'e'), 'è', 'e'), 'ê', 'e'), 'ë', 'e'), 
+                'á', 'a'), 'à', 'a'), 'ä', 'a'), 'â', 'a'),
+                'ó', 'o'), 'ò', 'o')) LIKE ?
+        )"""
+        params.append(f"%{title.lower()}%")
+        params.append(f"%{normalized_search}%")
 
     if sort == "alphabetical":
         query += " ORDER BY title ASC"
@@ -1125,26 +1164,26 @@ def get_games():
             {
                 "id": game[0],
                 "title": game[1],
-                "cover_image": game[2],
-                "description": game[3],
-                "publisher": game[4],
-                "platforms": game[5],
-                "genres": game[6],
-                "series": game[7],
-                "release_date": game[8],
-                "average_price": game[9],
-                "youtube_trailer_url": game[10] if len(game) > 10 else None,
+                "cover_image": None,  # cover_image column doesn't exist in data/games.db
+                "description": game[2],
+                "publisher": game[3],
+                "platforms": game[4],
+                "genres": game[5],
+                "series": game[6],
+                "release_date": game[7],
+                "average_price": game[8],
+                "youtube_trailer_url": game[9] if len(game) > 9 else None,
                 # High-resolution artwork (if available)
-                "high_res_cover_url": game[11] if len(game) > 11 else None,
-                "high_res_cover_path": game[12] if len(game) > 12 else None,
-                "hero_image_url": game[13] if len(game) > 13 else None,
-                "hero_image_path": game[14] if len(game) > 14 else None,
-                "logo_image_url": game[15] if len(game) > 15 else None,
-                "logo_image_path": game[16] if len(game) > 16 else None,
-                "icon_image_url": game[17] if len(game) > 17 else None,
-                "icon_image_path": game[18] if len(game) > 18 else None,
-                "steamgriddb_id": game[19] if len(game) > 19 else None,
-                "artwork_last_updated": game[20] if len(game) > 20 else None,
+                "high_res_cover_url": game[10] if len(game) > 10 else None,
+                "high_res_cover_path": game[11] if len(game) > 11 else None,
+                "hero_image_url": game[12] if len(game) > 12 else None,
+                "hero_image_path": game[13] if len(game) > 13 else None,
+                "logo_image_url": game[14] if len(game) > 14 else None,
+                "logo_image_path": game[15] if len(game) > 15 else None,
+                "icon_image_url": game[16] if len(game) > 16 else None,
+                "icon_image_path": game[17] if len(game) > 17 else None,
+                "steamgriddb_id": game[18] if len(game) > 18 else None,
+                "artwork_last_updated": game[19] if len(game) > 19 else None,
             }
         )
 
@@ -1267,14 +1306,13 @@ def update_game(game_id):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Update game data, including average_price
+        # Update game data, including average_price and youtube_trailer_url
         cursor.execute("""
             UPDATE games
-            SET title = ?, cover_image = ?, description = ?, publisher = ?, platforms = ?, genres = ?, series = ?, release_date = ?, average_price = ?
+            SET title = ?, description = ?, publisher = ?, platforms = ?, genres = ?, series = ?, release_date = ?, average_price = ?, youtube_trailer_url = ?
             WHERE id = ?
         """, (
             data["title"],
-            data["cover_image"],
             data["description"],
             ", ".join(data["publisher"]),
             ", ".join(data["platforms"]),
@@ -1282,6 +1320,7 @@ def update_game(game_id):
             ", ".join(data["series"]),
             data["release_date"],
             data["average_price"],
+            data.get("youtube_trailer_url", ""),
             game_id
         ))
 
@@ -1307,26 +1346,26 @@ def fetch_game_by_id(game_id):
             return jsonify({
                 "id": game[0],
                 "title": game[1],
-                "cover_image": game[2],
-                "description": game[3],
-                "publisher": game[4].split(", "),
-                "platforms": game[5].split(", "),
-                "genres": game[6].split(", "),
-                "series": game[7].split(", "),
-                "release_date": game[8],
-                "average_price": game[9],
-                "youtube_trailer_url": game[10] if len(game) > 10 else None,
+                "cover_image": None,  # cover_image column doesn't exist in data/games.db
+                "description": game[2],
+                "publisher": game[3].split(", "),
+                "platforms": game[4].split(", "),
+                "genres": game[5].split(", "),
+                "series": game[6].split(", "),
+                "release_date": game[7],
+                "average_price": game[8],
+                "youtube_trailer_url": game[9] if len(game) > 9 else None,
                 # High-resolution artwork (if available)
-                "high_res_cover_url": game[11] if len(game) > 11 else None,
-                "high_res_cover_path": game[12] if len(game) > 12 else None,
-                "hero_image_url": game[13] if len(game) > 13 else None,
-                "hero_image_path": game[14] if len(game) > 14 else None,
-                "logo_image_url": game[15] if len(game) > 15 else None,
-                "logo_image_path": game[16] if len(game) > 16 else None,
-                "icon_image_url": game[17] if len(game) > 17 else None,
-                "icon_image_path": game[18] if len(game) > 18 else None,
-                "steamgriddb_id": game[19] if len(game) > 19 else None,
-                "artwork_last_updated": game[20] if len(game) > 20 else None,
+                "high_res_cover_url": game[10] if len(game) > 10 else None,
+                "high_res_cover_path": game[11] if len(game) > 11 else None,
+                "hero_image_url": game[12] if len(game) > 12 else None,
+                "hero_image_path": game[13] if len(game) > 13 else None,
+                "logo_image_url": game[14] if len(game) > 14 else None,
+                "logo_image_path": game[15] if len(game) > 15 else None,
+                "icon_image_url": game[16] if len(game) > 16 else None,
+                "icon_image_path": game[17] if len(game) > 17 else None,
+                "steamgriddb_id": game[18] if len(game) > 18 else None,
+                "artwork_last_updated": game[19] if len(game) > 19 else None,
             }), 200
         else:
             return jsonify({"error": "Game not found"}), 404
@@ -1365,8 +1404,19 @@ def export_csv():
         query += ' AND strftime("%Y", release_date) = ?'
         params.append(year)
     if title:
-        query += " AND title LIKE ?"
-        params.append(f"%{title}%")
+        # Enhanced search with special character normalization
+        normalized_search = normalize_for_search(title)
+        
+        # Search using both the original term and the accent-stripped version
+        query += """ AND (
+            LOWER(title) LIKE ? OR 
+            LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                title, 'é', 'e'), 'è', 'e'), 'ê', 'e'), 'ë', 'e'), 
+                'á', 'a'), 'à', 'a'), 'ä', 'a'), 'â', 'a'),
+                'ó', 'o'), 'ò', 'o')) LIKE ?
+        )"""
+        params.append(f"%{title.lower()}%")
+        params.append(f"%{normalized_search}%")
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
@@ -1496,7 +1546,7 @@ def update_game_price(game_id):
             "message": f"Price updated successfully using {price_source}",
             "game_id": game_id,
             "game_title": game_title,
-            "old_price": game[9],  # average_price column
+            "old_price": game[8],  # average_price column
             "new_price": new_price,
             "price_source": price_source
         }), 200
@@ -1560,8 +1610,19 @@ def get_gallery_games():
         params = []
         
         if title_filter:
-            where_conditions.append("g.title LIKE ?")
-            params.append(f"%{title_filter}%")
+            # Enhanced search with special character normalization
+            normalized_search = normalize_for_search(title_filter)
+            
+            # Search using both the original term and the accent-stripped version
+            where_conditions.append("""(
+                LOWER(g.title) LIKE ? OR 
+                LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    g.title, 'é', 'e'), 'è', 'e'), 'ê', 'e'), 'ë', 'e'), 
+                    'á', 'a'), 'à', 'a'), 'ä', 'a'), 'â', 'a'),
+                    'ó', 'o'), 'ò', 'o')) LIKE ?
+            )""")
+            params.append(f"%{title_filter.lower()}%")
+            params.append(f"%{normalized_search}%")
         
         if platform_filter:
             # Platform filtering with support for both string and JSON array data
@@ -1643,7 +1704,6 @@ def get_gallery_games():
         SELECT DISTINCT
             g.id,
             g.title,
-            g.cover_image,
             g.description,
             g.publisher,
             g.platforms,
@@ -1696,57 +1756,56 @@ def get_gallery_games():
             
             # Parse release year
             release_year = None
-            if game_row[8]:  # release_date
+            if game_row[7]:  # release_date (now column 7 instead of 8)
                 try:
-                    release_year = int(game_row[8][:4])
+                    release_year = int(game_row[7][:4])
                 except (ValueError, TypeError):
                     pass
             
             # Format platform (take first platform if multiple)
             platform = ""
-            if game_row[5]:  # platforms
+            if game_row[4]:  # platforms (now column 4 instead of 5)
                 try:
-                    platforms = json.loads(game_row[5])
+                    platforms = json.loads(game_row[4])
                     if isinstance(platforms, list) and platforms:
                         platform = platforms[0]
                     elif isinstance(platforms, str):
                         platform = platforms
                 except (json.JSONDecodeError, TypeError):
-                    platform = str(game_row[5])
+                    platform = str(game_row[4])
             
             game = {
                 'id': game_id,
                 'title': game_row[1],
-                'cover_image': game_row[2],
-                'description': game_row[3],
-                'publisher': game_row[4],
+                'description': game_row[2],
+                'publisher': game_row[3],
                 'platform': platform,  # Single platform for display
-                'platforms': game_row[5],  # Full platforms data
-                'genres': game_row[6],
-                'series': game_row[7],
-                'release_date': game_row[8],
+                'platforms': game_row[4],  # Full platforms data
+                'genres': game_row[5],
+                'series': game_row[6],
+                'release_date': game_row[7],
                 'release_year': release_year,
-                'average_price': game_row[9],
-                'youtube_trailer_url': game_row[10],
-                'completion_status': game_row[11],
-                'personal_rating': game_row[12],
-                'play_time_hours': game_row[13],
-                'notes': game_row[14],
-                'display_priority': game_row[15],
-                'is_favorite': bool(game_row[16]),
-                'date_acquired': game_row[17],
-                'date_completed': game_row[18],
+                'average_price': game_row[8],
+                'youtube_trailer_url': game_row[9],
+                'completion_status': game_row[10],
+                'personal_rating': game_row[11],
+                'play_time_hours': game_row[12],
+                'notes': game_row[13],
+                'display_priority': game_row[14],
+                'is_favorite': bool(game_row[15]),
+                'date_acquired': game_row[16],
+                'date_completed': game_row[17],
                 'tags': tags,
                 # High-resolution artwork from SteamGridDB
-                'high_res_cover_url': game_row[19],
-                'high_res_cover_path': game_row[20],
-                'hero_image_url': game_row[21],
-                'hero_image_path': game_row[22],
-                'logo_image_url': game_row[23],
-                'logo_image_path': game_row[24],
-                'icon_image_url': game_row[25],
-                'icon_image_path': game_row[26],
-                'steamgriddb_id': game_row[27]
+                'high_res_cover_url': game_row[18],
+                'high_res_cover_path': game_row[19],
+                'hero_image_url': game_row[20],
+                'hero_image_path': game_row[21],
+                'logo_image_url': game_row[22],
+                'logo_image_path': game_row[23],
+                'icon_image_url': game_row[24],
+                'icon_image_path': game_row[25],
+                'steamgriddb_id': game_row[26]
             }
             games.append(game)
         
