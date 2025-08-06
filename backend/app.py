@@ -925,6 +925,7 @@ def get_top_games():
             {
                 "id": game[0],
                 "title": game[1],
+                "cover_image": None,  # cover_image column doesn't exist in data/games.db
                 "description": game[2],
                 "publisher": game[3],
                 "platforms": game[4],
@@ -932,11 +933,18 @@ def get_top_games():
                 "series": game[6],
                 "release_date": game[7],
                 "average_price": game[8],
-                "youtube_trailer_url": game[9],
-                "high_res_cover_url": game[10],
-                "hero_image_url": game[12],
-                "logo_image_url": game[14],
-                "icon_image_url": game[16],
+                "youtube_trailer_url": game[9] if len(game) > 9 else None,
+                # High-resolution artwork (if available)
+                "high_res_cover_url": game[10] if len(game) > 10 else None,
+                "high_res_cover_path": game[11] if len(game) > 11 else None,
+                "hero_image_url": game[12] if len(game) > 12 else None,
+                "hero_image_path": game[13] if len(game) > 13 else None,
+                "logo_image_url": game[14] if len(game) > 14 else None,
+                "logo_image_path": game[15] if len(game) > 15 else None,
+                "icon_image_url": game[16] if len(game) > 16 else None,
+                "icon_image_path": game[17] if len(game) > 17 else None,
+                "steamgriddb_id": game[18] if len(game) > 18 else None,
+                "artwork_last_updated": game[19] if len(game) > 19 else None,
             }
         )
 
