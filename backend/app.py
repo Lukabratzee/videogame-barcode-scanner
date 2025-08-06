@@ -168,7 +168,7 @@ def normalize_for_search(text):
 # -------------------------
 # Price Source Configuration Management
 # -------------------------
-CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+CONFIG_FILE = os.path.join(BASE_DIR, "config", "config.json")
 
 def load_config():
     """Load configuration from JSON file, create default if doesn't exist"""
