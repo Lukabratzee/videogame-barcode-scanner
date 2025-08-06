@@ -86,6 +86,20 @@ def update_game_price(game_id):
     else:
         return None
 
+def update_game_artwork(game_id):
+    """Update the artwork of a game using SteamGridDB API"""
+    response = requests.post(f"{BACKEND_URL}/update_game_artwork/{game_id}")
+    if response.status_code == 200:
+        return response.json()
+    elif response.status_code == 400:
+        # API key not configured
+        return {"error": "api_key_missing", "details": response.json()}
+    elif response.status_code == 422:
+        # No artwork found
+        return {"error": "no_artwork_found", "details": response.json()}
+    else:
+        return None
+
 def get_price_source():
     """Get the current price source from backend configuration"""
     try:
@@ -1820,6 +1834,53 @@ def main():
                         games = fetch_games(filters)
                     else:
                         st.error("Failed to update game price. Please check the Game ID and try again.")
+            else:
+                st.warning("Please enter a Game ID.")
+
+    # -------------------------
+    # Sidebar: Update Game Artwork Section
+    # -------------------------
+    update_artwork_expander = st.sidebar.expander("Update Game Artwork")
+    with update_artwork_expander:
+        st.markdown("**Update artwork using SteamGridDB API**")
+        st.info("Fetches high-resolution grid covers, heroes, logos, and icons")
+        
+        update_artwork_game_id = st.text_input("Game ID to Update Artwork", key="update_artwork_game_id")
+        confirm_update_artwork = st.checkbox("I confirm that I want to update this game's artwork", key="update_artwork_confirm")
+        
+        if st.button("Update Artwork", key="update_artwork_button") and confirm_update_artwork:
+            if update_artwork_game_id:
+                with st.spinner("Fetching artwork from SteamGridDB..."):
+                    result = update_game_artwork(update_artwork_game_id)
+                    if result and "error" not in result:
+                        st.success("✅ Artwork updated successfully!")
+                        st.write(f"**Game:** {result['game_title']}")
+                        st.write(f"**Game ID:** {result['game_id']}")
+                        
+                        # Refresh the current view to show updated artwork
+                        filters = {}
+                        if st.session_state.get("filter_publisher"):
+                            filters["publisher"] = st.session_state["filter_publisher"]
+                        if st.session_state.get("filter_platform"):
+                            filters["platform"] = st.session_state["filter_platform"]
+                        if st.session_state.get("filter_genre"):
+                            filters["genre"] = st.session_state["filter_genre"]
+                        if st.session_state.get("filter_year"):
+                            filters["year"] = st.session_state["filter_year"]
+                        # Re-fetch games to show updated artwork
+                        games = fetch_games(filters)
+                    elif result and result.get("error") == "api_key_missing":
+                        st.error("❌ SteamGridDB API key not configured")
+                        st.info("To use this feature:")
+                        st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
+                        st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
+                        st.write("3. Restart the backend service")
+                    elif result and result.get("error") == "no_artwork_found":
+                        st.warning("⚠️ No artwork found for this game")
+                        st.write(f"**Game:** {result['details']['game_title']}")
+                        st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
+                    else:
+                        st.error("Failed to update game artwork. Please check the Game ID and try again.")
             else:
                 st.warning("Please enter a Game ID.")
 
