@@ -476,20 +476,160 @@ def game_detail_page():
     """Individual game detail page with external links and comprehensive information"""
     game = st.session_state.get("selected_game_detail")
     if not game:
-        st.error("No game selected. Returning to gallery...")
+        st.error("No game selected. Returning to library...")
         st.session_state["page"] = "gallery"
         st.rerun()
         return
     
-    # Header with back button
-    col_back, col_title = st.columns([1, 4])
-    with col_back:
-        if st.button("⬅️ Back to Gallery", key="back_to_gallery"):
-            st.session_state["page"] = "gallery"
-            st.rerun()
+    # -------------------------
+    # Game Detail Sidebar: Same as Library for Consistency
+    # -------------------------
+    # Music Player Section
+    music_expander = st.sidebar.expander("Video Game Music Player")
+    with music_expander:
+        st.markdown("### VIPVGM - Video Game Music")
+        st.markdown("*Listen to video game music while browsing your collection!*")
+        
+        # Create a container for the iframe without autoplay
+        iframe_html = """
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+            <iframe 
+                src="https://www.vipvgm.net/" 
+                width="100%" 
+                height="400" 
+                frameborder="0" 
+                scrolling="yes"
+                allow="encrypted-media; fullscreen"
+                title="VIPVGM Video Game Music Player"
+                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+            ></iframe>
+        </div>
+        """
+        
+        # Try to embed the iframe
+        try:
+            components.html(iframe_html, height=450)
+        except Exception as e:
+            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
+            if st.button("Open VIPVGM Music Player", type="primary", key="detail_music_player_fallback"):
+                st.link_button("Open VIPVGM Music Player", "https://www.vipvgm.net/")
+
+    st.sidebar.markdown("---")  # Add separator
     
-    with col_title:
-        st.title(game.get("title", "Unknown Game"))
+    # Load filter options for the gallery filters
+    filter_options = fetch_gallery_filters()
+    
+    # Create filter interface in sidebar (same as library)
+    st.sidebar.markdown("### Library Filters")
+    
+    # Search by title
+    title_search = st.sidebar.text_input("Search titles", key="detail_gallery_title_search")
+    
+    # Tag filters (multi-select)
+    available_tags = filter_options.get("tags", [])
+    selected_tags = st.sidebar.multiselect(
+        "Tags", 
+        available_tags,
+        key="detail_gallery_tags_filter",
+        help="Select multiple tags to filter games"
+    )
+    
+    # Platform filter
+    available_platforms = filter_options.get("platforms", [])
+    selected_platform = st.sidebar.selectbox(
+        "Platform", 
+        ["All"] + available_platforms,
+        key="detail_gallery_platform_filter"
+    )
+    
+    # Genre filter
+    available_genres = filter_options.get("genres", [])
+    selected_genre = st.sidebar.selectbox(
+        "Genre", 
+        ["All"] + available_genres,
+        key="detail_gallery_genre_filter"
+    )
+    
+    # Release year range
+    available_years = filter_options.get("release_years", [])
+    if available_years:
+        min_year, max_year = min(available_years), max(available_years)
+        year_range = st.sidebar.slider(
+            "Release Year Range",
+            min_value=min_year,
+            max_value=max_year,
+            value=(min_year, max_year),
+            key="detail_gallery_year_range"
+        )
+    else:
+        year_range = None
+    
+    # Gallery view options
+    st.sidebar.markdown("### Display Options")
+    per_page = st.sidebar.selectbox(
+        "Games per page",
+        [12, 20, 40, 60],
+        index=1,  # Default to 20
+        key="detail_gallery_per_page_select"
+    )
+    
+    # Grid columns selector
+    grid_cols = st.sidebar.selectbox(
+        "Grid columns",
+        [3, 4, 5, 6],
+        index=1,  # Default to 4 columns
+        key="detail_gallery_grid_cols"
+    )
+    
+    # Apply filters button - when clicked, go to library with these filters
+    if st.sidebar.button("Apply Filters & Go to Library", key="detail_apply_filters", type="primary"):
+        # Build filters dictionary
+        filters = {}
+        if title_search:
+            filters["title"] = title_search
+        if selected_tags:
+            filters["tags"] = selected_tags
+        if selected_platform != "All":
+            filters["platform"] = selected_platform
+        if selected_genre != "All":
+            filters["genre"] = selected_genre
+        if year_range and year_range != (min_year, max_year):
+            filters["year_min"] = year_range[0]
+            filters["year_max"] = year_range[1]
+        
+        # Apply the filters to the library session state
+        st.session_state["gallery_filters"] = filters
+        st.session_state["gallery_per_page"] = per_page
+        st.session_state["gallery_page"] = 1  # Reset to first page
+        st.session_state["gallery_per_page"] = per_page
+        st.session_state["gallery_grid_cols"] = grid_cols
+        
+        # Set the corresponding library filter keys so they show up when we switch
+        if title_search:
+            st.session_state["gallery_title_search"] = title_search
+        if selected_tags:
+            st.session_state["gallery_tags_filter"] = selected_tags
+        if selected_platform != "All":
+            st.session_state["gallery_platform_filter"] = selected_platform
+        if selected_genre != "All":
+            st.session_state["gallery_genre_filter"] = selected_genre
+        if year_range and year_range != (min_year, max_year):
+            st.session_state["gallery_year_range"] = year_range
+        
+        # Navigate to library
+        st.session_state["page"] = "gallery"
+        st.rerun()
+    
+    # Clear filters button
+    if st.sidebar.button("Clear All Filters", key="detail_gallery_clear_filters"):
+        # Clear all filter session state keys for detail page
+        for key in list(st.session_state.keys()):
+            if key.startswith("detail_gallery_"):
+                del st.session_state[key]
+        st.rerun()
+    
+    # Header with game title only
+    st.title(game.get("title", "Unknown Game"))
     
     # Main layout: Image + Details
     col_image, col_details = st.columns([1, 2])
@@ -713,7 +853,7 @@ def game_detail_page():
 
     # External links section
     st.markdown("---")
-    st.markdown("### 🔗 External Links & Resources")
+    st.markdown("<h3 style='text-align: center;'>🔗 External Links & Resources</h3>", unsafe_allow_html=True)
     
     # Create search queries for external sites
     url_safe_query = search_query.replace(" trailer", "").replace(" ", "+")
@@ -735,10 +875,6 @@ def game_detail_page():
         # Metacritic
         metacritic_url = f"https://www.metacritic.com/search/{url_safe_query}/"
         st.link_button("📊 Metacritic", metacritic_url, use_container_width=True)
-    
-    with col_spacer:
-        st.markdown("#### 🎯 Quick Links")
-        st.markdown("Essential resources for this game")
 
     # Price comparison section
         # Removed Digital Stores section as requested
@@ -788,18 +924,18 @@ def game_detail_page():
     action_col1, action_col2, action_col3 = st.columns(3)
     
     with action_col1:
-        if st.button("✏️ Edit Game Details", key="edit_from_detail", use_container_width=True):
+        if st.button("Edit Game Details", key="edit_from_detail", use_container_width=True):
             st.session_state["editing_game_id"] = game["id"]
             st.session_state["page"] = "home"
             st.rerun()
     
     with action_col2:
-        if st.button("💰 Update Price", key="update_price_from_detail", use_container_width=True):
+        if st.button("Update Price", key="update_price_from_detail", use_container_width=True):
             # You could implement a price update function here
             st.info("Price update functionality can be implemented here")
     
     with action_col3:
-        if st.button("🏷️ Manage Tags", key="manage_tags_from_detail", use_container_width=True):
+        if st.button("Manage Tags", key="manage_tags_from_detail", use_container_width=True):
             # You could implement tag management here
             st.info("Tag management functionality can be implemented here")
 
@@ -807,8 +943,8 @@ def game_detail_page():
 # Gallery Page Function
 # -------------------------
 def gallery_page():
-    """Gallery page with visual game display, filtering, and 3D-ready layout"""
-    st.title("🖼️ Game Gallery")
+    """Library page with visual game display, filtering, and 3D-ready layout"""
+    st.title("Game Library")
     st.markdown("*Visual game collection browser with advanced filtering*")
     
     # Initialize gallery session state
@@ -823,11 +959,11 @@ def gallery_page():
     filter_options = fetch_gallery_filters()
     
     # -------------------------
-    # Gallery Sidebar: Music Player Section (moved to top)
+    # Library Sidebar: Music Player Section (moved to top)
     # -------------------------
-    music_expander = st.sidebar.expander("🎵 Video Game Music Player")
+    music_expander = st.sidebar.expander("Video Game Music Player")
     with music_expander:
-        st.markdown("### 🎮 VIPVGM - Video Game Music")
+        st.markdown("### VIPVGM - Video Game Music")
         st.markdown("*Listen to video game music while browsing your collection!*")
         
         # Create a container for the iframe without autoplay
@@ -851,21 +987,21 @@ def gallery_page():
             components.html(iframe_html, height=450)
         except Exception as e:
             st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("🎵 Open VIPVGM Music Player", type="primary", key="gallery_music_player_fallback"):
-                st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
+            if st.button("Open VIPVGM Music Player", type="primary", key="gallery_music_player_fallback"):
+                st.link_button("Open VIPVGM Music Player", "https://www.vipvgm.net/")
 
     st.sidebar.markdown("---")  # Add separator
     
     # Create filter interface in sidebar
-    st.sidebar.markdown("### 🎯 Gallery Filters")
+    st.sidebar.markdown("### Library Filters")
     
     # Search by title
-    title_search = st.sidebar.text_input("🔍 Search titles", key="gallery_title_search")
+    title_search = st.sidebar.text_input("Search titles", key="gallery_title_search")
     
     # Tag filters (multi-select)
     available_tags = filter_options.get("tags", [])
     selected_tags = st.sidebar.multiselect(
-        "🏷️ Tags", 
+        "Tags", 
         available_tags,
         key="gallery_tags_filter",
         help="Select multiple tags to filter games"
@@ -874,7 +1010,7 @@ def gallery_page():
     # Platform filter
     available_platforms = filter_options.get("platforms", [])
     selected_platform = st.sidebar.selectbox(
-        "🎮 Platform", 
+        "Platform", 
         ["All"] + available_platforms,
         key="gallery_platform_filter"
     )
@@ -882,7 +1018,7 @@ def gallery_page():
     # Genre filter
     available_genres = filter_options.get("genres", [])
     selected_genre = st.sidebar.selectbox(
-        "🎲 Genre", 
+        "Genre", 
         ["All"] + available_genres,
         key="gallery_genre_filter"
     )
@@ -892,7 +1028,7 @@ def gallery_page():
     if available_years:
         min_year, max_year = min(available_years), max(available_years)
         year_range = st.sidebar.slider(
-            "📅 Release Year Range",
+            "Release Year Range",
             min_value=min_year,
             max_value=max_year,
             value=(min_year, max_year),
@@ -901,8 +1037,8 @@ def gallery_page():
     else:
         year_range = None
     
-    # Gallery view options
-    st.sidebar.markdown("### 📊 Display Options")
+    # Library view options
+    st.sidebar.markdown("### Display Options")
     per_page = st.sidebar.selectbox(
         "Games per page",
         [12, 20, 40, 60],
@@ -919,7 +1055,7 @@ def gallery_page():
     )
     
     # Clear filters button
-    if st.sidebar.button("🗑️ Clear All Filters", key="gallery_clear_filters"):
+    if st.sidebar.button("Clear All Filters", key="gallery_clear_filters"):
         # Reset page to 1
         st.session_state["gallery_page"] = 1
         # Use a rerun approach instead of directly modifying session state
@@ -1005,7 +1141,7 @@ def gallery_page():
             
             with col_prev:
                 if st.session_state["gallery_page"] > 1:
-                    if st.button("⬅️ Previous", key="gallery_prev"):
+                    if st.button("Previous", key="gallery_prev"):
                         st.session_state["gallery_page"] -= 1
                         st.rerun()
             
@@ -1027,11 +1163,11 @@ def gallery_page():
             
             with col_next:
                 if st.session_state["gallery_page"] < total_pages:
-                    if st.button("Next ➡️", key="gallery_next"):
+                    if st.button("Next", key="gallery_next"):
                         st.session_state["gallery_page"] += 1
                         st.rerun()
     else:
-        st.info("🎮 No games found matching your filters. Try adjusting the criteria above.")
+        st.info("No games found matching your filters. Try adjusting the criteria above.")
         
         if filters:
             st.markdown("""
@@ -1139,141 +1275,69 @@ def display_gallery_tile(column, game):
             </style>
             """, unsafe_allow_html=True)
             
-            # Create a unique iframe-based clickable tile with proper Streamlit communication
-            tile_component_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body {{ margin: 0; padding: 0; font-family: sans-serif; }}
-                    .game-tile {{
-                        border: 1px solid #ddd;
-                        border-radius: 15px;
-                        padding: 0;
-                        background: linear-gradient(145deg, #f8f9fa, #ffffff);
-                        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-                        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-                        text-align: center;
-                        overflow: hidden;
-                        cursor: pointer;
-                        position: relative;
-                        transform-style: preserve-3d;
-                        perspective: 1000px;
-                        height: 420px;
-                    }}
-                    .game-tile:hover {{
-                        transform: translateY(-8px) rotateX(2deg) rotateY(2deg) scale(1.02);
-                        box-shadow: 0 20px 60px rgba(0,0,0,0.25), 0 8px 20px rgba(102, 126, 234, 0.3);
-                        border-color: #667eea;
-                    }}
-                    .game-tile::before {{
-                        content: '';
-                        position: absolute;
-                        top: -2px;
-                        left: -2px;
-                        right: -2px;
-                        bottom: -2px;
-                        background: linear-gradient(45deg, #667eea, #764ba2, #f093fb, #f5576c);
-                        border-radius: 15px;
-                        opacity: 0;
-                        transition: opacity 0.3s ease;
-                        z-index: -1;
-                    }}
-                    .game-tile:hover::before {{
-                        opacity: 1;
-                    }}
-                    .game-tile img {{
-                        width: 100%;
-                        height: 220px;
-                        object-fit: cover;
-                        border-radius: 15px 15px 0 0;
-                        margin-bottom: 0;
-                        transition: all 0.4s ease;
-                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-                    }}
-                    .game-tile:hover img {{
-                        transform: scale(1.05);
-                        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
-                    }}
-                    .game-tile-content {{
-                        padding: 15px;
-                        transform-style: preserve-3d;
-                        transition: transform 0.4s ease;
-                    }}
-                    .game-tile:hover .game-tile-content {{
-                        transform: translateZ(10px);
-                    }}
-                    .tag {{
-                        display: inline-block;
-                        color: white;
-                        padding: 2px 6px;
-                        border-radius: 10px;
-                        font-size: 9px;
-                        margin-right: 4px;
-                    }}
-                </style>
-                <script src="https://unpkg.com/streamlit-component-lib@1.3.0/dist/streamlit-component-lib.js"></script>
-            </head>
-            <body>
-                <div class="game-tile" onclick="handleClick()">
-                    <img src="{cover_url}" alt="{game_title}">
-                    <div class="game-tile-content">
-                        <h4 style="margin: 5px 0 8px 0; font-size: 14px; color: #333; font-weight: 600; line-height: 1.2;">
-                            {game_title}
-                        </h4>
-                        <p style="margin: 0 0 8px 0; font-size: 12px; color: #666;">
-                            {platform}
-                        </p>
-                        <div style="margin-bottom: 8px;">
-                            {tags_html}
-                        </div>
-                        <div style="margin-top: 8px; font-weight: bold; color: #333; font-size: 12px;">
-                            {price_text}{year_text}
-                        </div>
+            # Use a much simpler approach - just create a clickable tile with st.button overlay
+            # First, display the visual tile
+            st.markdown(f"""
+            <div class="visual-tile-{game_id}" style="
+                border: 1px solid #ddd;
+                border-radius: 15px;
+                padding: 0;
+                margin-bottom: 20px;
+                background: linear-gradient(145deg, #f8f9fa, #ffffff);
+                box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+                transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                text-align: center;
+                overflow: hidden;
+                position: relative;
+                transform-style: preserve-3d;
+                perspective: 1000px;
+                height: 420px;
+            ">
+                <img src="{cover_url}" alt="{game_title}" style="
+                    width: 100%;
+                    height: 220px;
+                    object-fit: cover;
+                    border-radius: 15px 15px 0 0;
+                    margin-bottom: 0;
+                    transition: all 0.4s ease;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                ">
+                <div style="padding: 15px;">
+                    <h4 style="margin: 5px 0 8px 0; font-size: 14px; color: #333; font-weight: 600; line-height: 1.2;">
+                        {game_title}
+                    </h4>
+                    <p style="margin: 0 0 8px 0; font-size: 12px; color: #666;">
+                        {platform}
+                    </p>
+                    <div style="margin-bottom: 8px;">
+                        {tags_html}
+                    </div>
+                    <div style="margin-top: 8px; font-weight: bold; color: #333; font-size: 12px;">
+                        {price_text}{year_text}
                     </div>
                 </div>
-                
-                <script>
-                    function handleClick() {{
-                        console.log('Tile clicked for game {game_id}');
-                        // Use Streamlit's component communication
-                        if (window.Streamlit) {{
-                            window.Streamlit.setComponentValue({game_id});
-                        }} else {{
-                            // Fallback: direct postMessage
-                            window.parent.postMessage({{
-                                type: 'streamlit:setComponentValue',
-                                data: {game_id}
-                            }}, '*');
-                        }}
-                    }}
-                    
-                    // Initialize Streamlit communication
-                    window.onload = function() {{
-                        if (window.Streamlit) {{
-                            window.Streamlit.setComponentReady();
-                            window.Streamlit.setFrameHeight(420);
-                        }}
-                    }};
-                    
-                    // Add visual feedback
-                    document.querySelector('.game-tile').addEventListener('mousedown', function() {{
-                        this.style.transform = 'translateY(-6px) rotateX(1deg) rotateY(1deg) scale(0.98)';
-                    }});
-                    
-                    document.querySelector('.game-tile').addEventListener('mouseup', function() {{
-                        this.style.transform = 'translateY(-8px) rotateX(2deg) rotateY(2deg) scale(1.02)';
-                    }});
-                </script>
-            </body>
-            </html>
-            """
+            </div>
             
-            # Render the component and capture the click event
-            component_value = components.html(tile_component_html, height=420)
+            <style>
+            .visual-tile-{game_id}:hover {{
+                transform: translateY(-8px) rotateX(2deg) rotateY(2deg) scale(1.02) !important;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.25), 0 8px 20px rgba(102, 126, 234, 0.3) !important;
+                border-color: #667eea !important;
+            }}
+            .visual-tile-{game_id}:hover img {{
+                transform: scale(1.05) !important;
+                box-shadow: 0 8px 25px rgba(0,0,0,0.2) !important;
+            }}
+            </style>
+            """, unsafe_allow_html=True)
             
-            # Handle navigation when component is clicked
-            if component_value == game_id:
+            # Now create a button that spans the entire tile area
+            if st.button(
+                "View Details", 
+                key=f"game_tile_{game_id}",
+                help=f"Click to view details for {game_title}",
+                use_container_width=True
+            ):
                 st.session_state["selected_game_detail"] = game
                 st.session_state["page"] = "game_detail"
                 st.rerun()
@@ -1299,9 +1363,9 @@ def main():
     col_home, col_gallery = st.sidebar.columns(2)
     
     with col_home:
-        home_clicked = st.button("🏠 Home", type="primary", use_container_width=True)
+        home_clicked = st.button("Editor", type="primary", use_container_width=True)
     with col_gallery:
-        gallery_clicked = st.button("🖼️ Gallery", type="secondary", use_container_width=True)
+        gallery_clicked = st.button("Library", type="secondary", use_container_width=True)
     
     if gallery_clicked:
         st.session_state["page"] = "gallery"
@@ -1351,9 +1415,9 @@ def main():
     # -------------------------
     # Sidebar: Music Player Section
     # -------------------------
-    music_expander = st.sidebar.expander("🎵 Video Game Music Player")
+    music_expander = st.sidebar.expander("Video Game Music Player")
     with music_expander:
-        st.markdown("### 🎮 VIPVGM - Video Game Music")
+        st.markdown("### VIPVGM - Video Game Music")
         st.markdown("*Listen to video game music while browsing your collection!*")
         
         # Create a container for the iframe without autoplay
@@ -1383,7 +1447,7 @@ def main():
     # -------------------------
     # Global Price Source Selector
     # -------------------------
-    st.sidebar.markdown("### 💰 Price Scraping ")
+    st.sidebar.markdown("### Price Scraping")
     
     # Get the current price source from URL parameters or session state
     price_options = ["eBay", "Amazon", "CeX", "PriceCharting"]
