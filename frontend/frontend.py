@@ -1651,7 +1651,6 @@ def main():
     add_expander = st.sidebar.expander("Add Game")
     with add_expander:
         title = st.text_input("Title", key="add_title")
-        cover_image = st.text_input("Cover Image URL", key="add_cover_image")
         description = st.text_area("Description", key="add_description")
         publisher = st.text_input("Publisher", key="add_publisher")
 
@@ -1667,7 +1666,7 @@ def main():
         if st.button("Add Game", key="add_game_button"):
             game_data = {
                 "title": title,
-                "cover_image": cover_image,
+                "cover_image": "",  # Cover Image URL field removed - now uses high-res artwork system
                 "description": description,
                 "publisher": [publisher],
                 "platforms": platforms_list,
@@ -1734,7 +1733,6 @@ def main():
                 game_details["genres"] = [game_details["genres"]]
 
             edit_title = st.text_input("Title", game_details["title"], key="edit_title")
-            edit_cover_image = st.text_input("Cover Image URL", game_details["cover_image"], key="edit_cover_image")
             edit_description = st.text_area("Description", game_details["description"], key="edit_description")
 
             edit_publisher = st.text_input("Publisher", ", ".join(game_details["publisher"]), key="edit_publisher")
@@ -1749,7 +1747,7 @@ def main():
             new_genres_list = [g.strip() for g in edit_genres_input.split(",") if g.strip()]
 
             edit_series_str = ", ".join(game_details["series"])
-            edit_series_input = st.text_input("Series", edit_series_str, key="edit_series")
+            edit_series_input = st.text_input("Series (comma separated)", edit_series_str, key="edit_series")
             new_series_list = [s.strip() for s in edit_series_input.split(",") if s.strip()]
 
             edit_release_date = st.date_input("Release Date", key="edit_release_date")
@@ -1759,7 +1757,7 @@ def main():
             if st.button("Update Game", key="update_game_button"):
                 updated_game_data = {
                     "title": edit_title,
-                    "cover_image": edit_cover_image,
+                    "cover_image": "",  # Cover Image URL field removed - now uses high-res artwork system
                     "description": edit_description,
                     "publisher": new_pub_list,
                     "platforms": new_platforms_list,
