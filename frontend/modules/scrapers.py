@@ -155,8 +155,27 @@ def get_chrome_driver():
     
     if DOCKER_MODE:
         # Docker environment - use standard WebDriver with explicit path
-        options = get_chrome_options()
         try:
+            # Import selenium webdriver explicitly for Docker
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options as DockerOptions
+            
+            # Create options for Docker
+            options = DockerOptions()
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--disable-extensions")
+            options.add_argument("--disable-plugins")
+            options.add_argument("--disable-images")
+            options.add_argument("--disable-web-security")
+            options.add_argument("--allow-running-insecure-content")
+            options.add_argument("--ignore-certificate-errors")
+            options.add_argument("--ignore-ssl-errors")
+            options.add_argument("--window-size=1920,1080")
+            options.add_argument("--headless=new")
+            options.add_argument("--user-agent=Mozilla/5.0 (Linux; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+            
             # Use system Chrome and ChromeDriver in Docker with explicit path
             service = ChromeService("/usr/local/bin/chromedriver")  # Explicit path for Docker
             driver = webdriver.Chrome(service=service, options=options)
@@ -479,6 +498,8 @@ def get_amazon_chrome_driver():
     
     try:
         if DOCKER_MODE:
+            # Import selenium webdriver explicitly for Docker
+            from selenium import webdriver
             driver = webdriver.Chrome(service=service, options=options)
         else:
             driver = uc.Chrome(service=service, options=options)

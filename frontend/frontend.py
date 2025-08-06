@@ -3,8 +3,6 @@ import streamlit.components.v1 as components
 import requests
 import time
 import os, sys
-import pandas as pd
-import matplotlib.pyplot as plt
 
 # Configure Streamlit page - MUST be the very first Streamlit command!
 st.set_page_config(
