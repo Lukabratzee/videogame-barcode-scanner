@@ -152,10 +152,10 @@ def get_chrome_driver():
     Safely initialize Chrome driver with proper error handling and fallback options.
     Uses Docker-compatible driver in containers and undetected-chromedriver locally.
     """
-    options = get_chrome_options()
     
     if DOCKER_MODE:
         # Docker environment - use standard WebDriver with explicit path
+        options = get_chrome_options()
         try:
             # Use system Chrome and ChromeDriver in Docker with explicit path
             service = ChromeService("/usr/local/bin/chromedriver")  # Explicit path for Docker
@@ -166,24 +166,69 @@ def get_chrome_driver():
             logging.error(f"Failed to initialize Chrome driver in Docker: {e}")
             raise Exception("Could not initialize Chrome driver in Docker environment")
     else:
-        # Local environment - use undetected_chromedriver
+        # Local environment - try multiple approaches with fresh options each time
+        
+        # Method 1: Try webdriver-manager for automatic version matching
         try:
-            # Try with specified service path first
-            service = ChromeService(driver_path)
-            driver = uc.Chrome(service=service, options=options)
-            logging.info(f"Successfully initialized undetected Chrome driver with path: {driver_path}")
+            from selenium.webdriver.chrome.options import Options as StandardOptions
+            from webdriver_manager.chrome import ChromeDriverManager
+            from selenium import webdriver
+            
+            options = StandardOptions()
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage") 
+            options.add_argument("--disable-gpu")
+            options.add_argument("--disable-extensions")
+            options.add_argument("--headless=new")
+            options.add_argument("--window-size=1920,1080")
+            options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            
+            service = ChromeService(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+            logging.info("Successfully initialized Chrome driver with webdriver-manager")
             return driver
         except Exception as e:
-            logging.warning(f"Failed to initialize Chrome driver with path {driver_path}: {e}")
+            logging.warning(f"Failed with webdriver-manager: {e}")
+        
+        # Method 2: Try undetected-chromedriver with automatic download
+        try:
+            options = uc.ChromeOptions()
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu") 
+            options.add_argument("--disable-extensions")
+            options.add_argument("--headless=new")
+            options.add_argument("--window-size=1920,1080")
             
-            try:
-                # Fallback: let undetected_chromedriver manage the driver automatically
-                driver = uc.Chrome(options=options)
-                logging.info("Successfully initialized Chrome driver with automatic path detection")
-                return driver
-            except Exception as e2:
-                logging.error(f"Failed to initialize Chrome driver with automatic detection: {e2}")
-                raise Exception("Could not initialize Chrome driver with any method")
+            # Let undetected_chromedriver handle version matching automatically
+            driver = uc.Chrome(options=options, version_main=None)
+            logging.info("Successfully initialized undetected Chrome driver with auto-version")
+            return driver
+        except Exception as e:
+            logging.warning(f"Failed with undetected_chromedriver auto-version: {e}")
+        
+        # Method 3: Try system ChromeDriver with standard selenium
+        try:
+            from selenium.webdriver.chrome.options import Options as StandardOptions
+            
+            options = StandardOptions()
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--disable-extensions")
+            options.add_argument("--headless=new")
+            options.add_argument("--window-size=1920,1080")
+            
+            service = ChromeService(driver_path)
+            driver = webdriver.Chrome(service=service, options=options)
+            logging.info(f"Successfully initialized standard Chrome driver with path: {driver_path}")
+            return driver
+        except Exception as e:
+            logging.warning(f"Failed with system ChromeDriver: {e}")
+        
+        # All methods failed
+        logging.error("All Chrome driver initialization methods failed")
+        raise Exception("Could not initialize Chrome driver with any method")
 
 def get_chrome_options():
     """Configure Chrome options for both Docker and local environments"""
