@@ -805,7 +805,7 @@ def search_game_fuzzy_with_alternates(game_name, auth_token, max_attempts=30, fu
     for g in best_results:
         if "name" not in g:
             continue
-        # Compare this game’s name to the user’s original search
+        # Compare this game's name to the user's original search
         score = process.extractOne(game_name, [g["name"]])[1]
         logging.debug(f"Candidate: {g['name']} => Score: {score}")
 
@@ -1561,6 +1561,67 @@ def update_game_price(game_id):
         
     except Exception as e:
         logging.error(f"Error updating game price: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# -------------------------
+# Update Game Artwork Endpoint
+# -------------------------
+
+@app.route("/update_game_artwork/<int:game_id>", methods=["POST"])
+def update_game_artwork_endpoint(game_id):
+    """Update the artwork of an existing game using SteamGridDB API"""
+    try:
+        # Import the artwork fetcher
+        from fetch_high_res_artwork import HighResArtworkFetcher
+        
+        # Get the current game data to verify it exists
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, title FROM games WHERE id = ?", (game_id,))
+        game = cursor.fetchone()
+        conn.close()
+        
+        if not game:
+            return jsonify({"error": "Game not found"}), 404
+        
+        game_title = game[1]  # title column
+        
+        # Get API key from config.json
+        config = load_config()
+        api_key = config.get("steamgriddb_api_key")
+        if not api_key:
+            return jsonify({
+                "error": "SteamGridDB API key not configured in config.json",
+                "instructions": "Add 'steamgriddb_api_key' to your config.json file. Get your API key from https://www.steamgriddb.com/profile/preferences/api"
+            }), 400
+        
+        logging.debug(f"Updating artwork for game ID {game_id}: '{game_title}'")
+        
+        # Initialize the artwork fetcher
+        fetcher = HighResArtworkFetcher(api_key=api_key)
+        
+        # Process the single game
+        success = fetcher.process_single_game(game_id)
+        
+        if success:
+            return jsonify({
+                "message": "Artwork updated successfully",
+                "game_id": game_id,
+                "game_title": game_title
+            }), 200
+        else:
+            return jsonify({
+                "error": "Failed to update artwork",
+                "game_id": game_id,
+                "game_title": game_title,
+                "details": "SteamGridDB may not have artwork for this game"
+            }), 422
+        
+    except ImportError as e:
+        logging.error(f"Error importing artwork fetcher: {e}")
+        return jsonify({"error": "Artwork fetcher module not available"}), 500
+    except Exception as e:
+        logging.error(f"Error updating game artwork: {e}")
         return jsonify({"error": str(e)}), 500
 
 # -------------------------
