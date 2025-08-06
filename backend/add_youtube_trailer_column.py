@@ -15,8 +15,8 @@ sys.path.insert(0, parent_dir)
 def add_youtube_trailer_column():
     """Add youtube_trailer_url column to the games table"""
     
-    # Database path
-    db_path = os.path.join(current_dir, "games.db")
+    # Database path - use the data directory
+    db_path = os.path.join(parent_dir, "data", "games.db")
     
     if not os.path.exists(db_path):
         print(f"Database not found at {db_path}")

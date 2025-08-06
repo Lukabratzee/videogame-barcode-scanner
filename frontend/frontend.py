@@ -118,6 +118,36 @@ def fetch_game_by_id(game_id):
     else:
         return None
 
+# -------------------------
+# Artwork Helper Functions
+# -------------------------
+
+def get_best_cover_image(game):
+    """Get the best available cover image, preferring high-res artwork"""
+    high_res_cover = game.get("high_res_cover_url")
+    if high_res_cover:
+        return high_res_cover
+    
+    regular_cover = game.get("cover_image", "")
+    if regular_cover:
+        if regular_cover.startswith("//"):
+            return f"https:{regular_cover}"
+        return regular_cover
+    
+    return "https://via.placeholder.com/400x600?text=No+Image"
+
+def get_hero_image(game):
+    """Get the hero banner image if available"""
+    return game.get("hero_image_url")
+
+def get_logo_image(game):
+    """Get the game logo if available"""
+    return game.get("logo_image_url")
+
+def get_icon_image(game):
+    """Get the game icon if available"""
+    return game.get("icon_image_url")
+
 def scan_game(barcode):
     response = requests.post(f"{BACKEND_URL}/scan", json={"barcode": barcode})
     return response.json()
@@ -341,12 +371,9 @@ def display_game_item(game):
     with st.container():
         col_details, col_buttons = st.columns([3, 1])
         with col_details:
-            # Prepare cover image URL
-            cover_image_url = (
-                f"https:{game.get('cover_image', '')}"
-                if game.get("cover_image") and game.get("cover_image", "").startswith("//")
-                else game.get("cover_image", "https://via.placeholder.com/150")
-            )
+            # Use best available cover image (prioritize high-res grid artwork)
+            cover_image_url = get_best_cover_image(game)
+            
             # Format the average price display
             average_price = (
                 f"£{game.get('average_price', 0):.2f}"
@@ -628,20 +655,73 @@ def game_detail_page():
                 del st.session_state[key]
         st.rerun()
     
-    # Header with game title only
-    st.title(game.get("title", "Unknown Game"))
-    
+    # -------------------------
+    # HERO BANNER AT TOP
+    # -------------------------
+    hero_image_url = get_hero_image(game)
+    if hero_image_url:
+        st.markdown(
+            f"""
+            <div style="
+                background: url('{hero_image_url}');
+                background-size: cover;
+                background-position: center;
+                height: 300px;
+                border-radius: 10px;
+                display: flex;
+                align-items: end;
+                padding: 0;
+                margin-bottom: 20px;
+                position: relative;
+                overflow: hidden;
+            ">
+                <div style="
+                    background: linear-gradient(90deg, 
+                        rgba(255,255,255,0.95) 0%, 
+                        rgba(255,255,255,0.9) 30%, 
+                        rgba(255,255,255,0.7) 50%, 
+                        rgba(255,255,255,0.3) 70%, 
+                        rgba(255,255,255,0) 100%);
+                    backdrop-filter: blur(2px);
+                    padding: 15px 30px 15px 20px;
+                    border-radius: 0 0 0 10px;
+                    position: relative;
+                    min-width: 40%;
+                    max-width: 60%;
+                ">
+                    <h1 style="
+                        margin: 0; 
+                        font-size: 2rem; 
+                        font-weight: bold; 
+                        color: #1a1a1a;
+                        text-shadow: none;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    ">{game.get("title", "Unknown Game")}</h1>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        # Fallback: Use logo as title or plain text
+        logo_image_url = get_logo_image(game)
+        if logo_image_url:
+            col_logo, col_platform = st.columns([3, 1])
+            with col_logo:
+                st.image(logo_image_url, width=400)
+            with col_platform:
+                st.markdown(f"### {game.get('platforms', 'Unknown Platform')}")
+        else:
+            st.title(game.get("title", "Unknown Game"))
+
     # Main layout: Image + Details
     col_image, col_details = st.columns([1, 2])
-    
+
     with col_image:
-        # Game cover image
-        cover_url = game.get("cover_image", "")
-        if cover_url and cover_url.startswith("//"):
-            cover_url = f"https:{cover_url}"
-        elif not cover_url:
-            cover_url = "https://via.placeholder.com/400x600?text=No+Image"
-        
+        # Game cover image - use best available cover
+        cover_url = get_best_cover_image(game)
         st.image(cover_url, caption=game.get("title", "Unknown Game"), use_column_width=True)
         
         # Price and rating section
@@ -740,6 +820,11 @@ def game_detail_page():
     st.markdown("---")
     st.markdown("### Game Trailer")
     
+    # Create search query for use throughout this section
+    game_title = game.get("title", "")
+    platform = game.get("platform", "")
+    search_query = f"{game_title} {platform}".strip()
+    
     # Check if we have a YouTube trailer URL
     youtube_url = game.get("youtube_trailer_url")
     
@@ -769,9 +854,6 @@ def game_detail_page():
             st.markdown(f"[Watch Trailer on YouTube]({youtube_url})")
     else:
         # Fallback: show search button
-        game_title = game.get("title", "")
-        platform = game.get("platform", "")
-        search_query = f"{game_title} {platform}".strip()
         trailer_query = f"{search_query} trailer".replace(" ", "+")
         trailer_url = f"https://www.youtube.com/results?search_query={trailer_query}"
         
@@ -803,19 +885,22 @@ def game_detail_page():
     url_safe_query = search_query.replace(" trailer", "").replace(" ", "+")
     
     # External links in organized columns
-    col_guides, col_spacer = st.columns([2, 1])
+    st.markdown("#### Guides & Info")
     
-    with col_guides:
-        st.markdown("#### Guides & Info")
-        
+    # Create 3 equal columns for the guide buttons
+    col_gamefaqs, col_powerpyx, col_metacritic = st.columns(3)
+    
+    with col_gamefaqs:
         # GameFAQs
         gamefaqs_url = f"https://gamefaqs.gamespot.com/search?game={url_safe_query}"
         st.link_button("GameFAQs", gamefaqs_url, use_container_width=True)
-        
+    
+    with col_powerpyx:
         # PowerPyx (for trophies/achievements)
         powerpyx_url = f"https://www.powerpyx.com/?s={url_safe_query}"
         st.link_button("PowerPyx Guides", powerpyx_url, use_container_width=True)
-        
+    
+    with col_metacritic:
         # Metacritic
         metacritic_url = f"https://www.metacritic.com/search/{url_safe_query}/"
         st.link_button("Metacritic", metacritic_url, use_container_width=True)
@@ -1102,12 +1187,8 @@ def gallery_page():
 def display_gallery_tile(column, game):
     """Display individual game tile with clickable artwork using HTML/CSS hover effects"""
     with column:
-        # Game cover image
-        cover_url = game.get("cover_image", "")
-        if cover_url and cover_url.startswith("//"):
-            cover_url = f"https:{cover_url}"
-        elif not cover_url:
-            cover_url = "https://via.placeholder.com/200x280?text=No+Image"
+        # Use best available cover image
+        cover_url = get_best_cover_image(game)
         
         # Game details
         game_id = game.get('id')
@@ -1829,11 +1910,7 @@ def main():
                         if st.checkbox("", key=f"bulk_delete_{game['id']}"):
                             selected_for_deletion.append(game["id"])
                     with col_info:
-                        cover_image_url = (
-                            f"https:{game.get('cover_image', '')}"
-                            if game.get("cover_image") and game.get("cover_image", "").startswith("//")
-                            else game.get("cover_image", "https://via.placeholder.com/100")
-                        )
+                        cover_image_url = get_best_cover_image(game)
                         st.image(cover_image_url, width=100)
                         st.markdown(f"**{game.get('title', 'N/A')}**")
                 else:
@@ -2210,11 +2287,7 @@ def main():
         st.markdown("## Top 5 Games by Average Price")
         top_games = fetch_top_games()
         for game in top_games:
-            cover_image_url = (
-                f"https:{game['cover_image']}"
-                if game.get("cover_image") and game["cover_image"].startswith("//")
-                else game.get("cover_image")
-            )
+            cover_image_url = get_best_cover_image(game)
             average_price = (
                 f"£{game['average_price']:.2f}"
                 if game.get("average_price") is not None

@@ -8,6 +8,7 @@ etc
 games.db
 backend/games.db
 data/games.db
+data/artwork/
 
 # Python cache files
 __pycache__/

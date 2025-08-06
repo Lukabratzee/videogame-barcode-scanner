@@ -1030,13 +1030,14 @@ def save_game_to_db(game_data):
                 except Exception as e:
                     logging.warning(f"Failed to fetch YouTube trailer for {title}: {e}")
             
+            game_id = generate_random_id()
             cursor.execute(
                 """
                 INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    generate_random_id(),
+                    game_id,
                     game_data["title"],
                     cover_image,
                     game_data["description"],
@@ -1051,6 +1052,14 @@ def save_game_to_db(game_data):
             )
             conn.commit()
             logging.debug("Data inserted into database successfully.")
+            
+            # Automatically attempt to fetch high-resolution artwork for the new game
+            try:
+                fetch_artwork_for_game(game_id)
+                logging.debug(f"Attempted to fetch high-res artwork for game ID: {game_id}")
+            except Exception as e:
+                logging.warning(f"Failed to fetch high-res artwork for new game {game_id}: {e}")
+            
             return True
         else:
             logging.debug(f"Game with title '{game_data['title']}' and platform '{platform_str}' already exists in the database")
@@ -1124,6 +1133,18 @@ def get_games():
                 "series": game[7],
                 "release_date": game[8],
                 "average_price": game[9],
+                "youtube_trailer_url": game[10] if len(game) > 10 else None,
+                # High-resolution artwork (if available)
+                "high_res_cover_url": game[11] if len(game) > 11 else None,
+                "high_res_cover_path": game[12] if len(game) > 12 else None,
+                "hero_image_url": game[13] if len(game) > 13 else None,
+                "hero_image_path": game[14] if len(game) > 14 else None,
+                "logo_image_url": game[15] if len(game) > 15 else None,
+                "logo_image_path": game[16] if len(game) > 16 else None,
+                "icon_image_url": game[17] if len(game) > 17 else None,
+                "icon_image_path": game[18] if len(game) > 18 else None,
+                "steamgriddb_id": game[19] if len(game) > 19 else None,
+                "artwork_last_updated": game[20] if len(game) > 20 else None,
             }
         )
 
@@ -1295,6 +1316,17 @@ def fetch_game_by_id(game_id):
                 "release_date": game[8],
                 "average_price": game[9],
                 "youtube_trailer_url": game[10] if len(game) > 10 else None,
+                # High-resolution artwork (if available)
+                "high_res_cover_url": game[11] if len(game) > 11 else None,
+                "high_res_cover_path": game[12] if len(game) > 12 else None,
+                "hero_image_url": game[13] if len(game) > 13 else None,
+                "hero_image_path": game[14] if len(game) > 14 else None,
+                "logo_image_url": game[15] if len(game) > 15 else None,
+                "logo_image_path": game[16] if len(game) > 16 else None,
+                "icon_image_url": game[17] if len(game) > 17 else None,
+                "icon_image_path": game[18] if len(game) > 18 else None,
+                "steamgriddb_id": game[19] if len(game) > 19 else None,
+                "artwork_last_updated": game[20] if len(game) > 20 else None,
             }), 200
         else:
             return jsonify({"error": "Game not found"}), 404
@@ -1606,7 +1638,7 @@ def get_gallery_games():
         
         order_by = sort_mapping.get(sort_order, 'g.title ASC')
         
-        # Main query to fetch games with gallery metadata
+        # Main query to fetch games with gallery metadata and high-res artwork
         main_query = f"""
         SELECT DISTINCT
             g.id,
@@ -1627,7 +1659,16 @@ def get_gallery_games():
             ggm.display_priority,
             ggm.favorite,
             ggm.date_acquired,
-            ggm.date_completed
+            ggm.date_completed,
+            g.high_res_cover_url,
+            g.high_res_cover_path,
+            g.hero_image_url,
+            g.hero_image_path,
+            g.logo_image_url,
+            g.logo_image_path,
+            g.icon_image_url,
+            g.icon_image_path,
+            g.steamgriddb_id
         {base_query}
         {where_clause}
         ORDER BY {order_by}
@@ -1695,7 +1736,17 @@ def get_gallery_games():
                 'is_favorite': bool(game_row[16]),
                 'date_acquired': game_row[17],
                 'date_completed': game_row[18],
-                'tags': tags
+                'tags': tags,
+                # High-resolution artwork from SteamGridDB
+                'high_res_cover_url': game_row[19],
+                'high_res_cover_path': game_row[20],
+                'hero_image_url': game_row[21],
+                'hero_image_path': game_row[22],
+                'logo_image_url': game_row[23],
+                'logo_image_path': game_row[24],
+                'icon_image_url': game_row[25],
+                'icon_image_path': game_row[26],
+                'steamgriddb_id': game_row[27]
             }
             games.append(game)
         
@@ -2022,6 +2073,177 @@ def add_price_history_entry():
             'price': price,
             'price_source': price_source,
             'date_recorded': current_date
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+def fetch_artwork_for_game(game_id):
+    """Helper function to fetch high-resolution artwork for a single game"""
+    try:
+        import subprocess
+        import sys
+        import os
+        
+        # Check if SteamGridDB API key is available
+        api_key = None
+        
+        # Try to get API key from environment
+        api_key = os.getenv('STEAMGRIDDB_API_KEY')
+        
+        # Try to get API key from config file
+        if not api_key:
+            try:
+                config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json')
+                if os.path.exists(config_path):
+                    import json
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                        api_key = config.get('steamgriddb_api_key')
+            except Exception:
+                pass
+        
+        # If no API key is available, skip artwork fetching silently
+        if not api_key:
+            logging.debug(f"No SteamGridDB API key available, skipping artwork fetch for game {game_id}")
+            return False
+        
+        # Build command to fetch artwork for this specific game
+        script_path = os.path.join(os.path.dirname(__file__), 'fetch_high_res_artwork.py')
+        cmd = [
+            sys.executable, script_path,
+            '--game-id', str(game_id),
+            '--api-key', api_key
+        ]
+        
+        # Run the artwork fetcher in the background (don't block the main request)
+        subprocess.Popen(cmd, cwd=os.path.dirname(__file__))
+        logging.debug(f"Started background artwork fetch for game {game_id}")
+        return True
+        
+    except Exception as e:
+        logging.warning(f"Failed to start artwork fetch for game {game_id}: {e}")
+        return False
+
+@app.route('/api/high_res_artwork', methods=['POST'])
+def fetch_high_res_artwork():
+    """Trigger high resolution artwork fetching for games"""
+    try:
+        data = request.get_json()
+        game_id = data.get('game_id')  # Optional: fetch for specific game
+        bulk_mode = data.get('bulk', False)  # Fetch for all games without artwork
+        api_key = data.get('api_key')  # Optional: SteamGridDB API key
+        
+        if not bulk_mode and not game_id:
+            return jsonify({
+                'success': False,
+                'error': 'Either game_id or bulk=true must be specified'
+            }), 400
+        
+        # Import and run the high-res artwork fetcher
+        import subprocess
+        import sys
+        
+        # Build command
+        cmd = [sys.executable, 'fetch_high_res_artwork.py']
+        
+        if game_id:
+            cmd.extend(['--game-id', str(game_id)])
+        elif bulk_mode:
+            cmd.append('--bulk')
+        
+        if api_key:
+            cmd.extend(['--api-key', api_key])
+        
+        # Run the script
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=os.path.dirname(__file__),
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if result.returncode == 0:
+                return jsonify({
+                    'success': True,
+                    'message': 'High resolution artwork fetching completed',
+                    'output': result.stdout,
+                    'game_id': game_id if game_id else None,
+                    'bulk_mode': bulk_mode
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Artwork fetching failed',
+                    'output': result.stderr or result.stdout
+                }), 500
+                
+        except subprocess.TimeoutExpired:
+            return jsonify({
+                'success': False,
+                'error': 'Artwork fetching timed out (5 minutes)'
+            }), 500
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/high_res_artwork/status', methods=['GET'])
+def check_high_res_artwork_status():
+    """Check high resolution artwork status for games"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Count games with and without high-res artwork
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_games,
+                COUNT(high_res_cover_url) as games_with_covers,
+                COUNT(hero_image_url) as games_with_heroes,
+                COUNT(logo_image_url) as games_with_logos,
+                COUNT(icon_image_url) as games_with_icons
+            FROM games 
+            WHERE id != -1
+        """)
+        
+        stats = cursor.fetchone()
+        
+        # Get games without high-res covers (most important metric)
+        cursor.execute("""
+            SELECT id, title, platform 
+            FROM games 
+            WHERE id != -1 AND (high_res_cover_url IS NULL OR high_res_cover_url = '')
+            ORDER BY title
+            LIMIT 10
+        """)
+        
+        games_without_artwork = [
+            {'id': row[0], 'title': row[1], 'platform': row[2]}
+            for row in cursor.fetchall()
+        ]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_games': stats[0],
+                'games_with_covers': stats[1],
+                'games_with_heroes': stats[2],
+                'games_with_logos': stats[3],
+                'games_with_icons': stats[4],
+                'coverage_percentage': round((stats[1] / stats[0]) * 100, 1) if stats[0] > 0 else 0
+            },
+            'games_without_artwork': games_without_artwork,
+            'needs_artwork': len(games_without_artwork) > 0
         })
         
     except Exception as e:
