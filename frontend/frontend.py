@@ -3,6 +3,8 @@ import streamlit.components.v1 as components
 import requests
 import time
 import os, sys
+import pandas as pd
+import matplotlib.pyplot as plt
 
 # Configure Streamlit page - MUST be the very first Streamlit command!
 st.set_page_config(
@@ -143,6 +145,17 @@ def fetch_gallery_filters():
     else:
         return {"tags": [], "platforms": [], "publishers": [], "genres": [], "release_years": []}
 
+def fetch_price_history(game_id):
+    """Fetch price history for a specific game"""
+    try:
+        response = requests.get(f"{BACKEND_URL}/api/price_history/{game_id}")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "price_history": [], "error": "Failed to fetch price history"}
+    except Exception as e:
+        return {"success": False, "price_history": [], "error": str(e)}
+
 # -------------------------
 # CSS Styling for Layout
 # -------------------------
@@ -193,35 +206,63 @@ st.markdown(
         margin-bottom: 15px;
     }
     
-    /* Gallery-specific styles */
+    /* Enhanced 3D Gallery-specific styles */
     .gallery-tile {
         border: 1px solid #ddd;
-        border-radius: 10px;
-        padding: 10px;
-        margin-bottom: 15px;
-        background: linear-gradient(145deg, #f0f2f6, #ffffff);
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
+        border-radius: 15px;
+        padding: 15px;
+        margin-bottom: 20px;
+        background: linear-gradient(145deg, #f8f9fa, #ffffff);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         text-align: center;
-        height: 400px;
+        height: 420px;
         overflow: hidden;
         cursor: pointer;
+        position: relative;
+        transform-style: preserve-3d;
+        perspective: 1000px;
+    }
+    .gallery-tile::before {
+        content: '';
+        position: absolute;
+        top: -2px;
+        left: -2px;
+        right: -2px;
+        bottom: -2px;
+        background: linear-gradient(45deg, #667eea, #764ba2, #f093fb, #f5576c);
+        border-radius: 15px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        z-index: -1;
+    }
+    .gallery-tile:hover::before {
+        opacity: 1;
     }
     .gallery-tile:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-        border-color: #4CAF50;
+        transform: translateY(-8px) rotateX(5deg) rotateY(5deg) scale(1.02);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.25), 0 8px 20px rgba(102, 126, 234, 0.3);
+        border-color: transparent;
     }
     .gallery-tile img {
         width: 100%;
-        height: 200px;
+        height: 220px;
         object-fit: cover;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        transition: transform 0.3s ease;
+        border-radius: 12px;
+        margin-bottom: 12px;
+        transition: all 0.4s ease;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
     .gallery-tile:hover img {
-        transform: scale(1.05);
+        transform: scale(1.08) translateZ(20px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    }
+    .gallery-tile-content {
+        transform-style: preserve-3d;
+        transition: transform 0.4s ease;
+    }
+    .gallery-tile:hover .gallery-tile-content {
+        transform: translateZ(10px);
     }
     .gallery-tag {
         display: inline-block;
@@ -437,6 +478,68 @@ def game_detail_page():
         else:
             st.info("No price data available")
         
+        # Price History Chart
+        st.markdown("#### 📈 Price History")
+        price_history_data = fetch_price_history(game.get("id"))
+        
+        if price_history_data.get("success") and price_history_data.get("price_history"):
+            history = price_history_data["price_history"]
+            
+            # Create a simple price history display
+            if len(history) > 1:
+                try:
+                    # Convert to DataFrame for easier handling
+                    df = pd.DataFrame(history)
+                    df['date_recorded'] = pd.to_datetime(df['date_recorded'])
+                    df = df.sort_values('date_recorded')
+                    
+                    # Create the chart
+                    fig, ax = plt.subplots(figsize=(8, 4))
+                    ax.plot(df['date_recorded'], df['price'], marker='o', linewidth=2, markersize=6)
+                    ax.set_title(f'Price History for {game.get("title", "Game")}')
+                    ax.set_xlabel('Date')
+                    ax.set_ylabel('Price (£)')
+                    ax.grid(True, alpha=0.3)
+                    
+                    # Rotate date labels for better readability
+                    plt.xticks(rotation=45)
+                    plt.tight_layout()
+                    
+                    # Display the chart
+                    st.pyplot(fig)
+                    
+                    # Show price statistics
+                    min_price = df['price'].min()
+                    max_price = df['price'].max()
+                    avg_price = df['price'].mean()
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Lowest Price", f"£{min_price:.2f}")
+                    with col2:
+                        st.metric("Highest Price", f"£{max_price:.2f}")
+                    with col3:
+                        st.metric("Average Price", f"£{avg_price:.2f}")
+                        
+                except Exception as e:
+                    # Fallback if there's any issue with the chart
+                    st.warning(f"Could not create price chart: {str(e)}")
+                    # Show simple table instead
+                    st.markdown("**Recent Price Updates:**")
+                    for entry in history[-5:]:  # Show last 5 entries
+                        date_str = entry['date_recorded'][:10]  # Just the date part
+                        st.markdown(f"- £{entry['price']:.2f} ({entry['price_source']}) on {date_str}")
+                        
+            else:
+                # Single price entry
+                if history:
+                    entry = history[0]
+                    st.markdown(f"**Single Price Record:** £{entry['price']:.2f} from {entry['price_source']}")
+                else:
+                    st.info("No price history available yet")
+        else:
+            st.info("No price history available yet")
+        
         # Personal rating
         personal_rating = game.get("personal_rating")
         if personal_rating:
@@ -533,76 +636,46 @@ def game_detail_page():
     
     # YouTube Trailer Section
     st.markdown("---")
-    st.markdown("### 🎬 Game Trailer & Videos")
+    st.markdown("### 🎬 Game Trailer")
     
     # Create search query for YouTube trailer
     game_title = game.get("title", "")
     platform = game.get("platform", "")
     search_query = f"{game_title} {platform}".strip()
     
-    # Create YouTube search URLs
+    # Create YouTube trailer search URL
     trailer_query = f"{search_query} trailer".replace(" ", "+")
-    gameplay_query = f"{search_query} gameplay".replace(" ", "+")
-    review_query = f"{search_query} review".replace(" ", "+")
     
-    # Display video section
-    col_video_main, col_video_links = st.columns([3, 1])
+    # Display enhanced video section - full width with better styling
+    st.markdown(f"""
+    <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea, #764ba2); 
+                border-radius: 15px; margin: 15px 0; color: white; box-shadow: 0 8px 32px rgba(0,0,0,0.1);">
+        <h3 style="margin-bottom: 15px; color: white;">🎬 Official Trailer</h3>
+        <p style="margin-bottom: 20px; opacity: 0.9;">Watch the official trailer for <strong>{game_title}</strong></p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    with col_video_main:
-        st.markdown("#### 🎥 Video Content")
-        st.markdown(f"**Search for videos of:** *{game_title}*")
-        
-        # Since we can't reliably embed specific YouTube videos without API,
-        # we'll provide organized video search links
-        video_tabs = st.tabs(["🎬 Trailers", "🎮 Gameplay", "⭐ Reviews"])
-        
-        with video_tabs[0]:
-            trailer_url = f"https://www.youtube.com/results?search_query={trailer_query}"
-            st.markdown(f"""
-            <div style="text-align: center; padding: 20px; background: #f0f0f0; border-radius: 10px; margin: 10px 0;">
-                <h4>🎬 Game Trailers</h4>
-                <p>Click below to search for official trailers and promotional videos</p>
-            </div>
-            """, unsafe_allow_html=True)
-            st.link_button(f"🎬 Search '{game_title}' Trailers", trailer_url, use_container_width=True)
-        
-        with video_tabs[1]:
-            gameplay_url = f"https://www.youtube.com/results?search_query={gameplay_query}"
-            st.markdown(f"""
-            <div style="text-align: center; padding: 20px; background: #f0f0f0; border-radius: 10px; margin: 10px 0;">
-                <h4>🎮 Gameplay Videos</h4>
-                <p>Watch gameplay footage and walkthroughs</p>
-            </div>
-            """, unsafe_allow_html=True)
-            st.link_button(f"🎮 Search '{game_title}' Gameplay", gameplay_url, use_container_width=True)
-        
-        with video_tabs[2]:
-            review_url = f"https://www.youtube.com/results?search_query={review_query}"
-            st.markdown(f"""
-            <div style="text-align: center; padding: 20px; background: #f0f0f0; border-radius: 10px; margin: 10px 0;">
-                <h4>⭐ Game Reviews</h4>
-                <p>Professional and community reviews</p>
-            </div>
-            """, unsafe_allow_html=True)
-            st.link_button(f"⭐ Search '{game_title}' Reviews", review_url, use_container_width=True)
+    # Enhanced YouTube trailer button with better styling
+    trailer_url = f"https://www.youtube.com/results?search_query={trailer_query}"
     
-    with col_video_links:
-        st.markdown("#### 🔗 Quick Video Links")
-        
-        # Twitch streams
-        twitch_url = f"https://www.twitch.tv/search?term={search_query.replace(' ', '+')}"
-        st.link_button("� Twitch Streams", twitch_url, use_container_width=True)
-        
-        # Gaming video sites
-        gamespot_url = f"https://www.gamespot.com/search/?q={search_query.replace(' ', '+')}"
-        st.link_button("📺 GameSpot Videos", gamespot_url, use_container_width=True)
-        
-        ign_url = f"https://www.ign.com/search?q={search_query.replace(' ', '+')}"
-        st.link_button("🎮 IGN Videos", ign_url, use_container_width=True)
-        
-        # General video search
-        google_video_url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}+video&tbm=vid"
-        st.link_button("🔍 Google Videos", google_video_url, use_container_width=True)
+    st.markdown(f"""
+    <div style="text-align: center; margin: 20px 0;">
+        <a href="{trailer_url}" target="_blank" style="
+            display: inline-block;
+            background: linear-gradient(135deg, #ff0000, #cc0000);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(255,0,0,0.3);
+            transition: all 0.3s ease;
+        " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+            🎬 Watch '{game_title}' Trailer on YouTube
+        </a>
+    </div>
+    """, unsafe_allow_html=True)
 
     # External links section
     st.markdown("---")
@@ -612,7 +685,7 @@ def game_detail_page():
     url_safe_query = search_query.replace(" trailer", "").replace(" ", "+")
     
     # External links in organized columns
-    col_guides, col_stores, col_social = st.columns(3)
+    col_guides, col_spacer = st.columns([2, 1])
     
     with col_guides:
         st.markdown("#### 📚 Guides & Info")
@@ -629,44 +702,17 @@ def game_detail_page():
         metacritic_url = f"https://www.metacritic.com/search/{url_safe_query}/"
         st.link_button("📊 Metacritic", metacritic_url, use_container_width=True)
     
-    with col_stores:
-        st.markdown("#### 🛒 Digital Stores")
+    with col_spacer:
+        st.markdown("#### 🎯 Quick Links")
+        st.markdown("Essential resources for this game")
+
+    # Price comparison section
+        # Removed Digital Stores section as requested
         
-        # Platform-specific stores
-        if "PlayStation" in platform or "PS" in platform:
-            ps_store_url = f"https://store.playstation.com/en-gb/search/{url_safe_query}"
-            st.link_button("🎮 PlayStation Store", ps_store_url, use_container_width=True)
-        
-        if "Xbox" in platform:
-            xbox_url = f"https://www.microsoft.com/en-us/search/shop/games?q={url_safe_query}"
-            st.link_button("� Xbox Store", xbox_url, use_container_width=True)
-        
-        if "Nintendo" in platform or "Switch" in platform or "Game Boy" in platform:
-            nintendo_url = f"https://www.nintendo.com/us/search/?q={url_safe_query}"
-            st.link_button("🎮 Nintendo eShop", nintendo_url, use_container_width=True)
-        
-        # Steam (for PC games or general search)
-        steam_url = f"https://store.steampowered.com/search/?term={url_safe_query}"
-        st.link_button("🟦 Steam Store", steam_url, use_container_width=True)
-        
-        # General digital stores
-        gog_url = f"https://www.gog.com/en/games?search={url_safe_query}"
-        st.link_button("� GOG.com", gog_url, use_container_width=True)
     
-    with col_social:
-        st.markdown("#### 🌐 Community & Social")
+    # with col_social: # Removed section
+        # Removed Community & Social section as requested
         
-        # Reddit search
-        reddit_url = f"https://www.reddit.com/search/?q={url_safe_query}"
-        st.link_button("🔴 Reddit Discussions", reddit_url, use_container_width=True)
-        
-        # Twitch
-        twitch_url = f"https://www.twitch.tv/search?term={url_safe_query}"
-        st.link_button("� Twitch Streams", twitch_url, use_container_width=True)
-        
-        # GameDev/Creator social
-        twitter_url = f"https://twitter.com/search?q={url_safe_query}"
-        st.link_button("🐦 Twitter/X Search", twitter_url, use_container_width=True)
     
     # Price comparison section
     st.markdown("---")
@@ -742,6 +788,40 @@ def gallery_page():
     # Load filter options
     filter_options = fetch_gallery_filters()
     
+    # -------------------------
+    # Gallery Sidebar: Music Player Section (moved to top)
+    # -------------------------
+    music_expander = st.sidebar.expander("🎵 Video Game Music Player")
+    with music_expander:
+        st.markdown("### 🎮 VIPVGM - Video Game Music")
+        st.markdown("*Listen to video game music while browsing your collection!*")
+        
+        # Create a container for the iframe without autoplay
+        iframe_html = """
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+            <iframe 
+                src="https://www.vipvgm.net/" 
+                width="100%" 
+                height="400" 
+                frameborder="0" 
+                scrolling="yes"
+                allow="encrypted-media; fullscreen"
+                title="VIPVGM Video Game Music Player"
+                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+            ></iframe>
+        </div>
+        """
+        
+        # Try to embed the iframe
+        try:
+            components.html(iframe_html, height=450)
+        except Exception as e:
+            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
+            if st.button("🎵 Open VIPVGM Music Player", type="primary", key="gallery_music_player_fallback"):
+                st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
+
+    st.sidebar.markdown("---")  # Add separator
+    
     # Create filter interface in sidebar
     st.sidebar.markdown("### 🎯 Gallery Filters")
     
@@ -813,39 +893,6 @@ def gallery_page():
             if key.startswith("gallery_") and key not in ["gallery_page", "gallery_per_page"]:
                 del st.session_state[key]
         st.rerun()
-    
-    # -------------------------
-    # Gallery Music Player Section
-    # -------------------------
-    st.sidebar.markdown("---")  # Add a separator line
-    music_expander = st.sidebar.expander("🎵 Video Game Music Player")
-    with music_expander:
-        st.markdown("### 🎮 VIPVGM - Video Game Music")
-        st.markdown("*Listen to video game music while browsing your collection!*")
-        
-        # Create a container for the iframe without autoplay
-        iframe_html = """
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
-            <iframe 
-                src="https://www.vipvgm.net/" 
-                width="100%" 
-                height="400" 
-                frameborder="0" 
-                scrolling="yes"
-                allow="encrypted-media; fullscreen"
-                title="VIPVGM Video Game Music Player"
-                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
-            ></iframe>
-        </div>
-        """
-        
-        # Try to embed the iframe
-        try:
-            components.html(iframe_html, height=450)
-        except Exception as e:
-            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("🎵 Open VIPVGM Music Player", type="primary", key="gallery_music_player_fallback"):
-                st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
     
     # Build filters dictionary
     filters = {}
@@ -961,7 +1008,7 @@ def gallery_page():
             """)
 
 def display_gallery_tile(column, game):
-    """Display individual game tile in gallery grid"""
+    """Display individual game tile in enhanced 3D gallery grid with clickable artwork"""
     with column:
         # Game cover image
         cover_url = game.get("cover_image", "")
@@ -970,72 +1017,40 @@ def display_gallery_tile(column, game):
         elif not cover_url:
             cover_url = "https://via.placeholder.com/200x280?text=No+Image"
         
-        # Create clickable tile with hover effect
-        st.markdown(f"""
-        <div style="
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            padding: 10px;
-            margin-bottom: 15px;
-            background: linear-gradient(145deg, #f0f2f6, #ffffff);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: transform 0.2s ease;
-            text-align: center;
-            height: 400px;
-            overflow: hidden;
-        " onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
-            <img src="{cover_url}" style="
-                width: 100%;
-                height: 200px;
-                object-fit: cover;
-                border-radius: 8px;
-                margin-bottom: 10px;
-            ">
-            <div style="height: 140px; overflow: hidden;">
-        """, unsafe_allow_html=True)
+        # Create simple clickable tile using st.image and st.button
+        st.image(cover_url, use_column_width=True)
         
-        # Clickable game title that opens detail page
-        if st.button(f"🎮 {game.get('title', 'Unknown Game')}", 
-                    key=f"title_{game['id']}", 
-                    help="Click to view game details",
-                    use_container_width=True):
-            st.session_state["selected_game_detail"] = game
-            st.session_state["page"] = "game_detail"
-            st.rerun()
+        # Game title
+        st.markdown(f"**{game.get('title', 'Unknown Game')}**")
         
-        # Platform display
-        platform_text = game.get('platform', 'Unknown Platform')
-        st.markdown(f'<p style="margin: 5px 0; font-size: 11px; color: #666; line-height: 1.1;">{platform_text}</p>', unsafe_allow_html=True)
+        # Platform
+        st.markdown(f"*{game.get('platform', 'Unknown Platform')}*")
         
-        # Tags display
+        # Tags
         tags = game.get("tags", [])
         if tags:
-            # Show first 3 tags
-            display_tags = tags[:3]
-            tag_colors = ["#ff6b6b", "#4ecdc4", "#45b7d1", "#96ceb4", "#ffeaa7", "#dda0dd"]
-            
+            display_tags = tags[:2]
+            tag_colors = ["#667eea", "#764ba2", "#f093fb", "#f5576c", "#4ecdc4", "#45b7d1"]
             tag_html = ""
             for i, tag in enumerate(display_tags):
                 color = tag_colors[i % len(tag_colors)]
-                tag_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin: 1px;">{tag}</span> '
-            
-            if len(tags) > 3:
-                tag_html += f'<span style="color: #999; font-size: 9px;">+{len(tags) - 3} more</span>'
-            
-            st.markdown(f'<div style="margin: 5px 0; line-height: 1.4;">{tag_html}</div>', unsafe_allow_html=True)
+                tag_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin-right: 4px; display: inline-block;">{tag}</span>'
+            if len(tags) > 2:
+                tag_html += f'<span style="color: #888; font-size: 9px; font-style: italic;">+{len(tags) - 2}</span>'
+            st.markdown(tag_html, unsafe_allow_html=True)
         
         # Price and year
         price = game.get("average_price")
         year = game.get("release_year")
-        
         price_text = f"£{price:.2f}" if price else "No price"
         year_text = f" • {year}" if year else ""
+        st.markdown(f"**{price_text}{year_text}**")
         
-        st.markdown(f"""
-            <p style="margin: 5px 0; font-size: 11px; color: #333; font-weight: bold;">{price_text}{year_text}</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Click button
+        if st.button("View Details", key=f"game_tile_{game['id']}", use_container_width=True):
+            st.session_state["selected_game_detail"] = game
+            st.session_state["page"] = "game_detail"
+            st.rerun()
 
 # -------------------------
 # Main Application Function

@@ -1901,5 +1901,106 @@ def get_gallery_filters():
             'error': str(e)
         }), 500
 
+# -------------------------
+# Price History API Endpoints
+# -------------------------
+
+@app.route('/api/price_history/<int:game_id>', methods=['GET'])
+def get_price_history(game_id):
+    """Get price history for a specific game"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Get price history for the game
+        cursor.execute("""
+            SELECT price, price_source, date_recorded, currency
+            FROM price_history
+            WHERE game_id = ?
+            ORDER BY date_recorded ASC
+        """, (game_id,))
+        
+        history_rows = cursor.fetchall()
+        
+        # Format the data for frontend consumption
+        price_history = []
+        for price, source, date_recorded, currency in history_rows:
+            price_history.append({
+                'price': price,
+                'price_source': source,
+                'date_recorded': date_recorded,
+                'currency': currency or 'GBP'
+            })
+        
+        # Also get game details for context
+        cursor.execute("SELECT title FROM games WHERE id = ?", (game_id,))
+        game_result = cursor.fetchone()
+        game_title = game_result[0] if game_result else f"Game {game_id}"
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'game_id': game_id,
+            'game_title': game_title,
+            'price_history': price_history,
+            'total_entries': len(price_history)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/price_history', methods=['POST'])
+def add_price_history_entry():
+    """Add a new price history entry for a game"""
+    try:
+        data = request.get_json()
+        game_id = data.get('game_id')
+        price = data.get('price')
+        price_source = data.get('price_source', 'Manual')
+        
+        if not game_id or price is None:
+            return jsonify({
+                'success': False,
+                'error': 'game_id and price are required'
+            }), 400
+        
+        from datetime import datetime
+        
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Add the price history entry
+        current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            INSERT INTO price_history (game_id, price, price_source, date_recorded, currency)
+            VALUES (?, ?, ?, ?, ?)
+        """, (game_id, price, price_source, current_date, 'GBP'))
+        
+        # Update the game's current average_price as well
+        cursor.execute("""
+            UPDATE games SET average_price = ? WHERE id = ?
+        """, (price, game_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Price history entry added for game {game_id}',
+            'price': price,
+            'price_source': price_source,
+            'date_recorded': current_date
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)
