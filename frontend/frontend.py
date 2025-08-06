@@ -1662,6 +1662,7 @@ def main():
 
         series = st.text_input("Series", key="add_series")
         release_date = st.date_input("Release Date", key="add_release_date")
+        average_price = st.number_input("Average Price", value=0.0, step=0.01, format="%.2f", key="add_average_price")
 
         if st.button("Add Game", key="add_game_button"):
             game_data = {
@@ -1675,7 +1676,7 @@ def main():
                 "release_date": (
                     release_date.strftime("%Y-%m-%d") if release_date else "1900-01-01"
                 ),
-                "average_price": None,
+                "average_price": average_price,
             }
             if add_game(game_data):
                 st.success("Game added successfully")
