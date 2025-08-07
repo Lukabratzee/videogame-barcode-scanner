@@ -8,6 +8,7 @@ etc
 games.db
 backend/games.db
 data/games.db
+data/artwork/
 
 # Python cache files
 __pycache__/
@@ -20,4 +21,20 @@ __pycache__/
 *.log
 page_source.html
 
-# Temporary Docker files
+# build/output
+*.tar
+dist/
+build/
+
+# venvs and packaged libs
+.venv/
+lib/
+Lib/
+**/site-packages/**
+
+# OS/editor
+.DS_Store
+.vscode/
+
+
+
