@@ -24,20 +24,34 @@ import time
 import argparse
 import json
 import re
+import logging
 from datetime import datetime
 from urllib.parse import urlparse
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add the project root to the path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
+# Load .env variables
+load_dotenv()
+
 # SteamGridDB API configuration
 STEAMGRIDDB_API_BASE = "https://www.steamgriddb.com/api/v2"
 DEFAULT_API_KEY = None  # Users need to get their own key from https://www.steamgriddb.com/profile/preferences/api
 
-# Database configuration
-DATABASE_PATH = os.path.join(PROJECT_ROOT, "data", "games.db")
+# Database configuration - use same logic as app.py
+database_path = os.getenv("DATABASE_PATH", "").strip()
+if not database_path:
+    # Fallback to default path
+    database_path = "data/games.db"
+
+# If the path is not absolute, then join with PROJECT_ROOT
+if not os.path.isabs(database_path):
+    database_path = os.path.join(PROJECT_ROOT, database_path)
+
+DATABASE_PATH = database_path
 
 # Artwork storage configuration
 ARTWORK_DIR = os.path.join(PROJECT_ROOT, "data", "artwork")
@@ -210,7 +224,13 @@ class HighResArtworkFetcher:
         self.db_path = DATABASE_PATH
         
         # Ensure database exists
+        # Validate database path
         if not os.path.exists(self.db_path):
+            logging.error(f"Database not found at {self.db_path}")
+            print(f"❌ Database not found at {self.db_path}")
+            print(f"🔍 Current working directory: {os.getcwd()}")
+            print(f"🔍 PROJECT_ROOT: {PROJECT_ROOT}")
+            print(f"🔍 DATABASE_PATH env var: {os.getenv('DATABASE_PATH', 'Not set')}")
             raise FileNotFoundError(f"Database not found at {self.db_path}")
     
     def get_database_connection(self):
