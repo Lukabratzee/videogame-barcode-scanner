@@ -9,6 +9,15 @@ import sqlite3
 from fuzzywuzzy import process
 import csv
 import io
+import unicodedata
+
+# Import YouTube trailer fetcher function
+try:
+    from fetch_youtube_trailers import get_youtube_video_id
+except ImportError:
+    print("Warning: YouTube trailer fetcher not available")
+    def get_youtube_video_id(query):
+        return None
 
 # Conditional imports for Docker vs local environment
 try:
@@ -136,50 +145,133 @@ print(f"🧐 File Exists: {os.path.exists(database_path)}")
 ####################
 
 # -------------------------
+# Text Normalization for Search
+# -------------------------
+def normalize_for_search(text):
+    """
+    Normalize text for search by removing accents and special characters.
+    This allows 'Pokemon' to match 'Pokémon', etc.
+    """
+    if not text:
+        return ""
+    
+    # Normalize unicode characters (NFD = decomposed form)
+    normalized = unicodedata.normalize('NFD', text)
+    
+    # Remove combining characters (accents)
+    ascii_text = ''.join(char for char in normalized 
+                        if unicodedata.category(char) != 'Mn')
+    
+    # Convert to lowercase for case-insensitive search
+    return ascii_text.lower()
+
+# -------------------------
 # Price Source Configuration Management
 # -------------------------
-CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+
+# Determine config file path based on environment
+if os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv'):
+    # In Docker, the config is mounted at /app/config
+    CONFIG_FILE = "/app/config/config.json"
+else:
+    # Local development - config is relative to project root
+    CONFIG_FILE = os.path.join(BASE_DIR, "config", "config.json")
 
 def load_config():
     """Load configuration from JSON file, create default if doesn't exist"""
-    default_config = {"price_source": "eBay"}
+    default_config = {
+        "price_source": "PriceCharting",
+        "steamgriddb_api_key": "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api"
+    }
+    
+    # Debug logging
+    logging.info(f"Loading config from: {CONFIG_FILE}")
+    logging.info(f"Docker environment: {os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv')}")
+    
+    # Ensure config directory exists
+    config_dir = os.path.dirname(CONFIG_FILE)
+    logging.info(f"Config directory: {config_dir}")
+    
+    if not os.path.exists(config_dir):
+        try:
+            os.makedirs(config_dir, exist_ok=True)
+            logging.info(f"Created config directory: {config_dir}")
+        except OSError as e:
+            logging.error(f"Failed to create config directory: {e}")
+            return default_config
     
     if os.path.exists(CONFIG_FILE):
         try:
+            logging.info(f"Config file exists, loading...")
             with open(CONFIG_FILE, 'r') as f:
                 config = json.load(f)
                 # Ensure price_source exists and is valid
                 if "price_source" not in config or config["price_source"] not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
-                    config["price_source"] = "eBay"
+                    config["price_source"] = "PriceCharting"
+                
+                # Ensure steamgriddb_api_key exists (add placeholder if missing)
+                if "steamgriddb_api_key" not in config:
+                    config["steamgriddb_api_key"] = "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api"
+                    # Save the updated config
+                    save_config(config)
+                
+                logging.info(f"Config loaded successfully")
                 return config
-        except (json.JSONDecodeError, IOError):
-            pass
+        except (json.JSONDecodeError, IOError) as e:
+            logging.warning(f"Failed to load config file: {e}, creating default config")
+    else:
+        logging.info(f"Config file does not exist at {CONFIG_FILE}")
     
     # Create default config file
+    logging.info(f"Creating default config file at: {CONFIG_FILE}")
     save_config(default_config)
     return default_config
 
 def save_config(config):
     """Save configuration to JSON file"""
     try:
+        # Ensure config directory exists
+        config_dir = os.path.dirname(CONFIG_FILE)
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir, exist_ok=True)
+            logging.info(f"Created config directory: {config_dir}")
+        
+        # Debug logging
+        logging.info(f"Attempting to save config to: {CONFIG_FILE}")
+        logging.info(f"Config directory exists: {os.path.exists(config_dir)}")
+        logging.info(f"Config directory writable: {os.access(config_dir, os.W_OK) if os.path.exists(config_dir) else False}")
+        
         with open(CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
+        logging.info(f"Config saved successfully to: {CONFIG_FILE}")
     except IOError as e:
-        logging.error(f"Failed to save config: {e}")
+        logging.error(f"Failed to save config to {CONFIG_FILE}: {e}")
+        # In Docker, try to use a fallback location
+        if os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv'):
+            try:
+                fallback_config = "/tmp/config.json"
+                with open(fallback_config, 'w') as f:
+                    json.dump(config, f, indent=2)
+                logging.warning(f"Config saved to fallback location: {fallback_config}")
+            except Exception as fallback_error:
+                logging.error(f"Failed to save config to fallback location: {fallback_error}")
 
 def get_price_source():
     """Get current price source preference"""
     config = load_config()
-    return config.get("price_source", "eBay")
+    return config.get("price_source", "PriceCharting")
 
 def set_price_source(price_source):
     """Set price source preference"""
     if price_source not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
+        logging.warning(f"Invalid price source attempted: {price_source}")
         return False
     
+    logging.info(f"Setting price source to: {price_source}")
     config = load_config()
     config["price_source"] = price_source
     save_config(config)
+    logging.info(f"Price source saved successfully to config")
     return True
 
 ####################
@@ -775,7 +867,7 @@ def search_game_fuzzy_with_alternates(game_name, auth_token, max_attempts=30, fu
     for g in best_results:
         if "name" not in g:
             continue
-        # Compare this game’s name to the user’s original search
+        # Compare this game's name to the user's original search
         score = process.extractOne(game_name, [g["name"]])[1]
         logging.debug(f"Candidate: {g['name']} => Score: {score}")
 
@@ -895,14 +987,26 @@ def get_top_games():
             {
                 "id": game[0],
                 "title": game[1],
-                "cover_image": game[2],
-                "description": game[3],
-                "publisher": game[4],
-                "platforms": game[5],
-                "genres": game[6],
-                "series": game[7],
-                "release_date": game[8],
-                "average_price": game[9],
+                "cover_image": None,  # cover_image column doesn't exist in data/games.db
+                "description": game[2],
+                "publisher": game[3],
+                "platforms": game[4],
+                "genres": game[5],
+                "series": game[6],
+                "release_date": game[7],
+                "average_price": game[8],
+                "youtube_trailer_url": game[9] if len(game) > 9 else None,
+                # High-resolution artwork (if available)
+                "high_res_cover_url": game[10] if len(game) > 10 else None,
+                "high_res_cover_path": game[11] if len(game) > 11 else None,
+                "hero_image_url": game[12] if len(game) > 12 else None,
+                "hero_image_path": game[13] if len(game) > 13 else None,
+                "logo_image_url": game[14] if len(game) > 14 else None,
+                "logo_image_path": game[15] if len(game) > 15 else None,
+                "icon_image_url": game[16] if len(game) > 16 else None,
+                "icon_image_path": game[17] if len(game) > 17 else None,
+                "steamgriddb_id": game[18] if len(game) > 18 else None,
+                "artwork_last_updated": game[19] if len(game) > 19 else None,
             }
         )
 
@@ -1006,13 +1110,30 @@ def save_game_to_db(game_data):
             cover_image = game_data.get("cover_image")
             if cover_image is None:
                 cover_image = ""
+            
+            # Generate YouTube trailer URL
+            youtube_trailer_url = None
+            title = game_data.get("title", "")
+            platforms = game_data.get("platforms", [])
+            if title and platforms:
+                platform = platforms[0] if platforms else ""
+                search_query = f"{title} {platform}"
+                try:
+                    video_id = get_youtube_video_id(search_query)
+                    if video_id:
+                        youtube_trailer_url = f"https://www.youtube.com/watch?v={video_id}"
+                        logging.debug(f"Found YouTube trailer: {youtube_trailer_url}")
+                except Exception as e:
+                    logging.warning(f"Failed to fetch YouTube trailer for {title}: {e}")
+            
+            game_id = generate_random_id()
             cursor.execute(
                 """
-                INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    generate_random_id(),
+                    game_id,
                     game_data["title"],
                     cover_image,
                     game_data["description"],
@@ -1022,10 +1143,19 @@ def save_game_to_db(game_data):
                     ", ".join(game_data["series"]),
                     game_data["release_date"],
                     game_data["average_price"],
+                    youtube_trailer_url,
                 ),
             )
             conn.commit()
             logging.debug("Data inserted into database successfully.")
+            
+            # Automatically attempt to fetch high-resolution artwork for the new game
+            try:
+                fetch_artwork_for_game(game_id)
+                logging.debug(f"Attempted to fetch high-res artwork for game ID: {game_id}")
+            except Exception as e:
+                logging.warning(f"Failed to fetch high-res artwork for new game {game_id}: {e}")
+            
             return True
         else:
             logging.debug(f"Game with title '{game_data['title']}' and platform '{platform_str}' already exists in the database")
@@ -1071,8 +1201,21 @@ def get_games():
         params.append(year)
 
     if title:
-        query += " AND title LIKE ?"
-        params.append(f"%{title}%")  # Allow partial matches
+        # Enhanced search with special character normalization
+        # This allows "Pokemon" to find "Pokémon" and vice versa
+        normalized_search = normalize_for_search(title)
+        
+        # Search using both the original term and the accent-stripped version
+        # Use REPLACE to strip accents from database titles for comparison
+        query += """ AND (
+            LOWER(title) LIKE ? OR 
+            LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                title, 'é', 'e'), 'è', 'e'), 'ê', 'e'), 'ë', 'e'), 
+                'á', 'a'), 'à', 'a'), 'ä', 'a'), 'â', 'a'),
+                'ó', 'o'), 'ò', 'o')) LIKE ?
+        )"""
+        params.append(f"%{title.lower()}%")
+        params.append(f"%{normalized_search}%")
 
     if sort == "alphabetical":
         query += " ORDER BY title ASC"
@@ -1091,14 +1234,26 @@ def get_games():
             {
                 "id": game[0],
                 "title": game[1],
-                "cover_image": game[2],
-                "description": game[3],
-                "publisher": game[4],
-                "platforms": game[5],
-                "genres": game[6],
-                "series": game[7],
-                "release_date": game[8],
-                "average_price": game[9],
+                "cover_image": None,  # cover_image column doesn't exist in data/games.db
+                "description": game[2],
+                "publisher": game[3],
+                "platforms": game[4],
+                "genres": game[5],
+                "series": game[6],
+                "release_date": game[7],
+                "average_price": game[8],
+                "youtube_trailer_url": game[9] if len(game) > 9 else None,
+                # High-resolution artwork (if available)
+                "high_res_cover_url": game[10] if len(game) > 10 else None,
+                "high_res_cover_path": game[11] if len(game) > 11 else None,
+                "hero_image_url": game[12] if len(game) > 12 else None,
+                "hero_image_path": game[13] if len(game) > 13 else None,
+                "logo_image_url": game[14] if len(game) > 14 else None,
+                "logo_image_path": game[15] if len(game) > 15 else None,
+                "icon_image_url": game[16] if len(game) > 16 else None,
+                "icon_image_path": game[17] if len(game) > 17 else None,
+                "steamgriddb_id": game[18] if len(game) > 18 else None,
+                "artwork_last_updated": game[19] if len(game) > 19 else None,
             }
         )
 
@@ -1221,14 +1376,13 @@ def update_game(game_id):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Update game data, including average_price
+        # Update game data, including average_price and youtube_trailer_url
         cursor.execute("""
             UPDATE games
-            SET title = ?, cover_image = ?, description = ?, publisher = ?, platforms = ?, genres = ?, series = ?, release_date = ?, average_price = ?
+            SET title = ?, description = ?, publisher = ?, platforms = ?, genres = ?, series = ?, release_date = ?, average_price = ?, youtube_trailer_url = ?
             WHERE id = ?
         """, (
             data["title"],
-            data["cover_image"],
             data["description"],
             ", ".join(data["publisher"]),
             ", ".join(data["platforms"]),
@@ -1236,6 +1390,7 @@ def update_game(game_id):
             ", ".join(data["series"]),
             data["release_date"],
             data["average_price"],
+            data.get("youtube_trailer_url", ""),
             game_id
         ))
 
@@ -1261,14 +1416,26 @@ def fetch_game_by_id(game_id):
             return jsonify({
                 "id": game[0],
                 "title": game[1],
-                "cover_image": game[2],
-                "description": game[3],
-                "publisher": game[4].split(", "),
-                "platforms": game[5].split(", "),
-                "genres": game[6].split(", "),
-                "series": game[7].split(", "),
-                "release_date": game[8],
-                "average_price": game[9],
+                "cover_image": None,  # cover_image column doesn't exist in data/games.db
+                "description": game[2],
+                "publisher": game[3].split(", "),
+                "platforms": game[4].split(", "),
+                "genres": game[5].split(", "),
+                "series": game[6].split(", "),
+                "release_date": game[7],
+                "average_price": game[8],
+                "youtube_trailer_url": game[9] if len(game) > 9 else None,
+                # High-resolution artwork (if available)
+                "high_res_cover_url": game[10] if len(game) > 10 else None,
+                "high_res_cover_path": game[11] if len(game) > 11 else None,
+                "hero_image_url": game[12] if len(game) > 12 else None,
+                "hero_image_path": game[13] if len(game) > 13 else None,
+                "logo_image_url": game[14] if len(game) > 14 else None,
+                "logo_image_path": game[15] if len(game) > 15 else None,
+                "icon_image_url": game[16] if len(game) > 16 else None,
+                "icon_image_path": game[17] if len(game) > 17 else None,
+                "steamgriddb_id": game[18] if len(game) > 18 else None,
+                "artwork_last_updated": game[19] if len(game) > 19 else None,
             }), 200
         else:
             return jsonify({"error": "Game not found"}), 404
@@ -1307,8 +1474,19 @@ def export_csv():
         query += ' AND strftime("%Y", release_date) = ?'
         params.append(year)
     if title:
-        query += " AND title LIKE ?"
-        params.append(f"%{title}%")
+        # Enhanced search with special character normalization
+        normalized_search = normalize_for_search(title)
+        
+        # Search using both the original term and the accent-stripped version
+        query += """ AND (
+            LOWER(title) LIKE ? OR 
+            LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                title, 'é', 'e'), 'è', 'e'), 'ê', 'e'), 'ë', 'e'), 
+                'á', 'a'), 'à', 'a'), 'ä', 'a'), 'â', 'a'),
+                'ó', 'o'), 'ò', 'o')) LIKE ?
+        )"""
+        params.append(f"%{title.lower()}%")
+        params.append(f"%{normalized_search}%")
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
@@ -1438,7 +1616,7 @@ def update_game_price(game_id):
             "message": f"Price updated successfully using {price_source}",
             "game_id": game_id,
             "game_title": game_title,
-            "old_price": game[9],  # average_price column
+            "old_price": game[8],  # average_price column
             "new_price": new_price,
             "price_source": price_source
         }), 200
@@ -1447,5 +1625,834 @@ def update_game_price(game_id):
         logging.error(f"Error updating game price: {e}")
         return jsonify({"error": str(e)}), 500
 
+# -------------------------
+# Update Game Artwork Endpoint
+# -------------------------
+
+@app.route("/update_game_artwork/<int:game_id>", methods=["POST"])
+def update_game_artwork_endpoint(game_id):
+    """Update the artwork of an existing game using SteamGridDB API"""
+    try:
+        # Import the artwork fetcher
+        from fetch_high_res_artwork import HighResArtworkFetcher
+        
+        # Get the current game data to verify it exists
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, title FROM games WHERE id = ?", (game_id,))
+        game = cursor.fetchone()
+        conn.close()
+        
+        if not game:
+            return jsonify({"error": "Game not found"}), 404
+        
+        game_title = game[1]  # title column
+        
+        # Get API key from config.json
+        config = load_config()
+        api_key = config.get("steamgriddb_api_key")
+        
+        # Debug logging for API key
+        logging.info(f"SteamGridDB API key from config: {'***' + api_key[-4:] if api_key and len(api_key) > 4 else 'None/Empty'}")
+        
+        if not api_key or api_key.startswith("your_steamgriddb_api_key"):
+            return jsonify({
+                "error": "SteamGridDB API key not configured in config.json",
+                "instructions": "Add 'steamgriddb_api_key' to your config.json file. Get your API key from https://www.steamgriddb.com/profile/preferences/api"
+            }), 400
+        
+        logging.debug(f"Updating artwork for game ID {game_id}: '{game_title}'")
+        
+        # Initialize the artwork fetcher
+        fetcher = HighResArtworkFetcher(api_key=api_key)
+        
+        # Process the single game
+        success = fetcher.process_single_game(game_id)
+        
+        if success:
+            return jsonify({
+                "message": "Artwork updated successfully",
+                "game_id": game_id,
+                "game_title": game_title
+            }), 200
+        else:
+            return jsonify({
+                "error": "Failed to update artwork",
+                "game_id": game_id,
+                "game_title": game_title,
+                "details": "SteamGridDB may not have artwork for this game"
+            }), 422
+        
+    except ImportError as e:
+        logging.error(f"Error importing artwork fetcher: {e}")
+        return jsonify({"error": "Artwork fetcher module not available"}), 500
+    except Exception as e:
+        logging.error(f"Error updating game artwork: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# -------------------------
+# Gallery API Endpoints - Phase 1
+# -------------------------
+
+@app.route('/api/gallery/games', methods=['GET'])
+def get_gallery_games():
+    """
+    Get paginated gallery view of games with enhanced metadata and filtering
+    
+    Query parameters:
+    - page: Page number (default: 1)
+    - per_page: Games per page (default: 20, max: 100)
+    - title: Filter by title (partial match)
+    - platform: Filter by platform
+    - genre: Filter by genre
+    - tags: Filter by tags (comma-separated)
+    - year_min: Minimum release year
+    - year_max: Maximum release year
+    - completion_status: Filter by completion status
+    - sort: Sort order (title_asc, title_desc, date_desc, date_asc, rating_desc, rating_asc, price_desc, price_asc, priority_desc)
+    """
+    try:
+        # Parse query parameters
+        page = int(request.args.get('page', 1))
+        per_page = min(int(request.args.get('per_page', 20)), 100)  # Cap at 100
+        
+        # Filter parameters
+        title_filter = request.args.get('title', '').strip()
+        platform_filter = request.args.get('platform', '').strip()
+        genre_filter = request.args.get('genre', '').strip()
+        tags_filter = request.args.get('tags', '').strip()
+        year_min = request.args.get('year_min')
+        year_max = request.args.get('year_max')
+        completion_status = request.args.get('completion_status', '').strip()
+        sort_order = request.args.get('sort', 'title_asc')
+        
+        # Convert tags filter to list
+        tags_list = [tag.strip() for tag in tags_filter.split(',') if tag.strip()] if tags_filter else []
+        
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Build the base query with JOINs for gallery metadata and tags
+        base_query = """
+        FROM games g
+        LEFT JOIN game_gallery_metadata ggm ON g.id = ggm.game_id
+        LEFT JOIN game_tag_associations gta ON g.id = gta.game_id
+        LEFT JOIN game_tags gt ON gta.tag_id = gt.id
+        """
+        
+        # Build WHERE conditions
+        where_conditions = []
+        params = []
+        
+        if title_filter:
+            # Enhanced search with special character normalization
+            normalized_search = normalize_for_search(title_filter)
+            
+            # Search using both the original term and the accent-stripped version
+            where_conditions.append("""(
+                LOWER(g.title) LIKE ? OR 
+                LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    g.title, 'é', 'e'), 'è', 'e'), 'ê', 'e'), 'ë', 'e'), 
+                    'á', 'a'), 'à', 'a'), 'ä', 'a'), 'â', 'a'),
+                    'ó', 'o'), 'ò', 'o')) LIKE ?
+            )""")
+            params.append(f"%{title_filter.lower()}%")
+            params.append(f"%{normalized_search}%")
+        
+        if platform_filter:
+            # Platform filtering with support for both string and JSON array data
+            # Handle both simple strings and JSON arrays
+            where_conditions.append("""
+                (g.platforms IS NOT NULL AND (
+                    g.platforms = ? OR
+                    (g.platforms LIKE '[%' AND EXISTS (
+                        SELECT 1 FROM json_each(g.platforms) 
+                        WHERE json_each.value = ?
+                    ))
+                ))
+            """)
+            params.extend([platform_filter, platform_filter])
+        
+        if genre_filter:
+            where_conditions.append("g.genres LIKE ?")
+            params.append(f"%{genre_filter}%")
+        
+        if tags_list:
+            # For tags, we need to find games that have ALL the specified tags
+            tag_placeholders = ','.join(['?' for _ in tags_list])
+            where_conditions.append(f"""
+                g.id IN (
+                    SELECT gta2.game_id 
+                    FROM game_tag_associations gta2 
+                    JOIN game_tags gt2 ON gta2.tag_id = gt2.id 
+                    WHERE gt2.tag_name IN ({tag_placeholders})
+                    GROUP BY gta2.game_id 
+                    HAVING COUNT(DISTINCT gt2.tag_name) = ?
+                )
+            """)
+            params.extend(tags_list)
+            params.append(len(tags_list))
+        
+        if year_min:
+            where_conditions.append("CAST(substr(g.release_date, 1, 4) AS INTEGER) >= ?")
+            params.append(int(year_min))
+        
+        if year_max:
+            where_conditions.append("CAST(substr(g.release_date, 1, 4) AS INTEGER) <= ?")
+            params.append(int(year_max))
+        
+        if completion_status:
+            where_conditions.append("ggm.completion_status = ?")
+            params.append(completion_status)
+        
+        # Combine WHERE conditions
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions)
+        
+        # Count total games matching filters
+        count_query = f"SELECT COUNT(DISTINCT g.id) {base_query} {where_clause}"
+        cursor.execute(count_query, params)
+        total_games = cursor.fetchone()[0]
+        
+        # Calculate pagination
+        total_pages = (total_games + per_page - 1) // per_page
+        offset = (page - 1) * per_page
+        
+        # Build sort order
+        sort_mapping = {
+            'title_asc': 'g.title ASC',
+            'title_desc': 'g.title DESC',
+            'date_desc': 'g.release_date DESC',
+            'date_asc': 'g.release_date ASC',
+            'rating_desc': 'ggm.personal_rating DESC',
+            'rating_asc': 'ggm.personal_rating ASC',
+            'price_desc': 'g.average_price DESC',
+            'price_asc': 'g.average_price ASC',
+            'priority_desc': 'ggm.display_priority DESC'
+        }
+        
+        order_by = sort_mapping.get(sort_order, 'g.title ASC')
+        
+        # Main query to fetch games with gallery metadata and high-res artwork
+        main_query = f"""
+        SELECT DISTINCT
+            g.id,
+            g.title,
+            g.description,
+            g.publisher,
+            g.platforms,
+            g.genres,
+            g.series,
+            g.release_date,
+            g.average_price,
+            g.youtube_trailer_url,
+            ggm.completion_status,
+            ggm.personal_rating,
+            ggm.play_time_hours,
+            ggm.notes,
+            ggm.display_priority,
+            ggm.favorite,
+            ggm.date_acquired,
+            ggm.date_completed,
+            g.high_res_cover_url,
+            g.high_res_cover_path,
+            g.hero_image_url,
+            g.hero_image_path,
+            g.logo_image_url,
+            g.logo_image_path,
+            g.icon_image_url,
+            g.icon_image_path,
+            g.steamgriddb_id
+        {base_query}
+        {where_clause}
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+        """
+        
+        cursor.execute(main_query, params + [per_page, offset])
+        games_data = cursor.fetchall()
+        
+        # Process games and add tags
+        games = []
+        for game_row in games_data:
+            game_id = game_row[0]
+            
+            # Get tags for this game
+            tags_query = """
+            SELECT gt.tag_name 
+            FROM game_tag_associations gta 
+            JOIN game_tags gt ON gta.tag_id = gt.id 
+            WHERE gta.game_id = ?
+            ORDER BY gt.tag_name
+            """
+            cursor.execute(tags_query, (game_id,))
+            tags = [row[0] for row in cursor.fetchall()]
+            
+            # Parse release year
+            release_year = None
+            if game_row[7]:  # release_date (now column 7 instead of 8)
+                try:
+                    release_year = int(game_row[7][:4])
+                except (ValueError, TypeError):
+                    pass
+            
+            # Format platform (take first platform if multiple)
+            platform = ""
+            if game_row[4]:  # platforms (now column 4 instead of 5)
+                try:
+                    platforms = json.loads(game_row[4])
+                    if isinstance(platforms, list) and platforms:
+                        platform = platforms[0]
+                    elif isinstance(platforms, str):
+                        platform = platforms
+                except (json.JSONDecodeError, TypeError):
+                    platform = str(game_row[4])
+            
+            game = {
+                'id': game_id,
+                'title': game_row[1],
+                'description': game_row[2],
+                'publisher': game_row[3],
+                'platform': platform,  # Single platform for display
+                'platforms': game_row[4],  # Full platforms data
+                'genres': game_row[5],
+                'series': game_row[6],
+                'release_date': game_row[7],
+                'release_year': release_year,
+                'average_price': game_row[8],
+                'youtube_trailer_url': game_row[9],
+                'completion_status': game_row[10],
+                'personal_rating': game_row[11],
+                'play_time_hours': game_row[12],
+                'notes': game_row[13],
+                'display_priority': game_row[14],
+                'is_favorite': bool(game_row[15]),
+                'date_acquired': game_row[16],
+                'date_completed': game_row[17],
+                'tags': tags,
+                # High-resolution artwork from SteamGridDB
+                'high_res_cover_url': game_row[18],
+                'high_res_cover_path': game_row[19],
+                'hero_image_url': game_row[20],
+                'hero_image_path': game_row[21],
+                'logo_image_url': game_row[22],
+                'logo_image_path': game_row[23],
+                'icon_image_url': game_row[24],
+                'icon_image_path': game_row[25],
+                'steamgriddb_id': game_row[26]
+            }
+            games.append(game)
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'games': games,
+            'pagination': {
+                'current_page': page,
+                'per_page': per_page,
+                'total_games': total_games,
+                'total_pages': total_pages,
+                'has_prev': page > 1,
+                'has_next': page < total_pages
+            },
+            'filters_applied': {
+                'title': title_filter,
+                'platform': platform_filter,
+                'genre': genre_filter,
+                'tags': tags_list,
+                'year_min': year_min,
+                'year_max': year_max,
+                'completion_status': completion_status,
+                'sort': sort_order
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/gallery/game/<int:game_id>', methods=['GET'])
+def get_gallery_game_detail(game_id):
+    """Get detailed information for a single game including gallery metadata"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Get game with gallery metadata
+        query = """
+        SELECT 
+            g.id, g.title, g.cover_image, g.description, g.publisher,
+            g.platforms, g.genres, g.series, g.release_date, g.average_price,
+            ggm.completion_status, ggm.personal_rating, ggm.play_time_hours,
+            ggm.notes, ggm.display_priority, ggm.favorite,
+            ggm.date_acquired, ggm.date_completed
+        FROM games g
+        LEFT JOIN game_gallery_metadata ggm ON g.id = ggm.game_id
+        WHERE g.id = ?
+        """
+        
+        cursor.execute(query, (game_id,))
+        game_row = cursor.fetchone()
+        
+        if not game_row:
+            return jsonify({
+                'success': False,
+                'error': 'Game not found'
+            }), 404
+        
+        # Get tags for this game
+        tags_query = """
+        SELECT gt.id, gt.tag_name, gt.tag_description 
+        FROM game_tag_associations gta 
+        JOIN game_tags gt ON gta.tag_id = gt.id 
+        WHERE gta.game_id = ?
+        ORDER BY gt.tag_name
+        """
+        cursor.execute(tags_query, (game_id,))
+        tags = [{'id': row[0], 'name': row[1], 'description': row[2]} for row in cursor.fetchall()]
+        
+        # Parse release year
+        release_year = None
+        if game_row[8]:  # release_date
+            try:
+                release_year = int(game_row[8][:4])
+            except (ValueError, TypeError):
+                pass
+        
+        game = {
+            'id': game_row[0],
+            'title': game_row[1],
+            'cover_image': game_row[2],
+            'description': game_row[3],
+            'publisher': game_row[4],
+            'platforms': game_row[5],
+            'genres': game_row[6],
+            'series': game_row[7],
+            'release_date': game_row[8],
+            'release_year': release_year,
+            'average_price': game_row[9],
+            'gallery_metadata': {
+                'completion_status': game_row[10],
+                'personal_rating': game_row[11],
+                'play_time_hours': game_row[12],
+                'notes': game_row[13],
+                'display_priority': game_row[14],
+                'is_favorite': bool(game_row[15]),
+                'date_acquired': game_row[16],
+                'date_completed': game_row[17]
+            },
+            'tags': tags
+        }
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'game': game
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/gallery/filters', methods=['GET'])
+def get_gallery_filters():
+    """Get all available filter options for the gallery"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Get unique platforms from both string and JSON data
+        cursor.execute("""
+            SELECT DISTINCT platforms 
+            FROM games 
+            WHERE platforms IS NOT NULL AND platforms != '' AND platforms != '__PLACEHOLDER__'
+            ORDER BY platforms
+        """)
+        platform_rows = cursor.fetchall()
+        platforms = []
+        for row in platform_rows:
+            platform_data = row[0]
+            if platform_data.startswith('['):
+                # Handle JSON array data
+                try:
+                    parsed_data = json.loads(platform_data)
+                    if isinstance(parsed_data, list):
+                        platforms.extend(parsed_data)
+                    elif isinstance(parsed_data, str):
+                        platforms.append(parsed_data)
+                except (json.JSONDecodeError, TypeError):
+                    # If JSON parsing fails, treat as string
+                    platforms.append(platform_data)
+            else:
+                # Handle simple string data
+                if ',' in platform_data:
+                    # Split comma-separated platforms
+                    split_platforms = [p.strip() for p in platform_data.split(',') if p.strip()]
+                    platforms.extend(split_platforms)
+                else:
+                    platforms.append(platform_data.strip())
+        
+        # Remove duplicates and filter out empty entries
+        unique_platforms = []
+        for platform in platforms:
+            platform = platform.strip()
+            if platform and platform not in unique_platforms:
+                unique_platforms.append(platform)
+        
+        platforms = sorted(unique_platforms)
+        
+        # Get unique genres  
+        cursor.execute("""
+            SELECT DISTINCT genres 
+            FROM games 
+            WHERE genres IS NOT NULL AND genres != ''
+            ORDER BY genres
+        """)
+        genre_rows = cursor.fetchall()
+        genres = []
+        for row in genre_rows:
+            try:
+                genre_data = json.loads(row[0])
+                if isinstance(genre_data, list):
+                    genres.extend(genre_data)
+                elif isinstance(genre_data, str):
+                    genres.append(genre_data)
+            except (json.JSONDecodeError, TypeError):
+                genres.append(str(row[0]))
+        genres = sorted(list(set(genres)))
+        
+        # Get available tags
+        cursor.execute("""
+            SELECT tag_name 
+            FROM game_tags 
+            ORDER BY tag_name
+        """)
+        tags = [row[0] for row in cursor.fetchall()]
+        
+        # Get release years
+        cursor.execute("""
+            SELECT DISTINCT CAST(substr(release_date, 1, 4) AS INTEGER) as year
+            FROM games 
+            WHERE release_date IS NOT NULL 
+            AND release_date != '' 
+            AND length(release_date) >= 4
+            AND substr(release_date, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
+            ORDER BY year
+        """)
+        release_years = [row[0] for row in cursor.fetchall()]
+        
+        # Get completion statuses
+        cursor.execute("""
+            SELECT DISTINCT completion_status 
+            FROM game_gallery_metadata 
+            WHERE completion_status IS NOT NULL AND completion_status != ''
+            ORDER BY completion_status
+        """)
+        completion_statuses = [row[0] for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'platforms': platforms,
+            'genres': genres,  
+            'tags': tags,
+            'release_years': release_years,
+            'completion_statuses': completion_statuses
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# -------------------------
+# Price History API Endpoints
+# -------------------------
+
+@app.route('/api/price_history/<int:game_id>', methods=['GET'])
+def get_price_history(game_id):
+    """Get price history for a specific game"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Get price history for the game
+        cursor.execute("""
+            SELECT price, price_source, date_recorded, currency
+            FROM price_history
+            WHERE game_id = ?
+            ORDER BY date_recorded ASC
+        """, (game_id,))
+        
+        history_rows = cursor.fetchall()
+        
+        # Format the data for frontend consumption
+        price_history = []
+        for price, source, date_recorded, currency in history_rows:
+            price_history.append({
+                'price': price,
+                'price_source': source,
+                'date_recorded': date_recorded,
+                'currency': currency or 'GBP'
+            })
+        
+        # Also get game details for context
+        cursor.execute("SELECT title FROM games WHERE id = ?", (game_id,))
+        game_result = cursor.fetchone()
+        game_title = game_result[0] if game_result else f"Game {game_id}"
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'game_id': game_id,
+            'game_title': game_title,
+            'price_history': price_history,
+            'total_entries': len(price_history)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/price_history', methods=['POST'])
+def add_price_history_entry():
+    """Add a new price history entry for a game"""
+    try:
+        data = request.get_json()
+        game_id = data.get('game_id')
+        price = data.get('price')
+        price_source = data.get('price_source', 'Manual')
+        
+        if not game_id or price is None:
+            return jsonify({
+                'success': False,
+                'error': 'game_id and price are required'
+            }), 400
+        
+        from datetime import datetime
+        
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Add the price history entry
+        current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            INSERT INTO price_history (game_id, price, price_source, date_recorded, currency)
+            VALUES (?, ?, ?, ?, ?)
+        """, (game_id, price, price_source, current_date, 'GBP'))
+        
+        # Update the game's current average_price as well
+        cursor.execute("""
+            UPDATE games SET average_price = ? WHERE id = ?
+        """, (price, game_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Price history entry added for game {game_id}',
+            'price': price,
+            'price_source': price_source,
+            'date_recorded': current_date
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+def fetch_artwork_for_game(game_id):
+    """Helper function to fetch high-resolution artwork for a single game"""
+    try:
+        import subprocess
+        import sys
+        import os
+        
+        # Check if SteamGridDB API key is available
+        api_key = None
+        
+        # Try to get API key from environment
+        api_key = os.getenv('STEAMGRIDDB_API_KEY')
+        
+        # Try to get API key from config file
+        if not api_key:
+            try:
+                # Use the same config loading logic as other functions
+                config = load_config()
+                api_key = config.get('steamgriddb_api_key')
+            except Exception:
+                pass
+        
+        # If no API key is available, skip artwork fetching silently
+        if not api_key:
+            logging.debug(f"No SteamGridDB API key available, skipping artwork fetch for game {game_id}")
+            return False
+        
+        # Build command to fetch artwork for this specific game
+        script_path = os.path.join(os.path.dirname(__file__), 'fetch_high_res_artwork.py')
+        cmd = [
+            sys.executable, script_path,
+            '--game-id', str(game_id),
+            '--api-key', api_key
+        ]
+        
+        # Run the artwork fetcher in the background (don't block the main request)
+        subprocess.Popen(cmd, cwd=os.path.dirname(__file__))
+        logging.debug(f"Started background artwork fetch for game {game_id}")
+        return True
+        
+    except Exception as e:
+        logging.warning(f"Failed to start artwork fetch for game {game_id}: {e}")
+        return False
+
+@app.route('/api/high_res_artwork', methods=['POST'])
+def fetch_high_res_artwork():
+    """Trigger high resolution artwork fetching for games"""
+    try:
+        data = request.get_json()
+        game_id = data.get('game_id')  # Optional: fetch for specific game
+        bulk_mode = data.get('bulk', False)  # Fetch for all games without artwork
+        api_key = data.get('api_key')  # Optional: SteamGridDB API key
+        
+        if not bulk_mode and not game_id:
+            return jsonify({
+                'success': False,
+                'error': 'Either game_id or bulk=true must be specified'
+            }), 400
+        
+        # Import and run the high-res artwork fetcher
+        import subprocess
+        import sys
+        
+        # Build command
+        cmd = [sys.executable, 'fetch_high_res_artwork.py']
+        
+        if game_id:
+            cmd.extend(['--game-id', str(game_id)])
+        elif bulk_mode:
+            cmd.append('--bulk')
+        
+        if api_key:
+            cmd.extend(['--api-key', api_key])
+        
+        # Run the script
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=os.path.dirname(__file__),
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if result.returncode == 0:
+                return jsonify({
+                    'success': True,
+                    'message': 'High resolution artwork fetching completed',
+                    'output': result.stdout,
+                    'game_id': game_id if game_id else None,
+                    'bulk_mode': bulk_mode
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Artwork fetching failed',
+                    'output': result.stderr or result.stdout
+                }), 500
+                
+        except subprocess.TimeoutExpired:
+            return jsonify({
+                'success': False,
+                'error': 'Artwork fetching timed out (5 minutes)'
+            }), 500
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/high_res_artwork/status', methods=['GET'])
+def check_high_res_artwork_status():
+    """Check high resolution artwork status for games"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Count games with and without high-res artwork
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_games,
+                COUNT(high_res_cover_url) as games_with_covers,
+                COUNT(hero_image_url) as games_with_heroes,
+                COUNT(logo_image_url) as games_with_logos,
+                COUNT(icon_image_url) as games_with_icons
+            FROM games 
+            WHERE id != -1
+        """)
+        
+        stats = cursor.fetchone()
+        
+        # Get games without high-res covers (most important metric)
+        cursor.execute("""
+            SELECT id, title, platform 
+            FROM games 
+            WHERE id != -1 AND (high_res_cover_url IS NULL OR high_res_cover_url = '')
+            ORDER BY title
+            LIMIT 10
+        """)
+        
+        games_without_artwork = [
+            {'id': row[0], 'title': row[1], 'platform': row[2]}
+            for row in cursor.fetchall()
+        ]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_games': stats[0],
+                'games_with_covers': stats[1],
+                'games_with_heroes': stats[2],
+                'games_with_logos': stats[3],
+                'games_with_icons': stats[4],
+                'coverage_percentage': round((stats[1] / stats[0]) * 100, 1) if stats[0] > 0 else 0
+            },
+            'games_without_artwork': games_without_artwork,
+            'needs_artwork': len(games_without_artwork) > 0
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == "__main__":
+    # Initialize configuration on startup
+    print("🔧 Initializing configuration...")
+    config = load_config()
+    print(f"✅ Configuration loaded. Price source: {config.get('price_source', 'Unknown')}")
+    if 'steamgriddb_api_key' in config:
+        if config['steamgriddb_api_key'].startswith('your_steamgriddb_api_key'):
+            print("⚠️  SteamGridDB API key is set to placeholder. Update config/config.json with your actual API key.")
+        else:
+            print("✅ SteamGridDB API key configured")
+    
+    print("🚀 Starting Flask application...")
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)
