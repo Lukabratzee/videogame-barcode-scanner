@@ -71,8 +71,11 @@ except ImportError as e:
         Keys = DummyClass()
         ChromeService = DummyClass
 
-# Calculate the project root as the parent directory of the frontend folder.
+# Calculate paths
+# PROJECT_ROOT is the parent of the backend folder in local dev, but will be '/'
+# inside the container. Use APP_ROOT for container-safe absolute base.
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -97,7 +100,8 @@ except ImportError:
         from scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
         print("✅ Successfully imported scrapers with absolute path")
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_from_directory
+from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
 
@@ -143,6 +147,20 @@ print(f"✅ Final Database Path: {database_path}")
 print(f"🧐 File Exists: {os.path.exists(database_path)}")
 
 ####################
+
+# -------------------------
+# Artwork storage configuration (for uploads and serving)
+# Use the directory that holds the database (e.g., /app/data) so files persist.
+# -------------------------
+DATA_DIR = os.path.dirname(database_path) if os.path.isabs(database_path) else os.path.join(PROJECT_ROOT, os.path.dirname(database_path))
+ARTWORK_DIR = os.path.join(DATA_DIR, "artwork")
+GRID_DIR = os.path.join(ARTWORK_DIR, "grids")
+HERO_DIR = os.path.join(ARTWORK_DIR, "heroes")
+LOGO_DIR = os.path.join(ARTWORK_DIR, "logos")
+ICON_DIR = os.path.join(ARTWORK_DIR, "icons")
+
+for directory in [DATA_DIR, ARTWORK_DIR, GRID_DIR, HERO_DIR, LOGO_DIR, ICON_DIR]:
+    os.makedirs(directory, exist_ok=True)
 
 # -------------------------
 # Text Normalization for Search
@@ -1689,6 +1707,86 @@ def update_game_artwork_endpoint(game_id):
     except Exception as e:
         logging.error(f"Error updating game artwork: {e}")
         return jsonify({"error": str(e)}), 500
+
+# -------------------------
+# Manual Artwork Upload & Serving
+# -------------------------
+
+ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+
+def _allowed_image(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+@app.route("/upload_game_artwork/<int:game_id>", methods=["POST"])
+def upload_game_artwork(game_id: int):
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "No file part in request"}), 400
+
+        file = request.files["file"]
+        artwork_type = request.form.get("artwork_type", "grid")  # grid|hero|logo|icon
+
+        if file.filename == "":
+            return jsonify({"error": "No selected file"}), 400
+        if not _allowed_image(file.filename):
+            return jsonify({"error": "Unsupported file type"}), 400
+
+        # Ensure game exists
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM games WHERE id = ?", (game_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Game not found"}), 404
+
+        # Save file to proper folder
+        filename = secure_filename(file.filename)
+        name, ext = os.path.splitext(filename)
+        dest_dir = GRID_DIR if artwork_type == "grid" else HERO_DIR if artwork_type == "hero" else LOGO_DIR if artwork_type == "logo" else ICON_DIR
+        final_filename = f"{game_id}_{artwork_type}_manual{ext.lower()}"
+        dest_path = os.path.join(dest_dir, final_filename)
+        file.save(dest_path)
+
+        # Store relative path for serving via static endpoint
+        rel_path = os.path.relpath(dest_path, PROJECT_ROOT)
+        url_path = f"/media/{rel_path}"
+
+        # Update DB columns
+        column_map = {
+            "grid": ("high_res_cover_url", "high_res_cover_path"),
+            "hero": ("hero_image_url", "hero_image_path"),
+            "logo": ("logo_image_url", "logo_image_path"),
+            "icon": ("icon_image_url", "icon_image_path"),
+        }
+        url_col, path_col = column_map.get(artwork_type, column_map["grid"])
+        cursor.execute(
+            f"UPDATE games SET {url_col} = ?, {path_col} = ?, artwork_last_updated = ? WHERE id = ?",
+            (url_path, rel_path, time.strftime("%Y-%m-%dT%H:%M:%S"), game_id),
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "message": "Artwork uploaded successfully",
+            "game_id": game_id,
+            "artwork_type": artwork_type,
+            "url": url_path,
+        }), 200
+    except Exception as e:
+        logging.error(f"Error uploading artwork: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/media/<path:filename>")
+def serve_media(filename: str):
+    # Serve files from project root so /media/data/artwork/... works
+    directory = PROJECT_ROOT
+    # Security: ensure requested path stays within project root
+    safe_path = os.path.normpath(os.path.join(directory, filename))
+    if not safe_path.startswith(directory):
+        return jsonify({"error": "Invalid path"}), 400
+    rel_dir, fname = os.path.split(filename)
+    return send_from_directory(os.path.join(directory, rel_dir), fname)
 
 # -------------------------
 # Gallery API Endpoints - Phase 1

@@ -148,6 +148,25 @@ def fetch_game_by_id(game_id):
 # Artwork Helper Functions
 # -------------------------
 
+def normalize_asset_url(url: str) -> str:
+    """Normalize asset URLs:
+    - Convert protocol-relative URLs to https
+    - Prefix backend host for media served by backend ("/media/..." or relative paths under data/artwork)
+    - Return as-is for full http(s) URLs
+    """
+    if not url:
+        return ""
+    if isinstance(url, str) and url.startswith("//"):
+        return f"https:{url}"
+    if isinstance(url, str) and url.startswith("/media/"):
+        return f"{BACKEND_URL}{url}"
+    if isinstance(url, str) and (url.startswith("data/artwork/") or url.startswith("./data/artwork/")):
+        # Ensure backend serves this path
+        cleaned = url.lstrip("./")
+        return f"{BACKEND_URL}/media/{cleaned}"
+    return url
+
+
 def get_best_cover_image(game):
     """Return the best visual to display as a cover, with sensible fallbacks.
 
@@ -160,14 +179,6 @@ def get_best_cover_image(game):
     6) Placeholder
     """
 
-    def normalize_url(url: str) -> str:
-        if not url:
-            return ""
-        # IGDB sometimes returns protocol-relative URLs like //images.igdb.com/...
-        if isinstance(url, str) and url.startswith("//"):
-            return f"https:{url}"
-        return url
-
     # SteamGridDB fields
     for key in [
         "high_res_cover_url",
@@ -175,13 +186,13 @@ def get_best_cover_image(game):
         "logo_image_url",
         "icon_image_url",
     ]:
-        value = normalize_url(game.get(key))
+        value = normalize_asset_url(game.get(key))
         if value:
             return value
 
     # Legacy/IGDB fields
     for key in ["cover_image", "cover_url"]:
-        value = normalize_url(game.get(key))
+        value = normalize_asset_url(game.get(key))
         if value:
             return value
 
@@ -189,7 +200,7 @@ def get_best_cover_image(game):
 
 def get_hero_image(game):
     """Get the hero banner image if available"""
-    return game.get("hero_image_url")
+    return normalize_asset_url(game.get("hero_image_url"))
 
 def get_logo_image(game):
     """Get the game logo if available"""
@@ -1873,43 +1884,92 @@ def main():
         st.info("Fetches high-resolution grid covers, heroes, logos, and icons")
         
         update_artwork_game_id = st.text_input("Game ID to Update Artwork", key="update_artwork_game_id")
-        confirm_update_artwork = st.checkbox("I confirm that I want to update this game's artwork", key="update_artwork_confirm")
-        
-        if st.button("Update Artwork", key="update_artwork_button") and confirm_update_artwork:
-            if update_artwork_game_id:
-                with st.spinner("Fetching artwork from SteamGridDB..."):
-                    result = update_game_artwork(update_artwork_game_id)
-                    if result and "error" not in result:
-                        st.success("✅ Artwork updated successfully!")
-                        st.write(f"**Game:** {result['game_title']}")
-                        st.write(f"**Game ID:** {result['game_id']}")
-                        
-                        # Refresh the current view to show updated artwork
-                        filters = {}
-                        if st.session_state.get("filter_publisher"):
-                            filters["publisher"] = st.session_state["filter_publisher"]
-                        if st.session_state.get("filter_platform"):
-                            filters["platform"] = st.session_state["filter_platform"]
-                        if st.session_state.get("filter_genre"):
-                            filters["genre"] = st.session_state["filter_genre"]
-                        if st.session_state.get("filter_year"):
-                            filters["year"] = st.session_state["filter_year"]
-                        # Re-fetch games to show updated artwork
-                        games = fetch_games(filters)
-                    elif result and result.get("error") == "api_key_missing":
-                        st.error("❌ SteamGridDB API key not configured")
-                        st.info("To use this feature:")
-                        st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
-                        st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
-                        st.write("3. Restart the backend service")
-                    elif result and result.get("error") == "no_artwork_found":
-                        st.warning("⚠️ No artwork found for this game")
-                        st.write(f"**Game:** {result['details']['game_title']}")
-                        st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
-                    else:
-                        st.error("Failed to update game artwork. Please check the Game ID and try again.")
-            else:
-                st.warning("Please enter a Game ID.")
+        mode = st.selectbox(
+            "Artwork update mode",
+            options=["Automatic (SteamGridDB)", "Manual upload"],
+            index=0,
+            key="artwork_update_mode",
+        )
+
+        if mode == "Automatic (SteamGridDB)":
+            confirm_update_artwork = st.checkbox(
+                "I confirm that I want to update this game's artwork",
+                key="update_artwork_confirm",
+            )
+            if st.button("Update Artwork", key="update_artwork_button") and confirm_update_artwork:
+                if update_artwork_game_id:
+                    with st.spinner("Fetching artwork from SteamGridDB..."):
+                        result = update_game_artwork(update_artwork_game_id)
+                        if result and "error" not in result:
+                            st.success("✅ Artwork updated successfully!")
+                            st.write(f"**Game:** {result['game_title']}")
+                            st.write(f"**Game ID:** {result['game_id']}")
+                            # Refresh the current view
+                            filters = {}
+                            if st.session_state.get("filter_publisher"):
+                                filters["publisher"] = st.session_state["filter_publisher"]
+                            if st.session_state.get("filter_platform"):
+                                filters["platform"] = st.session_state["filter_platform"]
+                            if st.session_state.get("filter_genre"):
+                                filters["genre"] = st.session_state["filter_genre"]
+                            if st.session_state.get("filter_year"):
+                                filters["year"] = st.session_state["filter_year"]
+                            games = fetch_games(filters)
+                        elif result and result.get("error") == "api_key_missing":
+                            st.error("❌ SteamGridDB API key not configured")
+                            st.info("To use this feature:")
+                            st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
+                            st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
+                            st.write("3. Restart the backend service")
+                        elif result and result.get("error") == "no_artwork_found":
+                            st.warning("⚠️ No artwork found for this game")
+                            st.write(f"**Game:** {result['details']['game_title']}")
+                            st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
+                        else:
+                            st.error("Failed to update game artwork. Please check the Game ID and try again.")
+        else:
+            st.markdown("**Manually upload artwork** (grid/hero/logo/icon)")
+            artwork_type = st.selectbox(
+                "Artwork type",
+                options=["grid", "hero", "logo", "icon"],
+                index=0,
+                key="manual_art_type",
+                help="Select which artwork slot to fill",
+            )
+            upload_file = st.file_uploader(
+                "Choose an image file (png/jpg/jpeg/webp)",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="manual_art_file",
+            )
+            if st.button("Upload Artwork", key="manual_art_upload"):
+                if not update_artwork_game_id:
+                    st.error("Please enter a Game ID")
+                elif not upload_file:
+                    st.error("Please choose an image file to upload")
+                else:
+                    with st.spinner("Uploading artwork..."):
+                        files = {"file": (upload_file.name, upload_file.getvalue(), upload_file.type or "application/octet-stream")}
+                        data = {"artwork_type": artwork_type}
+                        resp = requests.post(
+                            f"{BACKEND_URL}/upload_game_artwork/{update_artwork_game_id}",
+                            files=files,
+                            data=data,
+                            timeout=30,
+                        )
+                        if resp.status_code == 200:
+                            rj = resp.json()
+                            st.success("✅ Artwork uploaded successfully!")
+                            st.write(f"**Game ID:** {rj.get('game_id')}")
+                            st.write(f"**Type:** {rj.get('artwork_type')}")
+                            if rj.get("url"):
+                                st.image(f"{BACKEND_URL}{rj['url']}", caption="Preview")
+                        else:
+                            try:
+                                st.error(resp.json())
+                            except Exception:
+                                st.error(f"Upload failed: HTTP {resp.status_code}")
+
+    # The manual upload is now integrated above under the "Manual upload" checkbox.
 
     # -------------------------
     # Sidebar: Advanced Filters Section with Export, Bulk Delete, and Display of Filtered Games
