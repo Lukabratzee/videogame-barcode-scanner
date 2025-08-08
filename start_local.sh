@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Video Game Catalogue - Simple Local Test (Fixed Version)
-# Quick test setup for regional pricing feature
+# Video Game Catalogue - Local Development Starter
+# Uses requirements.txt files for dependency management
 
 set -e
 
@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}🎮 Video Game Catalogue - Local Test (Fixed)${NC}"
+echo -e "${BLUE}🎮 Video Game Catalogue - Local Development${NC}"
 echo "=============================================="
 
 # Check if virtual environment exists
@@ -25,9 +25,9 @@ fi
 echo -e "${BLUE}🔧 Activating virtual environment...${NC}"
 source .venv/bin/activate
 
-# Install core dependencies only (skip problematic ones)
-echo -e "${BLUE}📦 Installing core dependencies...${NC}"
-pip install -q Flask==3.0.3 Werkzeug==3.0.3 streamlit==1.37.1 requests==2.32.3 selenium==4.23.1 undetected-chromedriver==3.5.5 webdriver-manager==4.0.2 setuptools==72.1.0 python-dotenv==1.0.0
+# Install dependencies from requirements file
+echo -e "${BLUE}📦 Installing dependencies...${NC}"
+pip install -q -r requirements.txt
 
 # Create config directory and file if they don't exist
 mkdir -p config data

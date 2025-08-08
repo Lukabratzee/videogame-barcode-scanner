@@ -2,9 +2,9 @@ Flask==3.0.3
 Werkzeug==3.0.3
 selenium==4.23.1
 undetected-chromedriver==3.5.5
-requests==2.28.1
+requests==2.32.3
 webdriver-manager==4.0.2
 setuptools==72.1.0
 fuzzywuzzy==0.18.0
-python-levenshtein==0.21.1
+rapidfuzz==3.9.3
 python-dotenv==1.0.0

@@ -1,0 +1,19 @@
+# Video Game Catalogue - Combined Requirements
+# This file combines both backend and frontend dependencies for convenience
+
+# Backend Dependencies
+Flask==3.0.3
+Werkzeug==3.0.3
+fuzzywuzzy==0.18.0
+rapidfuzz==3.9.3
+
+# Frontend Dependencies  
+streamlit==1.37.1
+
+# Shared Dependencies
+requests==2.32.3
+selenium==4.23.1
+undetected-chromedriver==3.5.5
+webdriver-manager==4.0.2
+setuptools==72.1.0
+python-dotenv==1.0.0
