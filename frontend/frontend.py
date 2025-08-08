@@ -149,17 +149,42 @@ def fetch_game_by_id(game_id):
 # -------------------------
 
 def get_best_cover_image(game):
-    """Get the best available cover image, preferring high-res artwork"""
-    high_res_cover = game.get("high_res_cover_url")
-    if high_res_cover:
-        return high_res_cover
-    
-    regular_cover = game.get("cover_image", "")
-    if regular_cover:
-        if regular_cover.startswith("//"):
-            return f"https:{regular_cover}"
-        return regular_cover
-    
+    """Return the best visual to display as a cover, with sensible fallbacks.
+
+    Priority:
+    1) High-res grid cover (SteamGridDB)
+    2) Hero image (SteamGridDB) – as a fallback if no grid cover exists
+    3) Logo image (SteamGridDB)
+    4) Icon image (SteamGridDB)
+    5) Regular cover from IGDB/DB (cover_image or cover_url)
+    6) Placeholder
+    """
+
+    def normalize_url(url: str) -> str:
+        if not url:
+            return ""
+        # IGDB sometimes returns protocol-relative URLs like //images.igdb.com/...
+        if isinstance(url, str) and url.startswith("//"):
+            return f"https:{url}"
+        return url
+
+    # SteamGridDB fields
+    for key in [
+        "high_res_cover_url",
+        "hero_image_url",
+        "logo_image_url",
+        "icon_image_url",
+    ]:
+        value = normalize_url(game.get(key))
+        if value:
+            return value
+
+    # Legacy/IGDB fields
+    for key in ["cover_image", "cover_url"]:
+        value = normalize_url(game.get(key))
+        if value:
+            return value
+
     return "https://via.placeholder.com/400x600?text=No+Image"
 
 def get_hero_image(game):
