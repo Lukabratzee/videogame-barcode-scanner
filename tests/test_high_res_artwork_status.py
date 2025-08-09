@@ -35,6 +35,8 @@ def test_high_res_artwork_status(monkeypatch, tmp_path):
     conn.close()
 
     appmod = importlib.import_module("backend.app")
+    # Ensure backend uses the same temporary DB path for this request
+    appmod.database_path = db_path
     client = appmod.app.test_client()
 
     res = client.get("/api/high_res_artwork/status")

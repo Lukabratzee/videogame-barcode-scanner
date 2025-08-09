@@ -29,6 +29,25 @@ source .venv/bin/activate
 echo -e "${BLUE}📦 Installing dependencies...${NC}"
 pip install -q -r requirements.txt
 
+# Optionally run tests before starting services
+# Controls:
+#   SKIP_TESTS=1       → skip running tests
+#   FAIL_ON_TESTS=1    → exit if tests fail
+if [ "${SKIP_TESTS:-0}" -ne 1 ]; then
+    echo -e "${BLUE}🧪 Running test suite...${NC}"
+    if pytest -q; then
+        echo -e "${GREEN}✅ Tests passed${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Tests failed${NC}"
+        if [ "${FAIL_ON_TESTS:-0}" -eq 1 ]; then
+            echo -e "${RED}❌ Aborting due to test failures (FAIL_ON_TESTS=1)${NC}"
+            exit 1
+        else
+            echo -e "${YELLOW}Continuing despite test failures. Set FAIL_ON_TESTS=1 to abort on failure.${NC}"
+        fi
+    fi
+fi
+
 # Create config directory and file if they don't exist
 mkdir -p config data
 if [ ! -f "config/config.json" ]; then

@@ -27,7 +27,7 @@ DATABASE_PATH = _resolve_database_path()
 
 def create_price_history_table():
     """Create the price_history table to track game prices over time"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(_resolve_database_path())
     cursor = conn.cursor()
     
     try:
@@ -81,7 +81,7 @@ def create_price_history_table():
 
 def migrate_existing_prices():
     """Migrate existing average_price data to price_history table"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(_resolve_database_path())
     cursor = conn.cursor()
     
     try:
@@ -125,7 +125,7 @@ def migrate_existing_prices():
 
 def add_price_history_entry(game_id, price, price_source):
     """Add a new price history entry for a game"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(_resolve_database_path())
     cursor = conn.cursor()
     
     try:
@@ -147,7 +147,7 @@ def add_price_history_entry(game_id, price, price_source):
 
 def get_price_history(game_id):
     """Get price history for a specific game"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(_resolve_database_path())
     cursor = conn.cursor()
     
     try:

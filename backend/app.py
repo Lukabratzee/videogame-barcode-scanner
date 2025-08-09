@@ -2574,13 +2574,15 @@ def check_high_res_artwork_status():
         stats = cursor.fetchone()
         
         # Get games without high-res covers (most important metric)
-        cursor.execute("""
-            SELECT id, title, platform 
-            FROM games 
+        cursor.execute(
+            """
+            SELECT id, title, platforms AS platform
+            FROM games
             WHERE id != -1 AND (high_res_cover_url IS NULL OR high_res_cover_url = '')
             ORDER BY title
             LIMIT 10
-        """)
+            """
+        )
         
         games_without_artwork = [
             {'id': row[0], 'title': row[1], 'platform': row[2]}
