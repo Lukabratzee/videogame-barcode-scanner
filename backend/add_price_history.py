@@ -175,22 +175,22 @@ if __name__ == "__main__":
     # Test the functionality
     print("\n🧪 Testing price history functionality...")
     
-    # Add a test entry if we have games
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, title FROM games LIMIT 1")
-    test_game = cursor.fetchone()
-    
-    if test_game:
-        game_id, title = test_game
-        print(f"\n📈 Testing with game: {title} (ID: {game_id})")
-        
-        # Get existing history
-        history = get_price_history(game_id)
-        print(f"  Current price history entries: {len(history)}")
-        
-        for price, source, date in history:
-            print(f"    £{price:.2f} from {source} on {date}")
-    
-    conn.close()
+    # Optional smoke test only if games table exists
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='games'")
+        if cursor.fetchone():
+            cursor.execute("SELECT id, title FROM games LIMIT 1")
+            test_game = cursor.fetchone()
+            if test_game:
+                game_id, title = test_game
+                print(f"\n📈 Testing with game: {title} (ID: {game_id})")
+                history = get_price_history(game_id)
+                print(f"  Current price history entries: {len(history)}")
+                for price, source, date in history:
+                    print(f"    £{price:.2f} from {source} on {date}")
+        conn.close()
+    except Exception as _:
+        pass
     print("\n✅ Price history setup complete!")

@@ -60,6 +60,9 @@ trap cleanup SIGINT SIGTERM
 # Initialize database and run migrations
 echo -e "${BLUE}🗃️  Initializing database...${NC}"
 cd backend
+# Ensure all setup/migrations use the same DB path under project data/
+export DATABASE_PATH="$(pwd)/../data/games.db"
+echo "Using DATABASE_PATH: $DATABASE_PATH"
 python3 database_setup.py
 
 echo -e "${BLUE}🧩 Running gallery migration...${NC}"
@@ -76,6 +79,7 @@ cd ..
 echo -e "${BLUE}🚀 Starting backend server on port 5001...${NC}"
 cd backend
 export BACKEND_PORT=5001
+# DATABASE_PATH already set above; re-export for clarity
 export DATABASE_PATH="$(pwd)/../data/games.db"
 echo "Database path: $DATABASE_PATH"
 python3 app.py &

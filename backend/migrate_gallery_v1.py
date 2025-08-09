@@ -224,8 +224,8 @@ def run_migration():
         
         print("\n📊 Verifying migration...")
         
-        # Verify tables were created
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%gallery%' OR name LIKE '%tag%'")
+        # Verify tables were created (restrict to tables only)
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE '%gallery%' OR name LIKE '%tag%')")
         new_tables = cursor.fetchall()
         
         print(f"✅ Created {len(new_tables)} new tables:")

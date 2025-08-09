@@ -43,6 +43,12 @@ def migrate_artwork_columns() -> bool:
     db_path = _resolve_database_path()
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    # Ensure games table exists before altering
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='games'")
+    if not cursor.fetchone():
+        print("❌ Artwork migration aborted: games table does not exist yet")
+        conn.close()
+        return False
 
     # Desired columns and types
     artwork_columns: List[Tuple[str, str]] = [
