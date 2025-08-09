@@ -82,12 +82,14 @@ mkdir -p "$DATA_DIR" "$CONFIG_DIR"
 
 echo -e "${BLUE}⚙️  Creating configuration files...${NC}"
 
-# Create config.json
-cat > "$CONFIG_DIR/config.json" << 'EOF'
+# Create config.json if missing (app will manage contents)
+if [ ! -f "$CONFIG_DIR/config.json" ]; then
+  cat > "$CONFIG_DIR/config.json" << 'EOF'
 {
-  "price_source": "eBay"
+  "price_source": "PriceCharting"
 }
 EOF
+fi
 
 # Create docker-compose file
 cat > "$COMPOSE_FILE" << 'EOF'
