@@ -10,6 +10,18 @@ st.set_page_config(
     page_icon="🎮"
 )
 
+# Global button style: prevent text wrapping on buttons
+st.markdown(
+    """
+    <style>
+    .stButton > button, .stForm .stButton > button {
+        white-space: nowrap;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Calculate the project root as the parent directory of the frontend folder.
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -247,6 +259,16 @@ def fetch_price_history(game_id):
             return {"success": False, "price_history": [], "error": "Failed to fetch price history"}
     except Exception as e:
         return {"success": False, "price_history": [], "error": str(e)}
+
+def delete_price_history_entry(entry_id: int):
+    """Delete a price history entry by ID"""
+    try:
+        resp = requests.delete(f"{BACKEND_URL}/api/price_history/{entry_id}")
+        if resp.status_code == 200:
+            return resp.json()
+        return None
+    except Exception:
+        return None
 
 def add_price_history_entry(game_id: int, price: float, source: str = "Manual"):
     """Add a price history entry via backend API and return response JSON or None"""
@@ -905,17 +927,58 @@ def game_detail_page():
         except Exception:
             for entry in history_data["price_history"]:
                 st.write(f"{entry.get('date_recorded')}: £{entry.get('price')} ({entry.get('price_source')})")
+        # Deletion controls and page update action inside one box
+        with st.expander("Manage Price History Entries", expanded=False):
+            # Update prices for all games on current page using current price source
+            if st.button("Update Prices (This Page)", key="update_prices_page"):
+                updated = 0
+                for g in games:
+                    gid2 = g.get("id")
+                    if gid2:
+                        try:
+                            _ = update_game_price(gid2)
+                            updated += 1
+                        except Exception:
+                            pass
+                st.success(f"Triggered price updates for {updated} games on this page")
+
+            st.markdown("---")
+            for entry in history_data["price_history"]:
+                c1, c2, c3 = st.columns([2, 2, 1])
+                with c1:
+                    st.caption(entry.get("date_recorded"))
+                with c2:
+                    st.caption(f"£{entry.get('price')} ({entry.get('price_source')})")
+                with c3:
+                    if st.button("Delete", key=f"del_price_{entry.get('id')}"):
+                        res = delete_price_history_entry(int(entry.get("id")))
+                        if res and res.get("success"):
+                            st.success("Deleted entry")
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete")
     else:
         st.info("No price history entries yet.")
 
     with st.form(key="add_price_history_form"):
-        col_a, col_b, _ = st.columns([1, 1, 2])
+        col_a, col_b = st.columns([1, 1])
         with col_a:
             price_val = st.number_input("Price (£)", min_value=0.0, step=0.5, format="%.2f")
         with col_b:
             source_val = st.text_input("Source", value="Manual")
-        submitted = st.form_submit_button("Add Entry")
-        if submitted:
+
+        # Actions row mirrors the two input columns so edges align with Price/Source
+        actions_left, actions_right = st.columns([1, 1])
+        with actions_left:
+            submitted_add = st.form_submit_button("Add Entry")
+        with actions_right:
+            # Create an inner spacer to push the button to the far right edge of the Source column
+            # Nudge slightly left to align with Source field edge
+            _sp, right_btn_col = st.columns([0.85, 0.5])
+            with right_btn_col:
+                submitted_update = st.form_submit_button("Update Prices")
+
+        if submitted_add:
             if price_val and price_val > 0:
                 result = add_price_history_entry(gid, float(price_val), source_val or "Manual")
                 if result and result.get("success"):
@@ -925,6 +988,21 @@ def game_detail_page():
                     st.error("Failed to add price history entry.")
             else:
                 st.warning("Enter a valid price.")
+        elif submitted_update:
+            # Update prices for all games visible on the current Library page
+            page_games = st.session_state.get("current_gallery_games", []) or []
+            updated = 0
+            for g in page_games:
+                gid2 = g.get("id") if isinstance(g, dict) else None
+                if gid2:
+                    try:
+                        _ = update_game_price(gid2)
+                        updated += 1
+                    except Exception:
+                        pass
+            st.success(f"Triggered price updates for {updated} games on this page")
+
+    # Moved the page update button into the Manage Price History Entries expander above
     
     # YouTube Trailer Section
     st.markdown("---")
@@ -1265,6 +1343,8 @@ def gallery_page():
     )
     
     games = gallery_data.get("games", [])
+    # Store current page games for actions within forms (e.g., Update Prices in Price History form)
+    st.session_state["current_gallery_games"] = games
     pagination = gallery_data.get("pagination", {})
     total_games = pagination.get("total_games", 0)
     total_pages = pagination.get("total_pages", 1)

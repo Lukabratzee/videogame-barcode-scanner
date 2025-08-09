@@ -2364,9 +2364,9 @@ def get_price_history(game_id):
         conn = sqlite3.connect(database_path)
         cursor = conn.cursor()
         
-        # Get price history for the game
+        # Get price history for the game (include entry id)
         cursor.execute("""
-            SELECT price, price_source, date_recorded, currency
+            SELECT id, price, price_source, date_recorded, currency
             FROM price_history
             WHERE game_id = ?
             ORDER BY date_recorded ASC
@@ -2376,8 +2376,9 @@ def get_price_history(game_id):
         
         # Format the data for frontend consumption
         price_history = []
-        for price, source, date_recorded, currency in history_rows:
+        for entry_id, price, source, date_recorded, currency in history_rows:
             price_history.append({
+                'id': entry_id,
                 'price': price,
                 'price_source': source,
                 'date_recorded': date_recorded,
@@ -2404,6 +2405,29 @@ def get_price_history(game_id):
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/api/price_history/<int:entry_id>', methods=['DELETE'])
+def delete_price_history_entry(entry_id: int):
+    """Delete a specific price history entry by its ID"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Verify it exists and get game_id for optional context
+        cursor.execute("SELECT game_id FROM price_history WHERE id = ?", (entry_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Entry not found'}), 404
+        game_id = row[0]
+
+        cursor.execute("DELETE FROM price_history WHERE id = ?", (entry_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Entry deleted', 'entry_id': entry_id, 'game_id': game_id}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/price_history', methods=['POST'])
 def add_price_history_entry():
