@@ -8,6 +8,8 @@ import re
 import sqlite3
 from fuzzywuzzy import process
 import csv
+import shutil
+from datetime import datetime
 import io
 import unicodedata
 
@@ -2073,6 +2075,63 @@ def get_gallery_games():
             'success': False,
             'error': str(e)
         }), 500
+
+# -------------------------
+# Database Backup Endpoints
+# -------------------------
+
+@app.route('/api/backup_db', methods=['POST'])
+def backup_database_endpoint():
+    """Create a timestamped backup of the SQLite database under data/backups/ and return its info"""
+    try:
+        # Ensure database exists
+        if not os.path.exists(database_path):
+            return jsonify({'success': False, 'error': 'Database file not found'}), 404
+
+        # Build backup directory under the data directory next to DB
+        backups_dir = os.path.join(DATA_DIR, 'backups')
+        os.makedirs(backups_dir, exist_ok=True)
+
+        # Create timestamped filename
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_filename = f"games_backup_{ts}.db"
+        backup_abs_path = os.path.join(backups_dir, backup_filename)
+
+        # Copy DB
+        shutil.copy2(database_path, backup_abs_path)
+
+        # Compute relative path for media serving (only works if within project root)
+        rel_path = os.path.relpath(backup_abs_path, PROJECT_ROOT)
+        url_path = f"/media/{rel_path}" if not rel_path.startswith('..') else None
+
+        return jsonify({
+            'success': True,
+            'backup_file': backup_filename,
+            'backup_path': rel_path,
+            'download_url': url_path
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backups', methods=['GET'])
+def list_backups_endpoint():
+    """List available database backup files with optional download URLs"""
+    try:
+        backups_dir = os.path.join(DATA_DIR, 'backups')
+        if not os.path.isdir(backups_dir):
+            return jsonify({'success': True, 'backups': []})
+
+        files = []
+        for name in sorted(os.listdir(backups_dir)):
+            path = os.path.join(backups_dir, name)
+            if os.path.isfile(path):
+                rel_path = os.path.relpath(path, PROJECT_ROOT)
+                url_path = f"/media/{rel_path}" if not rel_path.startswith('..') else None
+                files.append({'name': name, 'path': rel_path, 'download_url': url_path, 'size_bytes': os.path.getsize(path)})
+
+        return jsonify({'success': True, 'backups': files})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/gallery/game/<int:game_id>', methods=['GET'])
 def get_gallery_game_detail(game_id):

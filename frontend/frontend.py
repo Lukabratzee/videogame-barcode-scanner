@@ -1090,6 +1090,39 @@ def gallery_page():
                             st.caption("All games have high‑res covers.")
     except Exception:
         pass
+
+    # Backup controls
+    with st.expander("Database Backups", expanded=False):
+        cols = st.columns([1, 2])
+        with cols[0]:
+            if st.button("Create Backup", type="primary"):
+                try:
+                    r = requests.post(f"{BACKEND_URL}/api/backup_db")
+                    if r.status_code == 200 and r.json().get("success"):
+                        info = r.json()
+                        st.success(f"Backup created: {info.get('backup_file')}")
+                        if info.get("download_url"):
+                            st.link_button("Download", f"{BACKEND_URL}{info['download_url']}")
+                    else:
+                        st.error("Failed to create backup")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+        with cols[1]:
+            if st.button("Refresh Backup List"):
+                st.session_state["refresh_backups"] = True
+            try:
+                lr = requests.get(f"{BACKEND_URL}/api/backups")
+                if lr.status_code == 200 and lr.json().get("success"):
+                    for f in lr.json().get("backups", []):
+                        line = f"{f.get('name')} ({int(f.get('size_bytes', 0))} bytes)"
+                        if f.get("download_url"):
+                            st.markdown(f"- [{line}]({BACKEND_URL}{f['download_url']})")
+                        else:
+                            st.markdown(f"- {line}")
+                else:
+                    st.info("No backups found.")
+            except Exception as e:
+                st.error(f"Error: {e}")
     
     # Initialize gallery session state
     if "gallery_page" not in st.session_state:
