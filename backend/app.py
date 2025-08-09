@@ -117,7 +117,7 @@ from dotenv import load_dotenv
 
 app = Flask(__name__)
 
-# IGDB credentials from environment (fallback to empty if not provided)
+# IGDB credentials default from environment (used as final fallback)
 IGDB_CLIENT_ID = os.getenv("IGDB_CLIENT_ID", "")
 IGDB_CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET", "")
 
@@ -210,7 +210,9 @@ def load_config():
     """Load configuration from JSON file, create default if doesn't exist"""
     default_config = {
         "price_source": "PriceCharting",
-        "steamgriddb_api_key": "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api"
+        "steamgriddb_api_key": "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api",
+        "igdb_client_id": "",
+        "igdb_client_secret": ""
     }
     
     # Debug logging
@@ -238,10 +240,18 @@ def load_config():
                 if "price_source" not in config or config["price_source"] not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
                     config["price_source"] = "PriceCharting"
                 
-                # Ensure steamgriddb_api_key exists (add placeholder if missing)
+                # Ensure keys exist; add placeholders if missing
+                changed = False
                 if "steamgriddb_api_key" not in config:
                     config["steamgriddb_api_key"] = "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api"
-                    # Save the updated config
+                    changed = True
+                if "igdb_client_id" not in config:
+                    config["igdb_client_id"] = ""
+                    changed = True
+                if "igdb_client_secret" not in config:
+                    config["igdb_client_secret"] = ""
+                    changed = True
+                if changed:
                     save_config(config)
                 
                 logging.info(f"Config loaded successfully")
@@ -306,6 +316,13 @@ def set_price_source(price_source):
 ####################
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
+# Helper to resolve IGDB credentials from config or env at call time
+def get_igdb_credentials() -> tuple[str, str]:
+    cfg = load_config()
+    client_id = (cfg.get("igdb_client_id") or os.getenv("IGDB_CLIENT_ID", "")).strip()
+    client_secret = (cfg.get("igdb_client_secret") or os.getenv("IGDB_CLIENT_SECRET", "")).strip()
+    return client_id, client_secret
+
 
 # List of common console names and abbreviations to exclude
 CONSOLE_NAMES = [
@@ -354,7 +371,8 @@ def get_db_connection():
 
 # Get IGDB access token
 def get_igdb_access_token():
-    url = f"https://id.twitch.tv/oauth2/token?client_id={IGDB_CLIENT_ID}&client_secret={IGDB_CLIENT_SECRET}&grant_type=client_credentials"
+    client_id, client_secret = get_igdb_credentials()
+    url = f"https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
     response = requests.post(url)
     logging.debug(f"IGDB access token response: {response.json()}")
     return response.json().get("access_token")

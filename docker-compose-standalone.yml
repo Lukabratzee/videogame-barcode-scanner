@@ -1,6 +1,6 @@
 services:
   backend:
-    image: lukabratzee/video-game-catalogue-backend:latest
+    image: lukabratzee/video-game-catalogue-backend:feat-project-improvements
     pull_policy: always
     platform: linux/amd64
     container_name: video-game-catalogue-backend
@@ -31,7 +31,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: lukabratzee/video-game-catalogue-frontend:latest
+    image: lukabratzee/video-game-catalogue-frontend:feat-project-improvements
     pull_policy: always
     platform: linux/amd64
     container_name: video-game-catalogue-frontend
