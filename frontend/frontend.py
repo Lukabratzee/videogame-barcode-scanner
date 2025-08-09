@@ -605,6 +605,17 @@ def game_detail_page():
         st.session_state["page"] = "gallery"
         st.rerun()
         return
+    # Always refresh the selected game's data from the backend so price/rating reflects latest
+    try:
+        game_id = game.get("id")
+        if game_id:
+            fresh = fetch_game_by_id(game_id)
+            if isinstance(fresh, dict) and fresh:
+                st.session_state["selected_game_detail"] = fresh
+                game = fresh
+    except Exception:
+        # Non-fatal; keep existing session copy if refresh fails
+        pass
     
     # -------------------------
     # Game Detail Sidebar: Same as Library for Consistency
@@ -954,6 +965,13 @@ def game_detail_page():
                         res = delete_price_history_entry(int(entry.get("id")))
                         if res and res.get("success"):
                             st.success("Deleted entry")
+                            # Refresh game details so the 'Price & Rating' section reflects fallback value
+                            try:
+                                fresh = fetch_game_by_id(gid)
+                                if isinstance(fresh, dict) and fresh:
+                                    st.session_state["selected_game_detail"] = fresh
+                            except Exception:
+                                pass
                             st.rerun()
                         else:
                             st.error("Failed to delete")
@@ -992,10 +1010,17 @@ def game_detail_page():
             # Update price for the current game only
             try:
                 res = update_game_price(gid)
-                if res and isinstance(res, dict):
-                    if res.get("new_price") is not None:
-                        st.success("Price updated")
-                        st.rerun()
+                    if res and isinstance(res, dict):
+                        if res.get("new_price") is not None:
+                            st.success("Price updated")
+                            # Reload game details to refresh 'Price & Rating'
+                            try:
+                                fresh = fetch_game_by_id(gid)
+                                if isinstance(fresh, dict) and fresh:
+                                    st.session_state["selected_game_detail"] = fresh
+                            except Exception:
+                                pass
+                            st.rerun()
                     else:
                         st.info("No new price found. Kept existing price.")
                 else:
