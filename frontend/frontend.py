@@ -10,6 +10,18 @@ st.set_page_config(
     page_icon="🎮"
 )
 
+# Global button style: prevent text wrapping on buttons
+st.markdown(
+    """
+    <style>
+    .stButton > button, .stForm .stButton > button {
+        white-space: nowrap;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Calculate the project root as the parent directory of the frontend folder.
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -206,6 +218,21 @@ def get_logo_image(game):
     """Get the game logo if available"""
     return game.get("logo_image_url")
 
+
+def get_platform_display(game) -> str:
+    """Return a human-readable platform string from either `platforms` or `platform` fields.
+    - If `platforms` is a list, join with ", ".
+    - If `platforms` is a string, return as-is.
+    - Else fall back to `platform` string if present.
+    - Otherwise return "Unknown".
+    """
+    value = game.get("platforms") or game.get("platform")
+    if isinstance(value, list):
+        return ", ".join([str(v) for v in value if str(v).strip()]) or "Unknown"
+    if isinstance(value, str) and value.strip():
+        return value
+    return "Unknown"
+
 def get_icon_image(game):
     """Get the game icon if available"""
     return game.get("icon_image_url")
@@ -247,6 +274,27 @@ def fetch_price_history(game_id):
             return {"success": False, "price_history": [], "error": "Failed to fetch price history"}
     except Exception as e:
         return {"success": False, "price_history": [], "error": str(e)}
+
+def delete_price_history_entry(entry_id: int):
+    """Delete a price history entry by ID"""
+    try:
+        resp = requests.delete(f"{BACKEND_URL}/api/price_history/{entry_id}")
+        if resp.status_code == 200:
+            return resp.json()
+        return None
+    except Exception:
+        return None
+
+def add_price_history_entry(game_id: int, price: float, source: str = "Manual"):
+    """Add a price history entry via backend API and return response JSON or None"""
+    try:
+        payload = {"game_id": game_id, "price": price, "price_source": source}
+        response = requests.post(f"{BACKEND_URL}/api/price_history", json=payload)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception:
+        return None
 
 # -------------------------
 # CSS Styling for Layout
@@ -572,6 +620,17 @@ def game_detail_page():
         st.session_state["page"] = "gallery"
         st.rerun()
         return
+    # Always refresh the selected game's data from the backend so price/rating reflects latest
+    try:
+        game_id = game.get("id")
+        if game_id:
+            fresh = fetch_game_by_id(game_id)
+            if isinstance(fresh, dict) and fresh:
+                st.session_state["selected_game_detail"] = fresh
+                game = fresh
+    except Exception:
+        # Non-fatal; keep existing session copy if refresh fails
+        pass
     
     # -------------------------
     # Game Detail Sidebar: Same as Library for Consistency
@@ -580,31 +639,27 @@ def game_detail_page():
     music_expander = st.sidebar.expander("Video Game Music Player")
     with music_expander:
         st.markdown("### VIPVGM - Video Game Music")
-        st.markdown("*Listen to video game music while browsing your collection!*")
-        
-        # Create a container for the iframe without autoplay
-        iframe_html = """
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
-            <iframe 
-                src="https://www.vipvgm.net/" 
-                width="100%" 
-                height="400" 
-                frameborder="0" 
-                scrolling="yes"
-                allow="encrypted-media; fullscreen"
-                title="VIPVGM Video Game Music Player"
-                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
-            ></iframe>
-        </div>
-        """
-        
-        # Try to embed the iframe
-        try:
+        st.markdown("*Load the embedded player on demand to prevent autoplay.*")
+        if not st.session_state.get("vipvgm_detail_embedded"):
+            if st.button("Load Embedded Player", key="vipvgm_detail_load"):
+                st.session_state["vipvgm_detail_embedded"] = True
+
+        if st.session_state.get("vipvgm_detail_embedded"):
+            iframe_html = """
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <iframe 
+                    src="https://www.vipvgm.net/" 
+                    width="100%" 
+                    height="400" 
+                    frameborder="0" 
+                    scrolling="yes"
+                    allow="encrypted-media; fullscreen"
+                    title="VIPVGM Video Game Music Player"
+                    style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+                ></iframe>
+            </div>
+            """
             components.html(iframe_html, height=450)
-        except Exception as e:
-            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("Open VIPVGM Music Player", type="primary", key="detail_music_player_fallback"):
-                st.link_button("Open VIPVGM Music Player", "https://www.vipvgm.net/")
 
     st.sidebar.markdown("---")  # Add separator
     
@@ -818,7 +873,7 @@ def game_detail_page():
         
         with col_left:
             st.markdown(f"**Game ID:** {game.get('id', 'Unknown')}")
-            st.markdown(f"**Platform:** {game.get('platform', 'Unknown')}")
+            st.markdown(f"**Platform:** {get_platform_display(game)}")
             
             # Release date and year
             release_date = game.get("release_date")
@@ -882,6 +937,113 @@ def game_detail_page():
         if notes and notes.strip():
             st.markdown("### Personal Notes")
             st.markdown(notes)
+
+    # Price History & Manual Entry
+    st.markdown("---")
+    st.markdown("### Price History")
+    gid = game.get("id")
+    history_data = fetch_price_history(gid)
+    if history_data.get("success") and history_data.get("price_history"):
+        try:
+            import pandas as pd
+            df = pd.DataFrame(history_data["price_history"])  # type: ignore
+            df["date_recorded"] = pd.to_datetime(df["date_recorded"])  # type: ignore
+            df = df.sort_values("date_recorded")
+            st.line_chart(df.set_index("date_recorded")["price"])  # type: ignore
+        except Exception:
+            for entry in history_data["price_history"]:
+                st.write(f"{entry.get('date_recorded')}: £{entry.get('price')} ({entry.get('price_source')})")
+        # Deletion controls and page update action inside one box
+        with st.expander("Manage Price History Entries", expanded=False):
+            # Update prices for all games on current page using current price source
+            if st.button("Update Prices (This Page)", key="update_prices_page"):
+                updated = 0
+                for g in games:
+                    gid2 = g.get("id")
+                    if gid2:
+                        try:
+                            _ = update_game_price(gid2)
+                            updated += 1
+                        except Exception:
+                            pass
+                st.success(f"Triggered price updates for {updated} games on this page")
+
+            st.markdown("---")
+            for entry in history_data["price_history"]:
+                c1, c2, c3 = st.columns([2, 2, 1])
+                with c1:
+                    st.caption(entry.get("date_recorded"))
+                with c2:
+                    st.caption(f"£{entry.get('price')} ({entry.get('price_source')})")
+                with c3:
+                    if st.button("Delete", key=f"del_price_{entry.get('id')}"):
+                        res = delete_price_history_entry(int(entry.get("id")))
+                        if res and res.get("success"):
+                            st.success("Deleted entry")
+                            # Refresh game details so the 'Price & Rating' section reflects fallback value
+                            try:
+                                fresh = fetch_game_by_id(gid)
+                                if isinstance(fresh, dict) and fresh:
+                                    st.session_state["selected_game_detail"] = fresh
+                            except Exception:
+                                pass
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete")
+    else:
+        st.info("No price history entries yet.")
+
+    with st.form(key="add_price_history_form"):
+        col_a, col_b = st.columns([1, 1])
+        with col_a:
+            price_val = st.number_input("Price (£)", min_value=0.0, step=0.5, format="%.2f")
+        with col_b:
+            source_val = st.text_input("Source", value="Manual")
+
+        # Actions row mirrors the two input columns so edges align with Price/Source
+        actions_left, actions_right = st.columns([1, 1])
+        with actions_left:
+            submitted_add = st.form_submit_button("Add Entry")
+        with actions_right:
+            # Create an inner spacer to push the button to the far right edge of the Source column
+            # Nudge slightly left to align with Source field edge
+            _sp, right_btn_col = st.columns([0.85, 0.5])
+            with right_btn_col:
+                submitted_update = st.form_submit_button("Update Prices")
+
+        if submitted_add:
+            if price_val and price_val > 0:
+                result = add_price_history_entry(gid, float(price_val), source_val or "Manual")
+                if result and result.get("success"):
+                    st.success("Price history entry added.")
+                    st.rerun()
+                else:
+                    st.error("Failed to add price history entry.")
+            else:
+                st.warning("Enter a valid price.")
+        elif submitted_update:
+            # Update price for the current game only
+            try:
+                res = update_game_price(gid)
+                if res and isinstance(res, dict):
+                    if res.get("new_price") is not None:
+                        st.success("Price updated")
+                        # Reload game details to refresh 'Price & Rating'
+                        try:
+                            fresh = fetch_game_by_id(gid)
+                            if isinstance(fresh, dict) and fresh:
+                                st.session_state["selected_game_detail"] = fresh
+                        except Exception:
+                            pass
+                        st.rerun()
+                    else:
+                        st.info("No new price found. Kept existing price.")
+                else:
+                    st.info("No response from backend for price update")
+            except Exception:
+                st.error("Failed to update price for this game")
+
+    # Moved the page update button into the Manage Price History Entries expander above
     
     # YouTube Trailer Section
     st.markdown("---")
@@ -1020,6 +1182,62 @@ def gallery_page():
     """Library page with visual game display, filtering, and 3D-ready layout"""
     st.title("Game Library")
     st.markdown("*Visual game collection browser with advanced filtering*")
+
+    # Artwork coverage widget (optional)
+    try:
+        resp = requests.get(f"{BACKEND_URL}/api/high_res_artwork/status")
+        if resp.status_code == 200:
+            stats = resp.json()
+            if stats.get("success"):
+                s = stats.get("stats", {})
+                cov = s.get("coverage_percentage", 0)
+                with st.container():
+                    c1, c2 = st.columns([1, 3])
+                    with c1:
+                        st.metric("Artwork Coverage", f"{cov}%")
+                    with c2:
+                        missing = stats.get("games_without_artwork", [])
+                        if missing:
+                            st.caption("Games missing high‑res covers (top 10):")
+                            for g in missing:
+                                st.write(f"• {g.get('title')} (ID {g.get('id')})")
+                        else:
+                            st.caption("All games have high‑res covers.")
+    except Exception:
+        pass
+
+    # Backup controls
+    with st.expander("Database Backups", expanded=False):
+        cols = st.columns([1, 2])
+        with cols[0]:
+            if st.button("Create Backup", type="primary"):
+                try:
+                    r = requests.post(f"{BACKEND_URL}/api/backup_db")
+                    if r.status_code == 200 and r.json().get("success"):
+                        info = r.json()
+                        st.success(f"Backup created: {info.get('backup_file')}")
+                        if info.get("download_url"):
+                            st.link_button("Download", f"{BACKEND_URL}{info['download_url']}")
+                    else:
+                        st.error("Failed to create backup")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+        with cols[1]:
+            if st.button("Refresh Backup List"):
+                st.session_state["refresh_backups"] = True
+            try:
+                lr = requests.get(f"{BACKEND_URL}/api/backups")
+                if lr.status_code == 200 and lr.json().get("success"):
+                    for f in lr.json().get("backups", []):
+                        line = f"{f.get('name')} ({int(f.get('size_bytes', 0))} bytes)"
+                        if f.get("download_url"):
+                            st.markdown(f"- [{line}]({BACKEND_URL}{f['download_url']})")
+                        else:
+                            st.markdown(f"- {line}")
+                else:
+                    st.info("No backups found.")
+            except Exception as e:
+                st.error(f"Error: {e}")
     
     # Initialize gallery session state
     if "gallery_page" not in st.session_state:
@@ -1038,31 +1256,27 @@ def gallery_page():
     music_expander = st.sidebar.expander("Video Game Music Player")
     with music_expander:
         st.markdown("### VIPVGM - Video Game Music")
-        st.markdown("*Listen to video game music while browsing your collection!*")
-        
-        # Create a container for the iframe without autoplay
-        iframe_html = """
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
-            <iframe 
-                src="https://www.vipvgm.net/" 
-                width="100%" 
-                height="400" 
-                frameborder="0" 
-                scrolling="yes"
-                allow="encrypted-media; fullscreen"
-                title="VIPVGM Video Game Music Player"
-                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
-            ></iframe>
-        </div>
-        """
-        
-        # Try to embed the iframe
-        try:
+        st.markdown("*Load the embedded player on demand to prevent autoplay.*")
+        if not st.session_state.get("vipvgm_gallery_embedded"):
+            if st.button("Load Embedded Player", key="vipvgm_gallery_load"):
+                st.session_state["vipvgm_gallery_embedded"] = True
+
+        if st.session_state.get("vipvgm_gallery_embedded"):
+            iframe_html = """
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <iframe 
+                    src="https://www.vipvgm.net/" 
+                    width="100%" 
+                    height="400" 
+                    frameborder="0" 
+                    scrolling="yes"
+                    allow="encrypted-media; fullscreen"
+                    title="VIPVGM Video Game Music Player"
+                    style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+                ></iframe>
+            </div>
+            """
             components.html(iframe_html, height=450)
-        except Exception as e:
-            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("Open VIPVGM Music Player", type="primary", key="gallery_music_player_fallback"):
-                st.link_button("Open VIPVGM Music Player", "https://www.vipvgm.net/")
 
     st.sidebar.markdown("---")  # Add separator
     
@@ -1101,13 +1315,17 @@ def gallery_page():
     available_years = filter_options.get("release_years", [])
     if available_years:
         min_year, max_year = min(available_years), max(available_years)
-        year_range = st.sidebar.slider(
-            "Release Year Range",
-            min_value=min_year,
-            max_value=max_year,
-            value=(min_year, max_year),
-            key="gallery_year_range"
-        )
+        if min_year < max_year:
+            year_range = st.sidebar.slider(
+                "Release Year Range",
+                min_value=min_year,
+                max_value=max_year,
+                value=(min_year, max_year),
+                key="gallery_year_range"
+            )
+        else:
+            st.sidebar.info(f"Only year available: {min_year}")
+            year_range = (min_year, max_year)
     else:
         year_range = None
     
@@ -1166,6 +1384,8 @@ def gallery_page():
     )
     
     games = gallery_data.get("games", [])
+    # Store current page games for actions within forms (e.g., Update Prices in Price History form)
+    st.session_state["current_gallery_games"] = games
     pagination = gallery_data.get("pagination", {})
     total_games = pagination.get("total_games", 0)
     total_pages = pagination.get("total_pages", 1)
@@ -1492,31 +1712,27 @@ def main():
     music_expander = st.sidebar.expander("Video Game Music Player")
     with music_expander:
         st.markdown("### VIPVGM - Video Game Music")
-        st.markdown("*Listen to video game music while browsing your collection!*")
-        
-        # Create a container for the iframe without autoplay
-        iframe_html = """
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
-            <iframe 
-                src="https://www.vipvgm.net/" 
-                width="100%" 
-                height="400" 
-                frameborder="0" 
-                scrolling="yes"
-                allow="encrypted-media; fullscreen"
-                title="VIPVGM Video Game Music Player"
-                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
-            ></iframe>
-        </div>
-        """
-        
-        # Try to embed the iframe
-        try:
+        st.markdown("*Load the embedded player on demand to prevent autoplay.*")
+        if not st.session_state.get("vipvgm_home_embedded"):
+            if st.button("Load Embedded Player", key="vipvgm_home_load"):
+                st.session_state["vipvgm_home_embedded"] = True
+
+        if st.session_state.get("vipvgm_home_embedded"):
+            iframe_html = """
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <iframe 
+                    src="https://www.vipvgm.net/" 
+                    width="100%" 
+                    height="400" 
+                    frameborder="0" 
+                    scrolling="yes"
+                    allow="encrypted-media; fullscreen"
+                    title="VIPVGM Video Game Music Player"
+                    style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+                ></iframe>
+            </div>
+            """
             components.html(iframe_html, height=450)
-        except Exception as e:
-            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("🎵 Open VIPVGM Music Player", type="primary", key="music_player_fallback"):
-                st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
 
     # -------------------------
     # Global Price Source Selector
@@ -1904,17 +2120,9 @@ def main():
                             st.success("✅ Artwork updated successfully!")
                             st.write(f"**Game:** {result['game_title']}")
                             st.write(f"**Game ID:** {result['game_id']}")
-                            # Refresh the current view
-                            filters = {}
-                            if st.session_state.get("filter_publisher"):
-                                filters["publisher"] = st.session_state["filter_publisher"]
-                            if st.session_state.get("filter_platform"):
-                                filters["platform"] = st.session_state["filter_platform"]
-                            if st.session_state.get("filter_genre"):
-                                filters["genre"] = st.session_state["filter_genre"]
-                            if st.session_state.get("filter_year"):
-                                filters["year"] = st.session_state["filter_year"]
-                            games = fetch_games(filters)
+                            # Refresh artwork coverage widget and gallery listing
+                            st.session_state["refresh_artwork_stats"] = True
+                            st.rerun()
                         elif result and result.get("error") == "api_key_missing":
                             st.error("❌ SteamGridDB API key not configured")
                             st.info("To use this feature:")

@@ -8,6 +8,8 @@ import re
 import sqlite3
 from fuzzywuzzy import process
 import csv
+import shutil
+from datetime import datetime
 import io
 import unicodedata
 
@@ -81,24 +83,32 @@ if PROJECT_ROOT not in sys.path:
 
 print("Project root added to sys.path:", PROJECT_ROOT)
 
-# Import scraper functions from the modules directory
-# Try different import paths for Docker vs local environments
+# Import scraper functions robustly from canonical modules directory
 try:
-    from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
+    # Prefer canonical package import
+    from modules.scrapers import (
+        scrape_barcode_lookup,
+        scrape_amazon_price,
+        scrape_ebay_prices,
+        scrape_cex_price,
+        scrape_pricecharting_price,
+        get_best_pricecharting_price,
+    )
     print("✅ Successfully imported scrapers from modules.scrapers")
 except ImportError:
-    try:
-        # Fallback for Docker environment
-        sys.path.insert(0, '/app')
-        from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
-        print("✅ Successfully imported scrapers from /app/modules.scrapers")
-    except ImportError:
-        # Last resort - try absolute import from project root
-        modules_path = os.path.join(PROJECT_ROOT, 'modules')
-        if modules_path not in sys.path:
-            sys.path.insert(0, modules_path)
-        from scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
-        print("✅ Successfully imported scrapers with absolute path")
+    # Ensure the modules directory itself is on sys.path and import as flat module
+    modules_path = os.path.join(PROJECT_ROOT, 'modules')
+    if modules_path not in sys.path:
+        sys.path.insert(0, modules_path)
+    from scrapers import (
+        scrape_barcode_lookup,
+        scrape_amazon_price,
+        scrape_ebay_prices,
+        scrape_cex_price,
+        scrape_pricecharting_price,
+        get_best_pricecharting_price,
+    )
+    print("✅ Successfully imported scrapers from modules directory path")
 
 from flask import Flask, request, jsonify, Response, send_from_directory
 from werkzeug.utils import secure_filename
@@ -107,8 +117,9 @@ from dotenv import load_dotenv
 
 app = Flask(__name__)
 
-IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
-IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
+# IGDB credentials default from environment (used as final fallback)
+IGDB_CLIENT_ID = os.getenv("IGDB_CLIENT_ID", "")
+IGDB_CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET", "")
 
 # Specify the exact path to the ChromeDriver binary
 # driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path - NOT USED IN DOCKER
@@ -199,7 +210,9 @@ def load_config():
     """Load configuration from JSON file, create default if doesn't exist"""
     default_config = {
         "price_source": "PriceCharting",
-        "steamgriddb_api_key": "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api"
+        "steamgriddb_api_key": "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api",
+        "igdb_client_id": "",
+        "igdb_client_secret": ""
     }
     
     # Debug logging
@@ -227,10 +240,18 @@ def load_config():
                 if "price_source" not in config or config["price_source"] not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
                     config["price_source"] = "PriceCharting"
                 
-                # Ensure steamgriddb_api_key exists (add placeholder if missing)
+                # Ensure keys exist; add placeholders if missing
+                changed = False
                 if "steamgriddb_api_key" not in config:
                     config["steamgriddb_api_key"] = "your_steamgriddb_api_key_here_get_from_https://www.steamgriddb.com/profile/preferences/api"
-                    # Save the updated config
+                    changed = True
+                if "igdb_client_id" not in config:
+                    config["igdb_client_id"] = ""
+                    changed = True
+                if "igdb_client_secret" not in config:
+                    config["igdb_client_secret"] = ""
+                    changed = True
+                if changed:
                     save_config(config)
                 
                 logging.info(f"Config loaded successfully")
@@ -295,6 +316,13 @@ def set_price_source(price_source):
 ####################
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
+# Helper to resolve IGDB credentials from config or env at call time
+def get_igdb_credentials() -> tuple[str, str]:
+    cfg = load_config()
+    client_id = (cfg.get("igdb_client_id") or os.getenv("IGDB_CLIENT_ID", "")).strip()
+    client_secret = (cfg.get("igdb_client_secret") or os.getenv("IGDB_CLIENT_SECRET", "")).strip()
+    return client_id, client_secret
+
 
 # List of common console names and abbreviations to exclude
 CONSOLE_NAMES = [
@@ -343,7 +371,8 @@ def get_db_connection():
 
 # Get IGDB access token
 def get_igdb_access_token():
-    url = f"https://id.twitch.tv/oauth2/token?client_id={IGDB_CLIENT_ID}&client_secret={IGDB_CLIENT_SECRET}&grant_type=client_credentials"
+    client_id, client_secret = get_igdb_credentials()
+    url = f"https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
     response = requests.post(url)
     logging.debug(f"IGDB access token response: {response.json()}")
     return response.json().get("access_token")
@@ -554,8 +583,9 @@ def clean_game_title(game_title):
 # Search for game information on IGDB
 def search_igdb_game(game_name, auth_token):
     url = "https://api.igdb.com/v4/games"
+    client_id, _ = get_igdb_credentials()
     headers = {
-        "Client-ID": IGDB_CLIENT_ID,
+        "Client-ID": client_id,
         "Authorization": f"Bearer {auth_token}",
     }
     body = f'search "{game_name}"; fields name, cover.url, summary, platforms.name, genres.name, involved_companies.company.name, first_release_date;'
@@ -670,8 +700,8 @@ class GameScan:
                 logging.error("Failed to retrieve IGDB access token")
                 return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
-            # Lookup via barcode to obtain game title (and optional barcode price)
-            game_title, barcode_price = scrape_barcode_lookup(barcode)
+            # Lookup via barcode to obtain game title
+            game_title, _ = scrape_barcode_lookup(barcode)
             game_title = game_title if game_title else "Unknown Game"
 
             # Check if the game already exists in the database.
@@ -688,7 +718,7 @@ class GameScan:
                     "id": existing_game[0]
                 }), 200
 
-            # We do not perform any price scraping here; set combined_price to None.
+            # Do not perform any price scraping here; pricing happens after platform selection in /confirm
             combined_price = None
 
             # Perform IGDB fuzzy search using game_title (without platform info)
@@ -1041,8 +1071,9 @@ def search_game_by_id():
             return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
         url = f"https://api.igdb.com/v4/games"
+        client_id, _ = get_igdb_credentials()
         headers = {
-            "Client-ID": IGDB_CLIENT_ID,
+            "Client-ID": client_id,
             "Authorization": f"Bearer {igdb_access_token}",
         }
         body = f"fields name, cover.url, summary, platforms.name, genres.name, involved_companies.company.name, franchises.name, first_release_date; where id = {igdb_id};"
@@ -1124,11 +1155,6 @@ def save_game_to_db(game_data):
         count = cursor.fetchone()[0]
 
         if count == 0:
-            # Ensure cover_image is a string.
-            cover_image = game_data.get("cover_image")
-            if cover_image is None:
-                cover_image = ""
-            
             # Generate YouTube trailer URL
             youtube_trailer_url = None
             title = game_data.get("title", "")
@@ -1147,13 +1173,12 @@ def save_game_to_db(game_data):
             game_id = generate_random_id()
             cursor.execute(
                 """
-                INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO games (id, title, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     game_id,
                     game_data["title"],
-                    cover_image,
                     game_data["description"],
                     ", ".join(game_data["publisher"]),
                     ", ".join(game_data["platforms"]),
@@ -1580,7 +1605,7 @@ def update_game_price(game_id):
         
         # Extract game info for price lookup
         game_title = game[1]  # title column
-        platforms = game[5]   # platforms column
+        platforms = game[4]   # platforms column (cover_image removed from schema)
         
         # Use the first platform for price lookup
         selected_platform = ""
@@ -1602,6 +1627,7 @@ def update_game_price(game_id):
         
         # Perform price scraping based on current configuration
         new_price = None
+        used_source = price_source
         if price_source == "Amazon":
             new_price = scrape_amazon_price(search_query)
         elif price_source == "CeX":
@@ -1611,32 +1637,47 @@ def update_game_price(game_id):
             pricecharting_data = scrape_pricecharting_price(search_query, None, "PAL")
             # Use the best representative price (prioritizes loose -> CIB -> new)
             new_price = get_best_pricecharting_price(pricecharting_data)
-            
             if pricecharting_data:
-                logging.debug(f"PriceCharting pricing breakdown - Loose: £{pricecharting_data.get('loose_price')}, "
-                            f"CIB: £{pricecharting_data.get('cib_price')}, New: £{pricecharting_data.get('new_price')}")
+                logging.debug(
+                    f"PriceCharting pricing breakdown - Loose: £{pricecharting_data.get('loose_price')}, "
+                    f"CIB: £{pricecharting_data.get('cib_price')}, New: £{pricecharting_data.get('new_price')}"
+                )
         else:  # Default to eBay
             new_price = scrape_ebay_prices(search_query)
-        
+
         logging.debug(f"Scraped new price from {price_source}: {new_price}")
-        
-        # Update the game's price in the database
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE games SET average_price = ? WHERE id = ?",
-            (new_price, game_id)
-        )
-        conn.commit()
-        conn.close()
+
+        # Only write to DB if we have a valid new price. Never overwrite with NULL/None
+        if new_price is not None:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE games SET average_price = ? WHERE id = ?",
+                (new_price, game_id)
+            )
+            # Record into price_history as well for auditing
+            from datetime import datetime
+            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute(
+                """
+                INSERT INTO price_history (game_id, price, price_source, date_recorded, currency)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (game_id, new_price, used_source, current_date, 'GBP')
+            )
+            conn.commit()
+            conn.close()
+        else:
+            # No price found; preserve existing price. Do not write history.
+            used_source = price_source
         
         return jsonify({
-            "message": f"Price updated successfully using {price_source}",
+            "message": f"Price updated successfully using {used_source}",
             "game_id": game_id,
             "game_title": game_title,
             "old_price": game[8],  # average_price column
             "new_price": new_price,
-            "price_source": price_source
+            "price_source": used_source
         }), 200
         
     except Exception as e:
@@ -2073,6 +2114,63 @@ def get_gallery_games():
             'error': str(e)
         }), 500
 
+# -------------------------
+# Database Backup Endpoints
+# -------------------------
+
+@app.route('/api/backup_db', methods=['POST'])
+def backup_database_endpoint():
+    """Create a timestamped backup of the SQLite database under data/backups/ and return its info"""
+    try:
+        # Ensure database exists
+        if not os.path.exists(database_path):
+            return jsonify({'success': False, 'error': 'Database file not found'}), 404
+
+        # Build backup directory under the data directory next to DB
+        backups_dir = os.path.join(DATA_DIR, 'backups')
+        os.makedirs(backups_dir, exist_ok=True)
+
+        # Create timestamped filename
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_filename = f"games_backup_{ts}.db"
+        backup_abs_path = os.path.join(backups_dir, backup_filename)
+
+        # Copy DB
+        shutil.copy2(database_path, backup_abs_path)
+
+        # Compute relative path for media serving (only works if within project root)
+        rel_path = os.path.relpath(backup_abs_path, PROJECT_ROOT)
+        url_path = f"/media/{rel_path}" if not rel_path.startswith('..') else None
+
+        return jsonify({
+            'success': True,
+            'backup_file': backup_filename,
+            'backup_path': rel_path,
+            'download_url': url_path
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backups', methods=['GET'])
+def list_backups_endpoint():
+    """List available database backup files with optional download URLs"""
+    try:
+        backups_dir = os.path.join(DATA_DIR, 'backups')
+        if not os.path.isdir(backups_dir):
+            return jsonify({'success': True, 'backups': []})
+
+        files = []
+        for name in sorted(os.listdir(backups_dir)):
+            path = os.path.join(backups_dir, name)
+            if os.path.isfile(path):
+                rel_path = os.path.relpath(path, PROJECT_ROOT)
+                url_path = f"/media/{rel_path}" if not rel_path.startswith('..') else None
+                files.append({'name': name, 'path': rel_path, 'download_url': url_path, 'size_bytes': os.path.getsize(path)})
+
+        return jsonify({'success': True, 'backups': files})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/gallery/game/<int:game_id>', methods=['GET'])
 def get_gallery_game_detail(game_id):
     """Get detailed information for a single game including gallery metadata"""
@@ -2083,7 +2181,7 @@ def get_gallery_game_detail(game_id):
         # Get game with gallery metadata
         query = """
         SELECT 
-            g.id, g.title, g.cover_image, g.description, g.publisher,
+            g.id, g.title, g.description, g.publisher,
             g.platforms, g.genres, g.series, g.release_date, g.average_price,
             ggm.completion_status, ggm.personal_rating, ggm.play_time_hours,
             ggm.notes, ggm.display_priority, ggm.favorite,
@@ -2124,24 +2222,23 @@ def get_gallery_game_detail(game_id):
         game = {
             'id': game_row[0],
             'title': game_row[1],
-            'cover_image': game_row[2],
-            'description': game_row[3],
-            'publisher': game_row[4],
-            'platforms': game_row[5],
-            'genres': game_row[6],
-            'series': game_row[7],
-            'release_date': game_row[8],
+            'description': game_row[2],
+            'publisher': game_row[3],
+            'platforms': game_row[4],
+            'genres': game_row[5],
+            'series': game_row[6],
+            'release_date': game_row[7],
             'release_year': release_year,
-            'average_price': game_row[9],
+            'average_price': game_row[8],
             'gallery_metadata': {
-                'completion_status': game_row[10],
-                'personal_rating': game_row[11],
-                'play_time_hours': game_row[12],
-                'notes': game_row[13],
-                'display_priority': game_row[14],
-                'is_favorite': bool(game_row[15]),
-                'date_acquired': game_row[16],
-                'date_completed': game_row[17]
+                'completion_status': game_row[9],
+                'personal_rating': game_row[10],
+                'play_time_hours': game_row[11],
+                'notes': game_row[12],
+                'display_priority': game_row[13],
+                'is_favorite': bool(game_row[14]),
+                'date_acquired': game_row[15],
+                'date_completed': game_row[16]
             },
             'tags': tags
         }
@@ -2283,9 +2380,9 @@ def get_price_history(game_id):
         conn = sqlite3.connect(database_path)
         cursor = conn.cursor()
         
-        # Get price history for the game
+        # Get price history for the game (include entry id)
         cursor.execute("""
-            SELECT price, price_source, date_recorded, currency
+            SELECT id, price, price_source, date_recorded, currency
             FROM price_history
             WHERE game_id = ?
             ORDER BY date_recorded ASC
@@ -2295,8 +2392,9 @@ def get_price_history(game_id):
         
         # Format the data for frontend consumption
         price_history = []
-        for price, source, date_recorded, currency in history_rows:
+        for entry_id, price, source, date_recorded, currency in history_rows:
             price_history.append({
+                'id': entry_id,
                 'price': price,
                 'price_source': source,
                 'date_recorded': date_recorded,
@@ -2323,6 +2421,49 @@ def get_price_history(game_id):
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/api/price_history/<int:entry_id>', methods=['DELETE'])
+def delete_price_history_entry(entry_id: int):
+    """Delete a specific price history entry by its ID"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # Verify it exists and get game_id for optional context
+        cursor.execute("SELECT game_id FROM price_history WHERE id = ?", (entry_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Entry not found'}), 404
+        game_id = row[0]
+
+        cursor.execute("DELETE FROM price_history WHERE id = ?", (entry_id,))
+        
+        # After deletion, recompute latest price for the game and update games.average_price
+        cursor.execute(
+            """
+            SELECT price
+            FROM price_history
+            WHERE game_id = ?
+            ORDER BY datetime(date_recorded) DESC, id DESC
+            LIMIT 1
+            """,
+            (game_id,),
+        )
+        latest_row = cursor.fetchone()
+        if latest_row is not None:
+            latest_price = latest_row[0]
+            cursor.execute("UPDATE games SET average_price = ? WHERE id = ?", (latest_price, game_id))
+        else:
+            # No history remains; clear the current price
+            cursor.execute("UPDATE games SET average_price = NULL WHERE id = ?", (game_id,))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Entry deleted', 'entry_id': entry_id, 'game_id': game_id}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/price_history', methods=['POST'])
 def add_price_history_entry():
@@ -2506,13 +2647,15 @@ def check_high_res_artwork_status():
         stats = cursor.fetchone()
         
         # Get games without high-res covers (most important metric)
-        cursor.execute("""
-            SELECT id, title, platform 
-            FROM games 
+        cursor.execute(
+            """
+            SELECT id, title, platforms AS platform
+            FROM games
             WHERE id != -1 AND (high_res_cover_url IS NULL OR high_res_cover_url = '')
             ORDER BY title
             LIMIT 10
-        """)
+            """
+        )
         
         games_without_artwork = [
             {'id': row[0], 'title': row[1], 'platform': row[2]}

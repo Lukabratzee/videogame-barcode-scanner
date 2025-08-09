@@ -1,4 +1,6 @@
 {
   "price_source": "PriceCharting",
-  "steamgriddb_api_key": "7044ce127dff80c8363904d3f94df52c"
-} 
+  "steamgriddb_api_key": "7044ce127dff80c8363904d3f94df52c",
+  "igdb_client_id": "nal5c75b0hwuvmsgs1cdowvi81tg5y",
+  "igdb_client_secret": "lgea285xk7qsm4lhh9tio54bw3pek7"
+}

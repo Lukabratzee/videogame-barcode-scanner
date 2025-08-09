@@ -17,6 +17,29 @@ COMPOSE_FILE="docker-compose-standalone.yml"
 DATA_DIR="data"
 CONFIG_DIR="config"
 
+# Image tags (overridable via CLI flags)
+BACKEND_TAG="latest"
+FRONTEND_TAG="latest"
+
+# Parse optional flags: --backend-tag TAG, --frontend-tag TAG, --tag TAG, --branch
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --backend-tag)
+      BACKEND_TAG="$2"; shift 2 ;;
+    --frontend-tag)
+      FRONTEND_TAG="$2"; shift 2 ;;
+    --tag)
+      BACKEND_TAG="$2"; FRONTEND_TAG="$2"; shift 2 ;;
+    --branch)
+      # Use current git branch (sanitized) for both tags
+      BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached")
+      SANITIZED=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g')
+      BACKEND_TAG="$SANITIZED"; FRONTEND_TAG="$SANITIZED"; shift ;;
+    *)
+      shift ;;
+  esac
+done
+
 echo -e "${BLUE}🎮 Video Game Catalogue - Standalone Setup${NC}"
 echo "=============================================="
 
@@ -82,18 +105,20 @@ mkdir -p "$DATA_DIR" "$CONFIG_DIR"
 
 echo -e "${BLUE}⚙️  Creating configuration files...${NC}"
 
-# Create config.json
-cat > "$CONFIG_DIR/config.json" << 'EOF'
+# Create config.json if missing (app will manage contents)
+if [ ! -f "$CONFIG_DIR/config.json" ]; then
+  cat > "$CONFIG_DIR/config.json" << 'EOF'
 {
-  "price_source": "eBay"
+  "price_source": "PriceCharting"
 }
 EOF
+fi
 
-# Create docker-compose file
-cat > "$COMPOSE_FILE" << 'EOF'
+# Create docker-compose file (with selected tags)
+cat > "$COMPOSE_FILE" << EOF
 services:
   backend:
-    image: lukabratzee/video-game-catalogue-backend:latest
+    image: lukabratzee/video-game-catalogue-backend:${BACKEND_TAG}
     pull_policy: always
     platform: linux/amd64
     container_name: video-game-catalogue-backend
@@ -102,6 +127,8 @@ services:
     environment:
       - DATABASE_PATH=/app/data/games.db
       - BACKEND_PORT=5001
+      - IGDB_CLIENT_ID=${IGDB_CLIENT_ID}
+      - IGDB_CLIENT_SECRET=${IGDB_CLIENT_SECRET}
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -124,7 +151,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: lukabratzee/video-game-catalogue-frontend:latest
+    image: lukabratzee/video-game-catalogue-frontend:${FRONTEND_TAG}
     pull_policy: always
     platform: linux/amd64
     container_name: video-game-catalogue-frontend

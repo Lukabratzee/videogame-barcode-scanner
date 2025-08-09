@@ -29,6 +29,30 @@ source .venv/bin/activate
 echo -e "${BLUE}📦 Installing dependencies...${NC}"
 pip install -q -r requirements.txt
 
+# Optionally run tests before starting services (default OFF)
+# Controls:
+#   RUN_TESTS=1        → run tests
+#   SKIP_TESTS=1       → force skip tests (overrides RUN_TESTS)
+#   FAIL_ON_TESTS=1    → exit if tests fail
+if [ "${SKIP_TESTS:-0}" -eq 1 ]; then
+    echo -e "${YELLOW}🧪 Tests skipped (SKIP_TESTS=1)${NC}"
+elif [ "${RUN_TESTS:-0}" -eq 1 ]; then
+    echo -e "${BLUE}🧪 Running test suite...${NC}"
+    if pytest -q; then
+        echo -e "${GREEN}✅ Tests passed${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Tests failed${NC}"
+        if [ "${FAIL_ON_TESTS:-0}" -eq 1 ]; then
+            echo -e "${RED}❌ Aborting due to test failures (FAIL_ON_TESTS=1)${NC}"
+            exit 1
+        else
+            echo -e "${YELLOW}Continuing despite test failures. Set FAIL_ON_TESTS=1 to abort on failure.${NC}"
+        fi
+    fi
+else
+    echo -e "${YELLOW}🧪 Tests disabled by default. Set RUN_TESTS=1 to enable.${NC}"
+fi
+
 # Create config directory and file if they don't exist
 mkdir -p config data
 if [ ! -f "config/config.json" ]; then
@@ -57,16 +81,29 @@ cleanup() {
 # Trap cleanup on script exit
 trap cleanup SIGINT SIGTERM
 
-# Initialize database
+# Initialize database and run migrations
 echo -e "${BLUE}🗃️  Initializing database...${NC}"
 cd backend
+# Ensure all setup/migrations use the same DB path under project data/
+export DATABASE_PATH="$(pwd)/../data/games.db"
+echo "Using DATABASE_PATH: $DATABASE_PATH"
 python3 database_setup.py
+
+echo -e "${BLUE}🧩 Running gallery migration...${NC}"
+python3 migrate_gallery_v1.py || true
+
+echo -e "${BLUE}💹 Ensuring price_history table exists...${NC}"
+python3 add_price_history.py || true
+
+echo -e "${BLUE}🖼️  Ensuring artwork columns exist...${NC}"
+python3 migrate_artwork_columns.py || true
 cd ..
 
 # Start backend in background with absolute path
 echo -e "${BLUE}🚀 Starting backend server on port 5001...${NC}"
 cd backend
 export BACKEND_PORT=5001
+# DATABASE_PATH already set above; re-export for clarity
 export DATABASE_PATH="$(pwd)/../data/games.db"
 echo "Database path: $DATABASE_PATH"
 python3 app.py &

@@ -38,19 +38,13 @@ else
     echo "Chromedriver not found"
 fi
 
-# Initialize database if it doesn't exist
-echo "🔍 About to initialize database..."
-echo "🔍 Current working directory: $(pwd)"
-echo "🔍 Files in current directory:"
-ls -la
-echo "🔍 Looking for database_setup.py:"
-ls -la database_setup.py
-echo "🔍 Testing python3 command:"
-python3 --version
-echo "🔍 Now running database_setup.py..."
-python3 database_setup.py
-echo "🔍 Database setup completed with exit code: $?"
+# Initialize database and run migrations (idempotent)
+echo "🔍 Initializing database and running migrations..."
+python3 database_setup.py || true
+python3 migrate_gallery_v1.py || true
+python3 add_price_history.py || true
+python3 migrate_artwork_columns.py || true
 
 # Start the Flask application
 echo "Starting Flask application..."
-exec python3 app.py 
+exec python3 app.py

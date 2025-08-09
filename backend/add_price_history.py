@@ -8,12 +8,26 @@ import sqlite3
 import os
 from datetime import datetime
 
-# Database path
-DATABASE_PATH = os.path.join(os.path.dirname(__file__), "games.db")
+
+def _resolve_database_path() -> str:
+    """Resolve database path consistent with app.py/start scripts."""
+    db_path = os.getenv("DATABASE_PATH", "").strip()
+    if db_path:
+        if not os.path.isabs(db_path):
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            db_path = os.path.join(project_root, db_path)
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        return db_path
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    default_path = os.path.join(project_root, "data", "games.db")
+    os.makedirs(os.path.dirname(default_path), exist_ok=True)
+    return default_path
+
+DATABASE_PATH = _resolve_database_path()
 
 def create_price_history_table():
     """Create the price_history table to track game prices over time"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(_resolve_database_path())
     cursor = conn.cursor()
     
     try:
@@ -67,7 +81,7 @@ def create_price_history_table():
 
 def migrate_existing_prices():
     """Migrate existing average_price data to price_history table"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(_resolve_database_path())
     cursor = conn.cursor()
     
     try:
@@ -111,7 +125,7 @@ def migrate_existing_prices():
 
 def add_price_history_entry(game_id, price, price_source):
     """Add a new price history entry for a game"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(_resolve_database_path())
     cursor = conn.cursor()
     
     try:
@@ -133,7 +147,7 @@ def add_price_history_entry(game_id, price, price_source):
 
 def get_price_history(game_id):
     """Get price history for a specific game"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(_resolve_database_path())
     cursor = conn.cursor()
     
     try:
@@ -161,22 +175,22 @@ if __name__ == "__main__":
     # Test the functionality
     print("\n🧪 Testing price history functionality...")
     
-    # Add a test entry if we have games
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, title FROM games LIMIT 1")
-    test_game = cursor.fetchone()
-    
-    if test_game:
-        game_id, title = test_game
-        print(f"\n📈 Testing with game: {title} (ID: {game_id})")
-        
-        # Get existing history
-        history = get_price_history(game_id)
-        print(f"  Current price history entries: {len(history)}")
-        
-        for price, source, date in history:
-            print(f"    £{price:.2f} from {source} on {date}")
-    
-    conn.close()
+    # Optional smoke test only if games table exists
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='games'")
+        if cursor.fetchone():
+            cursor.execute("SELECT id, title FROM games LIMIT 1")
+            test_game = cursor.fetchone()
+            if test_game:
+                game_id, title = test_game
+                print(f"\n📈 Testing with game: {title} (ID: {game_id})")
+                history = get_price_history(game_id)
+                print(f"  Current price history entries: {len(history)}")
+                for price, source, date in history:
+                    print(f"    £{price:.2f} from {source} on {date}")
+        conn.close()
+    except Exception as _:
+        pass
     print("\n✅ Price history setup complete!")

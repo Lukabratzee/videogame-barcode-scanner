@@ -17,19 +17,23 @@ import os
 import sys
 from datetime import datetime
 
-# Use DATABASE_PATH environment variable if set, otherwise use local directory
-if 'DATABASE_PATH' in os.environ:
-    db_path = os.environ['DATABASE_PATH']
-    # Ensure the directory exists
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(BASE_DIR, 'games.db')
+def _resolve_db_path() -> str:
+    """Resolve DB path at runtime to avoid stale environment between tests."""
+    if 'DATABASE_PATH' in os.environ and os.environ['DATABASE_PATH'].strip():
+        path = os.environ['DATABASE_PATH'].strip()
+        if not os.path.isabs(path):
+            base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            path = os.path.join(base, path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return path
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, 'games.db')
 
 def run_migration():
     """Execute the gallery feature database migration"""
     
     print("🚀 Starting Gallery Feature Migration v1.0.0")
+    db_path = _resolve_db_path()
     print(f"📍 Database: {db_path}")
     
     if not os.path.exists(db_path):
@@ -224,8 +228,8 @@ def run_migration():
         
         print("\n📊 Verifying migration...")
         
-        # Verify tables were created
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%gallery%' OR name LIKE '%tag%'")
+        # Verify tables were created (restrict to tables only)
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE '%gallery%' OR name LIKE '%tag%')")
         new_tables = cursor.fetchall()
         
         print(f"✅ Created {len(new_tables)} new tables:")
@@ -254,6 +258,7 @@ def rollback_migration():
     print("🔄 Rolling back Gallery Feature Migration...")
     
     try:
+        db_path = _resolve_db_path()
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         

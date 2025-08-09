@@ -2,7 +2,10 @@
 # This script contains everything needed to run the application
 
 param(
-    [switch]$Stop
+    [switch]$Stop,
+    [string]$BackendTag = "latest",
+    [string]$FrontendTag = "latest",
+    [switch]$UseBranchTag
 )
 
 # Configuration
@@ -111,6 +114,18 @@ New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 
 Write-Blue "Creating configuration files..."
 
+# If --UseBranchTag is set, derive a Docker-safe tag from current git branch
+if ($UseBranchTag) {
+    try {
+        $branch = (git rev-parse --abbrev-ref HEAD) 2>$null
+        if ($branch) {
+            $sanitized = ($branch.ToLower() -replace "[^a-z0-9._-]", "-")
+            $BackendTag = $sanitized
+            $FrontendTag = $sanitized
+        }
+    } catch {}
+}
+
 # Create config.json
 $configContent = @"
 {
@@ -123,7 +138,7 @@ $configContent | Out-File -FilePath "$ConfigDir\config.json" -Encoding UTF8
 $composeContent = @"
 services:
   backend:
-    image: lukabratzee/video-game-catalogue-backend:latest
+    image: lukabratzee/video-game-catalogue-backend:$BackendTag
     pull_policy: always
     platform: linux/amd64
     container_name: video-game-catalogue-backend
@@ -132,6 +147,8 @@ services:
     environment:
       - DATABASE_PATH=/app/data/games.db
       - BACKEND_PORT=5001
+      - IGDB_CLIENT_ID=${IGDB_CLIENT_ID}
+      - IGDB_CLIENT_SECRET=${IGDB_CLIENT_SECRET}
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -154,7 +171,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: lukabratzee/video-game-catalogue-frontend:latest
+    image: lukabratzee/video-game-catalogue-frontend:$FrontendTag
     pull_policy: always
     platform: linux/amd64
     container_name: video-game-catalogue-frontend

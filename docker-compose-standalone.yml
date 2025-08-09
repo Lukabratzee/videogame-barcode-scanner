@@ -1,6 +1,6 @@
 services:
   backend:
-    image: lukabratzee/video-game-catalogue-backend:latest
+    image: lukabratzee/video-game-catalogue-backend:feat-project-improvements
     pull_policy: always
     platform: linux/amd64
     container_name: video-game-catalogue-backend
@@ -9,6 +9,8 @@ services:
     environment:
       - DATABASE_PATH=/app/data/games.db
       - BACKEND_PORT=5001
+      - IGDB_CLIENT_ID=
+      - IGDB_CLIENT_SECRET=
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -31,7 +33,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: lukabratzee/video-game-catalogue-frontend:latest
+    image: lukabratzee/video-game-catalogue-frontend:feat-project-improvements
     pull_policy: always
     platform: linux/amd64
     container_name: video-game-catalogue-frontend

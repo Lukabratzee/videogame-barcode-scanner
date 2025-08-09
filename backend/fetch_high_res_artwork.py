@@ -238,36 +238,10 @@ class HighResArtworkFetcher:
         return sqlite3.connect(self.db_path)
     
     def add_artwork_columns(self):
-        """Add high resolution artwork columns to database if they don't exist"""
-        conn = self.get_database_connection()
-        cursor = conn.cursor()
-        
-        # Define new columns for high-res artwork
-        artwork_columns = [
-            ("high_res_cover_url", "TEXT"),       # SteamGridDB grid (600x900)
-            ("high_res_cover_path", "TEXT"),      # Local path to downloaded cover
-            ("hero_image_url", "TEXT"),           # SteamGridDB hero image
-            ("hero_image_path", "TEXT"),          # Local path to hero image
-            ("logo_image_url", "TEXT"),           # SteamGridDB logo image
-            ("logo_image_path", "TEXT"),          # Local path to logo image
-            ("icon_image_url", "TEXT"),           # SteamGridDB icon image
-            ("icon_image_path", "TEXT"),          # Local path to icon image
-            ("steamgriddb_id", "INTEGER"),        # SteamGridDB game ID for future reference
-            ("artwork_last_updated", "TIMESTAMP")
-        ]
-        
-        for column_name, column_type in artwork_columns:
-            try:
-                cursor.execute(f"ALTER TABLE games ADD COLUMN {column_name} {column_type}")
-                print(f"✅ Added column: {column_name}")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" in str(e).lower():
-                    print(f"Column {column_name} already exists")
-                else:
-                    print(f"Error adding column {column_name}: {e}")
-        
-        conn.commit()
-        conn.close()
+        """Deprecated: artwork columns are now created by migrations.
+        Keeping this as a no-op for backward compatibility.
+        """
+        print("ℹ️  Skipping add_artwork_columns: handled by migrate_artwork_columns.py")
     
     def get_games_without_high_res_artwork(self, limit=None):
         """Get games that don't have high resolution artwork"""
