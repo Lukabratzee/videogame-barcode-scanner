@@ -583,8 +583,9 @@ def clean_game_title(game_title):
 # Search for game information on IGDB
 def search_igdb_game(game_name, auth_token):
     url = "https://api.igdb.com/v4/games"
+    client_id, _ = get_igdb_credentials()
     headers = {
-        "Client-ID": IGDB_CLIENT_ID,
+        "Client-ID": client_id,
         "Authorization": f"Bearer {auth_token}",
     }
     body = f'search "{game_name}"; fields name, cover.url, summary, platforms.name, genres.name, involved_companies.company.name, first_release_date;'
@@ -699,8 +700,8 @@ class GameScan:
                 logging.error("Failed to retrieve IGDB access token")
                 return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
-            # Lookup via barcode to obtain game title (and optional barcode price)
-            game_title, barcode_price = scrape_barcode_lookup(barcode)
+            # Lookup via barcode to obtain game title
+            game_title, _ = scrape_barcode_lookup(barcode)
             game_title = game_title if game_title else "Unknown Game"
 
             # Check if the game already exists in the database.
@@ -717,7 +718,7 @@ class GameScan:
                     "id": existing_game[0]
                 }), 200
 
-            # We do not perform any price scraping here; set combined_price to None.
+            # Do not perform any price scraping here; pricing happens after platform selection in /confirm
             combined_price = None
 
             # Perform IGDB fuzzy search using game_title (without platform info)
@@ -1070,8 +1071,9 @@ def search_game_by_id():
             return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
 
         url = f"https://api.igdb.com/v4/games"
+        client_id, _ = get_igdb_credentials()
         headers = {
-            "Client-ID": IGDB_CLIENT_ID,
+            "Client-ID": client_id,
             "Authorization": f"Bearer {igdb_access_token}",
         }
         body = f"fields name, cover.url, summary, platforms.name, genres.name, involved_companies.company.name, franchises.name, first_release_date; where id = {igdb_id};"
@@ -1153,11 +1155,6 @@ def save_game_to_db(game_data):
         count = cursor.fetchone()[0]
 
         if count == 0:
-            # Ensure cover_image is a string.
-            cover_image = game_data.get("cover_image")
-            if cover_image is None:
-                cover_image = ""
-            
             # Generate YouTube trailer URL
             youtube_trailer_url = None
             title = game_data.get("title", "")
@@ -1176,13 +1173,12 @@ def save_game_to_db(game_data):
             game_id = generate_random_id()
             cursor.execute(
                 """
-                INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO games (id, title, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     game_id,
                     game_data["title"],
-                    cover_image,
                     game_data["description"],
                     ", ".join(game_data["publisher"]),
                     ", ".join(game_data["platforms"]),
@@ -2169,7 +2165,7 @@ def get_gallery_game_detail(game_id):
         # Get game with gallery metadata
         query = """
         SELECT 
-            g.id, g.title, g.cover_image, g.description, g.publisher,
+            g.id, g.title, g.description, g.publisher,
             g.platforms, g.genres, g.series, g.release_date, g.average_price,
             ggm.completion_status, ggm.personal_rating, ggm.play_time_hours,
             ggm.notes, ggm.display_priority, ggm.favorite,
@@ -2210,24 +2206,23 @@ def get_gallery_game_detail(game_id):
         game = {
             'id': game_row[0],
             'title': game_row[1],
-            'cover_image': game_row[2],
-            'description': game_row[3],
-            'publisher': game_row[4],
-            'platforms': game_row[5],
-            'genres': game_row[6],
-            'series': game_row[7],
-            'release_date': game_row[8],
+            'description': game_row[2],
+            'publisher': game_row[3],
+            'platforms': game_row[4],
+            'genres': game_row[5],
+            'series': game_row[6],
+            'release_date': game_row[7],
             'release_year': release_year,
-            'average_price': game_row[9],
+            'average_price': game_row[8],
             'gallery_metadata': {
-                'completion_status': game_row[10],
-                'personal_rating': game_row[11],
-                'play_time_hours': game_row[12],
-                'notes': game_row[13],
-                'display_priority': game_row[14],
-                'is_favorite': bool(game_row[15]),
-                'date_acquired': game_row[16],
-                'date_completed': game_row[17]
+                'completion_status': game_row[9],
+                'personal_rating': game_row[10],
+                'play_time_hours': game_row[11],
+                'notes': game_row[12],
+                'display_priority': game_row[13],
+                'is_favorite': bool(game_row[14]),
+                'date_acquired': game_row[15],
+                'date_completed': game_row[16]
             },
             'tags': tags
         }

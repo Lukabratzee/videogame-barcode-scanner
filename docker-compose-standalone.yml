@@ -9,6 +9,8 @@ services:
     environment:
       - DATABASE_PATH=/app/data/games.db
       - BACKEND_PORT=5001
+      - IGDB_CLIENT_ID=
+      - IGDB_CLIENT_SECRET=
     volumes:
       - ./data:/app/data
       - ./config:/app/config
