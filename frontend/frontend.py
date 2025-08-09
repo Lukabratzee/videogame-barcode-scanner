@@ -1204,13 +1204,17 @@ def gallery_page():
     available_years = filter_options.get("release_years", [])
     if available_years:
         min_year, max_year = min(available_years), max(available_years)
-        year_range = st.sidebar.slider(
-            "Release Year Range",
-            min_value=min_year,
-            max_value=max_year,
-            value=(min_year, max_year),
-            key="gallery_year_range"
-        )
+        if min_year < max_year:
+            year_range = st.sidebar.slider(
+                "Release Year Range",
+                min_value=min_year,
+                max_value=max_year,
+                value=(min_year, max_year),
+                key="gallery_year_range"
+            )
+        else:
+            st.sidebar.info(f"Only year available: {min_year}")
+            year_range = (min_year, max_year)
     else:
         year_range = None
     
