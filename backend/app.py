@@ -83,24 +83,32 @@ if PROJECT_ROOT not in sys.path:
 
 print("Project root added to sys.path:", PROJECT_ROOT)
 
-# Import scraper functions from the modules directory
-# Try different import paths for Docker vs local environments
+# Import scraper functions robustly from canonical modules directory
 try:
-    from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
+    # Prefer canonical package import
+    from modules.scrapers import (
+        scrape_barcode_lookup,
+        scrape_amazon_price,
+        scrape_ebay_prices,
+        scrape_cex_price,
+        scrape_pricecharting_price,
+        get_best_pricecharting_price,
+    )
     print("✅ Successfully imported scrapers from modules.scrapers")
 except ImportError:
-    try:
-        # Fallback for Docker environment
-        sys.path.insert(0, '/app')
-        from modules.scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
-        print("✅ Successfully imported scrapers from /app/modules.scrapers")
-    except ImportError:
-        # Last resort - try absolute import from project root
-        modules_path = os.path.join(PROJECT_ROOT, 'modules')
-        if modules_path not in sys.path:
-            sys.path.insert(0, modules_path)
-        from scrapers import scrape_barcode_lookup, scrape_amazon_price, scrape_ebay_prices, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price
-        print("✅ Successfully imported scrapers with absolute path")
+    # Ensure the modules directory itself is on sys.path and import as flat module
+    modules_path = os.path.join(PROJECT_ROOT, 'modules')
+    if modules_path not in sys.path:
+        sys.path.insert(0, modules_path)
+    from scrapers import (
+        scrape_barcode_lookup,
+        scrape_amazon_price,
+        scrape_ebay_prices,
+        scrape_cex_price,
+        scrape_pricecharting_price,
+        get_best_pricecharting_price,
+    )
+    print("✅ Successfully imported scrapers from modules directory path")
 
 from flask import Flask, request, jsonify, Response, send_from_directory
 from werkzeug.utils import secure_filename
