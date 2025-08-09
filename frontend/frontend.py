@@ -1010,17 +1010,17 @@ def game_detail_page():
             # Update price for the current game only
             try:
                 res = update_game_price(gid)
-                    if res and isinstance(res, dict):
-                        if res.get("new_price") is not None:
-                            st.success("Price updated")
-                            # Reload game details to refresh 'Price & Rating'
-                            try:
-                                fresh = fetch_game_by_id(gid)
-                                if isinstance(fresh, dict) and fresh:
-                                    st.session_state["selected_game_detail"] = fresh
-                            except Exception:
-                                pass
-                            st.rerun()
+                if res and isinstance(res, dict):
+                    if res.get("new_price") is not None:
+                        st.success("Price updated")
+                        # Reload game details to refresh 'Price & Rating'
+                        try:
+                            fresh = fetch_game_by_id(gid)
+                            if isinstance(fresh, dict) and fresh:
+                                st.session_state["selected_game_detail"] = fresh
+                        except Exception:
+                            pass
+                        st.rerun()
                     else:
                         st.info("No new price found. Kept existing price.")
                 else:

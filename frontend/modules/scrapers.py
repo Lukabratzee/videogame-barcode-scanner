@@ -67,6 +67,51 @@ def get_pricecharting_price_by_condition(pricing_data: Optional[Dict], prefer_bo
     )
 
 
+def _pricecharting_region_segment(region: Optional[str]) -> Optional[str]:
+    """Map a human region to PriceCharting URL segment.
+    US → None (default site), PAL → 'pal', JP/Japan → 'japan'.
+    """
+    if not region:
+        return None
+    r = region.strip().lower()
+    if r in {"us", "usa", "na", "north america"}:
+        return None
+    if r in {"pal", "eu", "europe"}:
+        return "pal"
+    if r in {"jp", "jpn", "japan"}:
+        return "japan"
+    return None
+
+
+def _apply_region_to_game_url(game_url: str, region: Optional[str]) -> str:
+    """Return a game URL with the correct region segment if needed.
+    Examples:
+    - https://www.pricecharting.com/game/foo → + PAL → https://www.pricecharting.com/pal/game/foo
+    - Already regioned URLs are returned unchanged.
+    """
+    segment = _pricecharting_region_segment(region)
+    if not segment:
+        return game_url
+    try:
+        # Normalize
+        if not game_url.startswith("http"):
+            return game_url
+        from urllib.parse import urlparse
+        parsed = urlparse(game_url)
+        path = parsed.path.lstrip("/")
+        # If already has /pal/ or /japan/ prefix, keep
+        if path.startswith(f"{segment}/"):
+            return game_url
+        if path.startswith("game/"):
+            new_path = f"{segment}/" + path
+        else:
+            # Fallback: just prefix segment
+            new_path = f"{segment}/" + path
+        return f"{parsed.scheme}://{parsed.netloc}/" + new_path
+    except Exception:
+        return game_url
+
+
 def scrape_pricecharting_price(game_title: str, platform: Optional[str] = None, region: Optional[str] = None) -> Optional[Dict]:
     """
     LATEST VERSION - 2025-07-31 - Added platform aliases for better PriceCharting compatibility
@@ -107,6 +152,11 @@ def scrape_pricecharting_price(game_title: str, platform: Optional[str] = None, 
         current_url = driver.current_url
         
         if "/game/" in current_url:
+            # Apply region if requested by navigating to the region-specific URL variant
+            region_url = _apply_region_to_game_url(current_url, region)
+            if region_url != current_url:
+                driver.get(region_url)
+                time.sleep(1)
             # Direct game page - extract pricing data
             pricing_data = extract_pricecharting_pricing(driver)
         else:
@@ -120,6 +170,13 @@ def scrape_pricecharting_price(game_title: str, platform: Optional[str] = None, 
                     first_link = game_links[0]
                     driver.execute_script("arguments[0].click();", first_link)
                     time.sleep(3)
+                    
+                    # After navigation, if region is specified, navigate to region-specific variant
+                    if "/game/" in driver.current_url:
+                        region_url = _apply_region_to_game_url(driver.current_url, region)
+                        if region_url != driver.current_url:
+                            driver.get(region_url)
+                            time.sleep(1)
                     
                     # Extract pricing from the game detail page
                     pricing_data = extract_pricecharting_pricing(driver)
