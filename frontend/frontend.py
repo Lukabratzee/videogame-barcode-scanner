@@ -218,6 +218,21 @@ def get_logo_image(game):
     """Get the game logo if available"""
     return game.get("logo_image_url")
 
+
+def get_platform_display(game) -> str:
+    """Return a human-readable platform string from either `platforms` or `platform` fields.
+    - If `platforms` is a list, join with ", ".
+    - If `platforms` is a string, return as-is.
+    - Else fall back to `platform` string if present.
+    - Otherwise return "Unknown".
+    """
+    value = game.get("platforms") or game.get("platform")
+    if isinstance(value, list):
+        return ", ".join([str(v) for v in value if str(v).strip()]) or "Unknown"
+    if isinstance(value, str) and value.strip():
+        return value
+    return "Unknown"
+
 def get_icon_image(game):
     """Get the game icon if available"""
     return game.get("icon_image_url")
@@ -858,7 +873,7 @@ def game_detail_page():
         
         with col_left:
             st.markdown(f"**Game ID:** {game.get('id', 'Unknown')}")
-            st.markdown(f"**Platform:** {game.get('platform', 'Unknown')}")
+            st.markdown(f"**Platform:** {get_platform_display(game)}")
             
             # Release date and year
             release_date = game.get("release_date")
