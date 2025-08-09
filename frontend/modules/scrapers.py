@@ -321,9 +321,10 @@ def scrape_ebay_prices(game_title: str) -> Optional[float]:
             driver.quit()
 
 
-def scrape_cex_price(game_title: str) -> Optional[float]:
+def scrape_cex_price(game_title):
     """
-    Opens CeX UK's website, searches for the game title using the search URL, and returns the first price found.
+    Opens CeX UK's website, searches for the game title using the search URL, and returns the first
+price found.
 
     Returns the first price found as a float, or None if no valid prices are found.
     """
@@ -349,7 +350,7 @@ def scrape_cex_price(game_title: str) -> Optional[float]:
                 var priceTexts = [];
                 for (var i = 0; i < elements.length; i++) {
                     var text = elements[i].textContent || elements[i].innerText || '';
-                    if (text.includes('£') && text.match(/£[\\d,]+\\.?\\d*/)) {
+                    if (text.includes('£') && text.match(/£[\d,]+\.?\d*/)) {
                         priceTexts.push(text.trim());
                     }
                 }
@@ -359,7 +360,7 @@ def scrape_cex_price(game_title: str) -> Optional[float]:
             # Extract first valid price from JavaScript results
             import re
             for price_text in js_prices:
-                price_match = re.search(r'£([\\d,]+\\.?\\d*)', price_text)
+                price_match = re.search(r'£([\d,]+\.?\d*)', price_text)
                 if price_match:
                     try:
                         price_str = price_match.group(1).replace(',', '')
@@ -389,7 +390,7 @@ def scrape_cex_price(game_title: str) -> Optional[float]:
                         text = element.text.strip()
                         if '£' in text:
                             import re
-                            price_match = re.search(r'£([\\d,]+\\.?\\d*)', text)
+                            price_match = re.search(r'£([\d,]+\.?\d*)', text)
                             if price_match:
                                 try:
                                     price_str = price_match.group(1).replace(',', '')
@@ -408,6 +409,7 @@ def scrape_cex_price(game_title: str) -> Optional[float]:
         return price_found
 
     except Exception as e:
+        logging.error(f"Error scraping CeX: {e}")
         return None
     finally:
         if driver:

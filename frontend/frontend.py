@@ -989,18 +989,19 @@ def game_detail_page():
             else:
                 st.warning("Enter a valid price.")
         elif submitted_update:
-            # Update prices for all games visible on the current Library page
-            page_games = st.session_state.get("current_gallery_games", []) or []
-            updated = 0
-            for g in page_games:
-                gid2 = g.get("id") if isinstance(g, dict) else None
-                if gid2:
-                    try:
-                        _ = update_game_price(gid2)
-                        updated += 1
-                    except Exception:
-                        pass
-            st.success(f"Triggered price updates for {updated} games on this page")
+            # Update price for the current game only
+            try:
+                res = update_game_price(gid)
+                if res and isinstance(res, dict):
+                    if res.get("new_price") is not None:
+                        st.success("Price updated")
+                        st.rerun()
+                    else:
+                        st.info("No new price found. Kept existing price.")
+                else:
+                    st.info("No response from backend for price update")
+            except Exception:
+                st.error("Failed to update price for this game")
 
     # Moved the page update button into the Manage Price History Entries expander above
     

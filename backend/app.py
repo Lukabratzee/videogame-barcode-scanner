@@ -1605,7 +1605,7 @@ def update_game_price(game_id):
         
         # Extract game info for price lookup
         game_title = game[1]  # title column
-        platforms = game[5]   # platforms column
+        platforms = game[4]   # platforms column (cover_image removed from schema)
         
         # Use the first platform for price lookup
         selected_platform = ""
@@ -1627,6 +1627,7 @@ def update_game_price(game_id):
         
         # Perform price scraping based on current configuration
         new_price = None
+        used_source = price_source
         if price_source == "Amazon":
             new_price = scrape_amazon_price(search_query)
         elif price_source == "CeX":
@@ -1636,32 +1637,47 @@ def update_game_price(game_id):
             pricecharting_data = scrape_pricecharting_price(search_query, None, "PAL")
             # Use the best representative price (prioritizes loose -> CIB -> new)
             new_price = get_best_pricecharting_price(pricecharting_data)
-            
             if pricecharting_data:
-                logging.debug(f"PriceCharting pricing breakdown - Loose: £{pricecharting_data.get('loose_price')}, "
-                            f"CIB: £{pricecharting_data.get('cib_price')}, New: £{pricecharting_data.get('new_price')}")
+                logging.debug(
+                    f"PriceCharting pricing breakdown - Loose: £{pricecharting_data.get('loose_price')}, "
+                    f"CIB: £{pricecharting_data.get('cib_price')}, New: £{pricecharting_data.get('new_price')}"
+                )
         else:  # Default to eBay
             new_price = scrape_ebay_prices(search_query)
-        
+
         logging.debug(f"Scraped new price from {price_source}: {new_price}")
-        
-        # Update the game's price in the database
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE games SET average_price = ? WHERE id = ?",
-            (new_price, game_id)
-        )
-        conn.commit()
-        conn.close()
+
+        # Only write to DB if we have a valid new price. Never overwrite with NULL/None
+        if new_price is not None:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE games SET average_price = ? WHERE id = ?",
+                (new_price, game_id)
+            )
+            # Record into price_history as well for auditing
+            from datetime import datetime
+            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute(
+                """
+                INSERT INTO price_history (game_id, price, price_source, date_recorded, currency)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (game_id, new_price, used_source, current_date, 'GBP')
+            )
+            conn.commit()
+            conn.close()
+        else:
+            # No price found; preserve existing price. Do not write history.
+            used_source = price_source
         
         return jsonify({
-            "message": f"Price updated successfully using {price_source}",
+            "message": f"Price updated successfully using {used_source}",
             "game_id": game_id,
             "game_title": game_title,
             "old_price": game[8],  # average_price column
             "new_price": new_price,
-            "price_source": price_source
+            "price_source": used_source
         }), 200
         
     except Exception as e:
