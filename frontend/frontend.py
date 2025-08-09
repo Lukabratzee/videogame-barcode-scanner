@@ -248,6 +248,17 @@ def fetch_price_history(game_id):
     except Exception as e:
         return {"success": False, "price_history": [], "error": str(e)}
 
+def add_price_history_entry(game_id: int, price: float, source: str = "Manual"):
+    """Add a price history entry via backend API and return response JSON or None"""
+    try:
+        payload = {"game_id": game_id, "price": price, "price_source": source}
+        response = requests.post(f"{BACKEND_URL}/api/price_history", json=payload)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception:
+        return None
+
 # -------------------------
 # CSS Styling for Layout
 # -------------------------
@@ -882,6 +893,42 @@ def game_detail_page():
         if notes and notes.strip():
             st.markdown("### Personal Notes")
             st.markdown(notes)
+
+    # Price History & Manual Entry
+    st.markdown("---")
+    st.markdown("### Price History")
+    gid = game.get("id")
+    history_data = fetch_price_history(gid)
+    if history_data.get("success") and history_data.get("price_history"):
+        try:
+            import pandas as pd
+            df = pd.DataFrame(history_data["price_history"])  # type: ignore
+            df["date_recorded"] = pd.to_datetime(df["date_recorded"])  # type: ignore
+            df = df.sort_values("date_recorded")
+            st.line_chart(df.set_index("date_recorded")["price"])  # type: ignore
+        except Exception:
+            for entry in history_data["price_history"]:
+                st.write(f"{entry.get('date_recorded')}: £{entry.get('price')} ({entry.get('price_source')})")
+    else:
+        st.info("No price history entries yet.")
+
+    with st.form(key="add_price_history_form"):
+        col_a, col_b, _ = st.columns([1, 1, 2])
+        with col_a:
+            price_val = st.number_input("Price (£)", min_value=0.0, step=0.5, format="%.2f")
+        with col_b:
+            source_val = st.text_input("Source", value="Manual")
+        submitted = st.form_submit_button("Add Entry")
+        if submitted:
+            if price_val and price_val > 0:
+                result = add_price_history_entry(gid, float(price_val), source_val or "Manual")
+                if result and result.get("success"):
+                    st.success("Price history entry added.")
+                    st.rerun()
+                else:
+                    st.error("Failed to add price history entry.")
+            else:
+                st.warning("Enter a valid price.")
     
     # YouTube Trailer Section
     st.markdown("---")
@@ -1020,6 +1067,29 @@ def gallery_page():
     """Library page with visual game display, filtering, and 3D-ready layout"""
     st.title("Game Library")
     st.markdown("*Visual game collection browser with advanced filtering*")
+
+    # Artwork coverage widget (optional)
+    try:
+        resp = requests.get(f"{BACKEND_URL}/api/high_res_artwork/status")
+        if resp.status_code == 200:
+            stats = resp.json()
+            if stats.get("success"):
+                s = stats.get("stats", {})
+                cov = s.get("coverage_percentage", 0)
+                with st.container():
+                    c1, c2 = st.columns([1, 3])
+                    with c1:
+                        st.metric("Artwork Coverage", f"{cov}%")
+                    with c2:
+                        missing = stats.get("games_without_artwork", [])
+                        if missing:
+                            st.caption("Games missing high‑res covers (top 10):")
+                            for g in missing:
+                                st.write(f"• {g.get('title')} (ID {g.get('id')})")
+                        else:
+                            st.caption("All games have high‑res covers.")
+    except Exception:
+        pass
     
     # Initialize gallery session state
     if "gallery_page" not in st.session_state:

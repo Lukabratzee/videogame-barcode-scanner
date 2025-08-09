@@ -88,7 +88,7 @@ Notes:
 - `price_source` supports `eBay`, `Amazon`, `CeX`, `PriceCharting`.
 - `steamgriddb_api_key` is optional but enables high‑resolution artwork fetching.
 
-## Example docker-compose (debug/testing)
+## Example docker-compose
 
 ```yaml
 services:

@@ -107,8 +107,9 @@ from dotenv import load_dotenv
 
 app = Flask(__name__)
 
-IGDB_CLIENT_ID = "nal5c75b0hwuvmsgs1cdowvi81tg5y"
-IGDB_CLIENT_SECRET = "lgea285xk7qsm4lhh9tio54bw3pek7"
+# IGDB credentials from environment (fallback to empty if not provided)
+IGDB_CLIENT_ID = os.getenv("IGDB_CLIENT_ID", "")
+IGDB_CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET", "")
 
 # Specify the exact path to the ChromeDriver binary
 # driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path - NOT USED IN DOCKER
