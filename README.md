@@ -59,34 +59,26 @@ config/
   config.json
 ```
 
-## Configuration essentials
+## Configuration
 
-Most settings are handled for you. If needed, here are the relevant bits:
+You do not need to set environment variables when using Docker. Configuration is read from `config/config.json` inside the mounted `config/` folder. The quick‑start scripts create this file for you if it doesn't exist.
 
-- Docker environment
-```yaml
-services:
-  backend:
-    environment:
-      - DATABASE_PATH=/app/data/games.db
-    ports:
-      - "5001:5001"
-  frontend:
-    ports:
-      - "8501:8501"
+Edit `config/config.json` and provide your own keys:
+
+```json
+{
+  "price_source": "PriceCharting",
+  "steamgriddb_api_key": "YOUR_STEAMGRIDDB_API_KEY", 
+  "igdb_client_id": "YOUR_TWITCH_IGDB_CLIENT_ID",
+  "igdb_client_secret": "YOUR_TWITCH_IGDB_CLIENT_SECRET"
+}
 ```
 
-- Environment variables (create a `.env` in project root or export in shell)
-```
-DATABASE_PATH=data/games.db
-IGDB_CLIENT_ID=your_twitch_client_id
-IGDB_CLIENT_SECRET=your_twitch_client_secret
-STEAMGRIDDB_API_KEY=optional_steamgriddb_api_key
-```
+- `price_source`: one of `eBay`, `Amazon`, `CeX`, `PriceCharting`.
+- `steamgriddb_api_key`: optional, enables fetching high‑resolution artwork.
+- `igdb_client_id` / `igdb_client_secret`: required for IGDB search.
 
-Notes:
-- `price_source` supports `eBay`, `Amazon`, `CeX`, `PriceCharting` and is persisted by the app in `config/config.json`.
-- `STEAMGRIDDB_API_KEY` is optional but enables high‑resolution artwork fetching.
+The app persists your choices back into this file, so you can also change sources from the UI.
 
 ## Example docker-compose
 
