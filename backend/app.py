@@ -2438,9 +2438,29 @@ def delete_price_history_entry(entry_id: int):
         game_id = row[0]
 
         cursor.execute("DELETE FROM price_history WHERE id = ?", (entry_id,))
+        
+        # After deletion, recompute latest price for the game and update games.average_price
+        cursor.execute(
+            """
+            SELECT price
+            FROM price_history
+            WHERE game_id = ?
+            ORDER BY datetime(date_recorded) DESC, id DESC
+            LIMIT 1
+            """,
+            (game_id,),
+        )
+        latest_row = cursor.fetchone()
+        if latest_row is not None:
+            latest_price = latest_row[0]
+            cursor.execute("UPDATE games SET average_price = ? WHERE id = ?", (latest_price, game_id))
+        else:
+            # No history remains; clear the current price
+            cursor.execute("UPDATE games SET average_price = NULL WHERE id = ?", (game_id,))
+
         conn.commit()
         conn.close()
-        
+
         return jsonify({'success': True, 'message': 'Entry deleted', 'entry_id': entry_id, 'game_id': game_id}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

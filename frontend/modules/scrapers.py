@@ -8,6 +8,7 @@ and falls back to selenium + webdriver-manager.
 
 from typing import Optional, Tuple, Dict
 import re
+import logging
 import json
 import html
 import time
@@ -260,16 +261,15 @@ def extract_price_from_text(text: str) -> Optional[float]:
     return None
 
 
-def scrape_ebay_prices(game_title: str) -> Optional[float]:
+def scrape_ebay_prices(game_title):
     """
     Opens eBay UK's homepage, enters the game_title in the search box,
     scrolls down to load additional results, and then collects all valid price values.
-    Returns the average price found as a float, or None if no valid prices are found.
+    Returns the lowest price found as a float, or None if no valid prices are found.
     """
-    driver = None
-    try:
-        driver = get_chrome_driver()  # Use the environment-aware driver function
+    driver = get_chrome_driver()  # Use the environment-aware driver function
 
+    try:
         # 1. Navigate to eBay UK homepage.
         driver.get("https://www.ebay.co.uk/")
         time.sleep(2)  # Wait for page load
@@ -303,22 +303,27 @@ def scrape_ebay_prices(game_title: str) -> Optional[float]:
                     try:
                         price = float(tokens[0].replace(",", ""))
                         valid_prices.append(price)
+                        logging.debug(f"Found price: {price}")
                     except ValueError:
                         continue
             if valid_prices:
-                # Return the average price from the list of valid prices.
-                average_price = sum(valid_prices) / len(valid_prices)
-                return round(average_price, 2)
+                # Return the average or lowest price from the list of valid prices.
+                lowest_price = min(valid_prices)
+                logging.debug(f"Returning lowest price: {lowest_price}")
+                return sum(valid_prices) / len(valid_prices)
+                # return lowest_price
             else:
+                logging.warning("No valid numeric prices found among the price elements.")
                 return None
         else:
+            logging.warning("No price elements found on the eBay search page.")
             return None
 
     except Exception as e:
+        logging.error(f"Error scraping eBay: {e}")
         return None
     finally:
-        if driver:
-            driver.quit()
+        driver.quit()
 
 
 def scrape_cex_price(game_title):
