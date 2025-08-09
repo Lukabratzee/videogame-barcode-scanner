@@ -8,8 +8,22 @@ import sqlite3
 import os
 from datetime import datetime
 
-# Database path
-DATABASE_PATH = os.path.join(os.path.dirname(__file__), "games.db")
+
+def _resolve_database_path() -> str:
+    """Resolve database path consistent with app.py/start scripts."""
+    db_path = os.getenv("DATABASE_PATH", "").strip()
+    if db_path:
+        if not os.path.isabs(db_path):
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            db_path = os.path.join(project_root, db_path)
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        return db_path
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    default_path = os.path.join(project_root, "data", "games.db")
+    os.makedirs(os.path.dirname(default_path), exist_ok=True)
+    return default_path
+
+DATABASE_PATH = _resolve_database_path()
 
 def create_price_history_table():
     """Create the price_history table to track game prices over time"""

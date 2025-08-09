@@ -57,10 +57,19 @@ cleanup() {
 # Trap cleanup on script exit
 trap cleanup SIGINT SIGTERM
 
-# Initialize database
+# Initialize database and run migrations
 echo -e "${BLUE}🗃️  Initializing database...${NC}"
 cd backend
 python3 database_setup.py
+
+echo -e "${BLUE}🧩 Running gallery migration...${NC}"
+python3 migrate_gallery_v1.py || true
+
+echo -e "${BLUE}💹 Ensuring price_history table exists...${NC}"
+python3 add_price_history.py || true
+
+echo -e "${BLUE}🖼️  Ensuring artwork columns exist...${NC}"
+python3 migrate_artwork_columns.py || true
 cd ..
 
 # Start backend in background with absolute path
