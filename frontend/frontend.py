@@ -591,31 +591,27 @@ def game_detail_page():
     music_expander = st.sidebar.expander("Video Game Music Player")
     with music_expander:
         st.markdown("### VIPVGM - Video Game Music")
-        st.markdown("*Listen to video game music while browsing your collection!*")
-        
-        # Create a container for the iframe without autoplay
-        iframe_html = """
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
-            <iframe 
-                src="https://www.vipvgm.net/" 
-                width="100%" 
-                height="400" 
-                frameborder="0" 
-                scrolling="yes"
-                allow="encrypted-media; fullscreen"
-                title="VIPVGM Video Game Music Player"
-                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
-            ></iframe>
-        </div>
-        """
-        
-        # Try to embed the iframe
-        try:
+        st.markdown("*Load the embedded player on demand to prevent autoplay.*")
+        if not st.session_state.get("vipvgm_detail_embedded"):
+            if st.button("Load Embedded Player", key="vipvgm_detail_load"):
+                st.session_state["vipvgm_detail_embedded"] = True
+
+        if st.session_state.get("vipvgm_detail_embedded"):
+            iframe_html = """
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <iframe 
+                    src="https://www.vipvgm.net/" 
+                    width="100%" 
+                    height="400" 
+                    frameborder="0" 
+                    scrolling="yes"
+                    allow="encrypted-media; fullscreen"
+                    title="VIPVGM Video Game Music Player"
+                    style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+                ></iframe>
+            </div>
+            """
             components.html(iframe_html, height=450)
-        except Exception as e:
-            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("Open VIPVGM Music Player", type="primary", key="detail_music_player_fallback"):
-                st.link_button("Open VIPVGM Music Player", "https://www.vipvgm.net/")
 
     st.sidebar.markdown("---")  # Add separator
     
@@ -1141,31 +1137,27 @@ def gallery_page():
     music_expander = st.sidebar.expander("Video Game Music Player")
     with music_expander:
         st.markdown("### VIPVGM - Video Game Music")
-        st.markdown("*Listen to video game music while browsing your collection!*")
-        
-        # Create a container for the iframe without autoplay
-        iframe_html = """
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
-            <iframe 
-                src="https://www.vipvgm.net/" 
-                width="100%" 
-                height="400" 
-                frameborder="0" 
-                scrolling="yes"
-                allow="encrypted-media; fullscreen"
-                title="VIPVGM Video Game Music Player"
-                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
-            ></iframe>
-        </div>
-        """
-        
-        # Try to embed the iframe
-        try:
+        st.markdown("*Load the embedded player on demand to prevent autoplay.*")
+        if not st.session_state.get("vipvgm_gallery_embedded"):
+            if st.button("Load Embedded Player", key="vipvgm_gallery_load"):
+                st.session_state["vipvgm_gallery_embedded"] = True
+
+        if st.session_state.get("vipvgm_gallery_embedded"):
+            iframe_html = """
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <iframe 
+                    src="https://www.vipvgm.net/" 
+                    width="100%" 
+                    height="400" 
+                    frameborder="0" 
+                    scrolling="yes"
+                    allow="encrypted-media; fullscreen"
+                    title="VIPVGM Video Game Music Player"
+                    style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+                ></iframe>
+            </div>
+            """
             components.html(iframe_html, height=450)
-        except Exception as e:
-            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("Open VIPVGM Music Player", type="primary", key="gallery_music_player_fallback"):
-                st.link_button("Open VIPVGM Music Player", "https://www.vipvgm.net/")
 
     st.sidebar.markdown("---")  # Add separator
     
@@ -1599,31 +1591,27 @@ def main():
     music_expander = st.sidebar.expander("Video Game Music Player")
     with music_expander:
         st.markdown("### VIPVGM - Video Game Music")
-        st.markdown("*Listen to video game music while browsing your collection!*")
-        
-        # Create a container for the iframe without autoplay
-        iframe_html = """
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
-            <iframe 
-                src="https://www.vipvgm.net/" 
-                width="100%" 
-                height="400" 
-                frameborder="0" 
-                scrolling="yes"
-                allow="encrypted-media; fullscreen"
-                title="VIPVGM Video Game Music Player"
-                style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
-            ></iframe>
-        </div>
-        """
-        
-        # Try to embed the iframe
-        try:
+        st.markdown("*Load the embedded player on demand to prevent autoplay.*")
+        if not st.session_state.get("vipvgm_home_embedded"):
+            if st.button("Load Embedded Player", key="vipvgm_home_load"):
+                st.session_state["vipvgm_home_embedded"] = True
+
+        if st.session_state.get("vipvgm_home_embedded"):
+            iframe_html = """
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <iframe 
+                    src="https://www.vipvgm.net/" 
+                    width="100%" 
+                    height="400" 
+                    frameborder="0" 
+                    scrolling="yes"
+                    allow="encrypted-media; fullscreen"
+                    title="VIPVGM Video Game Music Player"
+                    style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
+                ></iframe>
+            </div>
+            """
             components.html(iframe_html, height=450)
-        except Exception as e:
-            st.warning("Iframe embedding not working. Click the button below to open VIPVGM in a new tab.")
-            if st.button("🎵 Open VIPVGM Music Player", type="primary", key="music_player_fallback"):
-                st.link_button("🎵 Open VIPVGM Music Player", "https://www.vipvgm.net/")
 
     # -------------------------
     # Global Price Source Selector
@@ -2011,17 +1999,9 @@ def main():
                             st.success("✅ Artwork updated successfully!")
                             st.write(f"**Game:** {result['game_title']}")
                             st.write(f"**Game ID:** {result['game_id']}")
-                            # Refresh the current view
-                            filters = {}
-                            if st.session_state.get("filter_publisher"):
-                                filters["publisher"] = st.session_state["filter_publisher"]
-                            if st.session_state.get("filter_platform"):
-                                filters["platform"] = st.session_state["filter_platform"]
-                            if st.session_state.get("filter_genre"):
-                                filters["genre"] = st.session_state["filter_genre"]
-                            if st.session_state.get("filter_year"):
-                                filters["year"] = st.session_state["filter_year"]
-                            games = fetch_games(filters)
+                            # Refresh artwork coverage widget and gallery listing
+                            st.session_state["refresh_artwork_stats"] = True
+                            st.rerun()
                         elif result and result.get("error") == "api_key_missing":
                             st.error("❌ SteamGridDB API key not configured")
                             st.info("To use this feature:")
