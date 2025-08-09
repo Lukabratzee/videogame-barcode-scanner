@@ -76,17 +76,17 @@ services:
       - "8501:8501"
 ```
 
-- App config file (`config/config.json`)
-```json
-{
-  "price_source": "PriceCharting",
-  "steamgriddb_api_key": "your_steamgriddb_api_key_here"
-}
+- Environment variables (create a `.env` in project root or export in shell)
+```
+DATABASE_PATH=data/games.db
+IGDB_CLIENT_ID=your_twitch_client_id
+IGDB_CLIENT_SECRET=your_twitch_client_secret
+STEAMGRIDDB_API_KEY=optional_steamgriddb_api_key
 ```
 
 Notes:
-- `price_source` supports `eBay`, `Amazon`, `CeX`, `PriceCharting`.
-- `steamgriddb_api_key` is optional but enables high‑resolution artwork fetching.
+- `price_source` supports `eBay`, `Amazon`, `CeX`, `PriceCharting` and is persisted by the app in `config/config.json`.
+- `STEAMGRIDDB_API_KEY` is optional but enables high‑resolution artwork fetching.
 
 ## Example docker-compose
 
