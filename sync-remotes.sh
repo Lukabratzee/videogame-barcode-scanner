@@ -13,6 +13,7 @@ PRIMARY_REMOTE="origin"
 SECONDARY_REMOTE="github"
 TARGET_BRANCH=""
 PUSH_ALL_BRANCHES=0
+SECONDARY_SPECIFIED=0
 
 print_usage() {
   cat <<EOF
@@ -50,7 +51,7 @@ while [[ $# -gt 0 ]]; do
       PRIMARY_REMOTE="$2"; shift 2 ;;
     -s|--secondary)
       [[ $# -ge 2 ]] || fail "--secondary requires a value"
-      SECONDARY_REMOTE="$2"; shift 2 ;;
+      SECONDARY_REMOTE="$2"; SECONDARY_SPECIFIED=1; shift 2 ;;
     -b|--branch)
       [[ $# -ge 2 ]] || fail "--branch requires a value"
       TARGET_BRANCH="$2"; shift 2 ;;
@@ -70,12 +71,37 @@ if ! git diff-index --quiet HEAD -- 2>/dev/null; then
   fail "Uncommitted changes. Commit/stash first."
 fi
 
-# Ensure remotes exist
-if ! git remote | grep -qx "$PRIMARY_REMOTE"; then
-  fail "Remote '$PRIMARY_REMOTE' not found."
+mapfile -t ALL_REMOTES < <(git remote)
+
+# Resolve primary remote if missing
+if ! printf '%s\n' "${ALL_REMOTES[@]}" | grep -qx "$PRIMARY_REMOTE"; then
+  if [[ ${#ALL_REMOTES[@]} -eq 1 ]]; then
+    PRIMARY_REMOTE="${ALL_REMOTES[0]}"
+    echo "Primary remote 'origin' not found. Using detected remote: $PRIMARY_REMOTE"
+  else
+    fail "Remote '$PRIMARY_REMOTE' not found. Specify with -p/--primary (available: ${ALL_REMOTES[*]})."
+  fi
 fi
-if ! git remote | grep -qx "$SECONDARY_REMOTE"; then
-  fail "Remote '$SECONDARY_REMOTE' not found."
+
+# Resolve secondary remote
+if [[ $SECONDARY_SPECIFIED -eq 1 ]]; then
+  if ! printf '%s\n' "${ALL_REMOTES[@]}" | grep -qx "$SECONDARY_REMOTE"; then
+    echo "Secondary remote '$SECONDARY_REMOTE' not found; will push only to primary." >&2
+    SECONDARY_REMOTE=""
+  fi
+else
+  # Auto-pick a secondary remote if available
+  if [[ ${#ALL_REMOTES[@]} -ge 2 ]]; then
+    for r in "${ALL_REMOTES[@]}"; do
+      if [[ "$r" != "$PRIMARY_REMOTE" ]]; then
+        SECONDARY_REMOTE="$r"
+        echo "Auto-detected secondary remote: $SECONDARY_REMOTE"
+        break
+      fi
+    done
+  else
+    SECONDARY_REMOTE=""
+  fi
 fi
 
 echo "Fetching all remotes (prune)…"
@@ -131,10 +157,13 @@ for b in "${branches[@]}"; do
   echo "Pushing to $PRIMARY_REMOTE…"
   git push "$PRIMARY_REMOTE" "$b" --follow-tags --no-verify
 
-  echo "Pushing to $SECONDARY_REMOTE…"
-  git push "$SECONDARY_REMOTE" "$b" --follow-tags --no-verify
-
-  echo "✓ Synced $b to $PRIMARY_REMOTE and $SECONDARY_REMOTE"
+  if [[ -n "$SECONDARY_REMOTE" ]]; then
+    echo "Pushing to $SECONDARY_REMOTE…"
+    git push "$SECONDARY_REMOTE" "$b" --follow-tags --no-verify
+    echo "✓ Synced $b to $PRIMARY_REMOTE and $SECONDARY_REMOTE"
+  else
+    echo "✓ Pushed $b to $PRIMARY_REMOTE (no secondary remote configured)"
+  fi
 done
 
 echo -e "\nAll done."
