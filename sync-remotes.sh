@@ -14,6 +14,7 @@ SECONDARY_REMOTE="github"
 TARGET_BRANCH=""
 PUSH_ALL_BRANCHES=0
 SECONDARY_SPECIFIED=0
+SECONDARY_URL=""
 
 print_usage() {
   cat <<EOF
@@ -52,6 +53,9 @@ while [[ $# -gt 0 ]]; do
     -s|--secondary)
       [[ $# -ge 2 ]] || fail "--secondary requires a value"
       SECONDARY_REMOTE="$2"; SECONDARY_SPECIFIED=1; shift 2 ;;
+    --secondary-url)
+      [[ $# -ge 2 ]] || fail "--secondary-url requires a value"
+      SECONDARY_URL="$2"; shift 2 ;;
     -b|--branch)
       [[ $# -ge 2 ]] || fail "--branch requires a value"
       TARGET_BRANCH="$2"; shift 2 ;;
@@ -72,6 +76,10 @@ if ! git diff-index --quiet HEAD -- 2>/dev/null; then
 fi
 
 mapfile -t ALL_REMOTES < <(git remote)
+declare -A REMOTE_URLS
+while read -r name url _; do
+  REMOTE_URLS["$name"]="$url"
+done < <(git remote -v | awk '{print $1, $2}')
 
 # Resolve primary remote if missing
 if ! printf '%s\n' "${ALL_REMOTES[@]}" | grep -qx "$PRIMARY_REMOTE"; then
@@ -83,24 +91,38 @@ if ! printf '%s\n' "${ALL_REMOTES[@]}" | grep -qx "$PRIMARY_REMOTE"; then
   fi
 fi
 
-# Resolve secondary remote
+# Resolve or create secondary remote
 if [[ $SECONDARY_SPECIFIED -eq 1 ]]; then
   if ! printf '%s\n' "${ALL_REMOTES[@]}" | grep -qx "$SECONDARY_REMOTE"; then
-    echo "Secondary remote '$SECONDARY_REMOTE' not found; will push only to primary." >&2
-    SECONDARY_REMOTE=""
+    if [[ -n "$SECONDARY_URL" ]]; then
+      echo "Adding secondary remote '$SECONDARY_REMOTE' => $SECONDARY_URL"
+      git remote add "$SECONDARY_REMOTE" "$SECONDARY_URL"
+      ALL_REMOTES+=("$SECONDARY_REMOTE")
+      REMOTE_URLS["$SECONDARY_REMOTE"]="$SECONDARY_URL"
+    else
+      echo "Secondary remote '$SECONDARY_REMOTE' not found; will push only to primary. Use --secondary-url to add it." >&2
+      SECONDARY_REMOTE=""
+    fi
   fi
 else
-  # Auto-pick a secondary remote if available
-  if [[ ${#ALL_REMOTES[@]} -ge 2 ]]; then
+  # Try to auto-detect a GitHub remote by URL
+  for r in "${ALL_REMOTES[@]}"; do
+    url=${REMOTE_URLS["$r"]}
+    if [[ "$r" != "$PRIMARY_REMOTE" && "$url" == *"github.com"* ]]; then
+      SECONDARY_REMOTE="$r"
+      echo "Auto-detected secondary GitHub remote: $SECONDARY_REMOTE ($url)"
+      break
+    fi
+  done
+  # If none found and more than one remote, pick the first non-primary
+  if [[ -z "$SECONDARY_REMOTE" && ${#ALL_REMOTES[@]} -ge 2 ]]; then
     for r in "${ALL_REMOTES[@]}"; do
       if [[ "$r" != "$PRIMARY_REMOTE" ]]; then
         SECONDARY_REMOTE="$r"
-        echo "Auto-detected secondary remote: $SECONDARY_REMOTE"
+        echo "Auto-detected secondary remote: $SECONDARY_REMOTE (${REMOTE_URLS["$SECONDARY_REMOTE"]})"
         break
       fi
     done
-  else
-    SECONDARY_REMOTE=""
   fi
 fi
 
@@ -136,11 +158,9 @@ for b in "${branches[@]}"; do
 
   local_sha=$(git rev-parse "$b")
   p_ref="$PRIMARY_REMOTE/$b"
-  s_ref="$SECONDARY_REMOTE/$b"
 
   set +e
   p_sha=$(git rev-parse "$p_ref" 2>/dev/null)
-  s_sha=$(git rev-parse "$s_ref" 2>/dev/null)
   set -e
 
   if [[ -n "${p_sha:-}" ]]; then
@@ -148,9 +168,14 @@ for b in "${branches[@]}"; do
       fail "$b is behind $p_ref. Run: git pull --ff-only $PRIMARY_REMOTE $b"
     fi
   fi
-  if [[ -n "${s_sha:-}" ]]; then
-    if ! is_ancestor "$s_sha" "$local_sha"; then
-      fail "$b is behind $s_ref. First bring $SECONDARY_REMOTE up to date or pull/merge."
+  if [[ -n "$SECONDARY_REMOTE" ]]; then
+    set +e
+    s_sha=$(git rev-parse "$SECONDARY_REMOTE/$b" 2>/dev/null)
+    set -e
+    if [[ -n "${s_sha:-}" ]]; then
+      if ! is_ancestor "$s_sha" "$local_sha"; then
+        fail "$b is behind $SECONDARY_REMOTE/$b. First pull/merge locally or update $SECONDARY_REMOTE."
+      fi
     fi
   fi
 
