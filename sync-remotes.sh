@@ -15,6 +15,8 @@ TARGET_BRANCH=""
 PUSH_ALL_BRANCHES=0
 SECONDARY_SPECIFIED=0
 SECONDARY_URL=""
+FORCE_SECONDARY=0
+SNAPSHOT_SECONDARY=0
 
 print_usage() {
   cat <<EOF
@@ -56,6 +58,10 @@ while [[ $# -gt 0 ]]; do
     --secondary-url)
       [[ $# -ge 2 ]] || fail "--secondary-url requires a value"
       SECONDARY_URL="$2"; shift 2 ;;
+    --force-secondary)
+      FORCE_SECONDARY=1; shift ;;
+    --snapshot-secondary)
+      SNAPSHOT_SECONDARY=1; shift ;;
     -b|--branch)
       [[ $# -ge 2 ]] || fail "--branch requires a value"
       TARGET_BRANCH="$2"; shift 2 ;;
@@ -169,12 +175,14 @@ for b in "${branches[@]}"; do
     fi
   fi
   if [[ -n "$SECONDARY_REMOTE" ]]; then
-    set +e
-    s_sha=$(git rev-parse "$SECONDARY_REMOTE/$b" 2>/dev/null)
-    set -e
-    if [[ -n "${s_sha:-}" ]]; then
-      if ! is_ancestor "$s_sha" "$local_sha"; then
-        fail "$b is behind $SECONDARY_REMOTE/$b. First pull/merge locally or update $SECONDARY_REMOTE."
+    if [[ $FORCE_SECONDARY -eq 0 && $SNAPSHOT_SECONDARY -eq 0 ]]; then
+      set +e
+      s_sha=$(git rev-parse "$SECONDARY_REMOTE/$b" 2>/dev/null)
+      set -e
+      if [[ -n "${s_sha:-}" ]]; then
+        if ! is_ancestor "$s_sha" "$local_sha"; then
+          fail "$b is behind $SECONDARY_REMOTE/$b. Pass --force-secondary to override or --snapshot-secondary to push a history-free snapshot."
+        fi
       fi
     fi
   fi
@@ -183,9 +191,23 @@ for b in "${branches[@]}"; do
   git push "$PRIMARY_REMOTE" "$b" --follow-tags --no-verify
 
   if [[ -n "$SECONDARY_REMOTE" ]]; then
-    echo "Pushing to $SECONDARY_REMOTE…"
-    git push "$SECONDARY_REMOTE" "$b" --follow-tags --no-verify
-    echo "✓ Synced $b to $PRIMARY_REMOTE and $SECONDARY_REMOTE"
+    if [[ $SNAPSHOT_SECONDARY -eq 1 ]]; then
+      echo "Pushing snapshot of $b to $SECONDARY_REMOTE (single commit, no history)…"
+      tree=$(git write-tree)
+      parent_arg=()
+      # No parent -> orphan snapshot
+      commit=$(echo "Snapshot sync of $b on $(date -u +%Y-%m-%dT%H:%M:%SZ)" | git commit-tree "$tree" "${parent_arg[@]}")
+      git push "$SECONDARY_REMOTE" "$commit:refs/heads/$b" --force --no-verify
+      echo "✓ Snapshot pushed to $SECONDARY_REMOTE/$b"
+    else
+      echo "Pushing to $SECONDARY_REMOTE…"
+      if [[ $FORCE_SECONDARY -eq 1 ]]; then
+        git push "$SECONDARY_REMOTE" "$b" --force-with-lease --follow-tags --no-verify
+      else
+        git push "$SECONDARY_REMOTE" "$b" --follow-tags --no-verify
+      fi
+      echo "✓ Synced $b to $PRIMARY_REMOTE and $SECONDARY_REMOTE"
+    fi
   else
     echo "✓ Pushed $b to $PRIMARY_REMOTE (no secondary remote configured)"
   fi
