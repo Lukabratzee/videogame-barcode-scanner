@@ -132,7 +132,7 @@ else
   fi
 fi
 
-echo "Fetching all remotes (prune)…"
+echo "Fetching all remotes (prune)..."
 git fetch --all --prune >/dev/null
 
 # Determine branches to process
@@ -150,7 +150,7 @@ else
 fi
 
 for b in "${branches[@]}"; do
-  echo -e "\n== $b =="
+  echo -e "\n== ${b} =="
 
   # Ensure upstream to PRIMARY if missing
   upstream=""
@@ -158,12 +158,12 @@ for b in "${branches[@]}"; do
   upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "$b@{upstream}" 2>/dev/null)
   set -e
   if [[ -z "$upstream" ]]; then
-    echo "Setting upstream to $PRIMARY_REMOTE/$b"
-    git branch --set-upstream-to="$PRIMARY_REMOTE/$b" "$b" >/dev/null 2>&1 || true
+    echo "Setting upstream to ${PRIMARY_REMOTE}/${b}"
+    git branch --set-upstream-to="${PRIMARY_REMOTE}/${b}" "${b}" >/dev/null 2>&1 || true
   fi
 
   local_sha=$(git rev-parse "$b")
-  p_ref="$PRIMARY_REMOTE/$b"
+  p_ref="${PRIMARY_REMOTE}/${b}"
 
   set +e
   p_sha=$(git rev-parse "$p_ref" 2>/dev/null)
@@ -177,39 +177,39 @@ for b in "${branches[@]}"; do
   if [[ -n "$SECONDARY_REMOTE" ]]; then
     if [[ $FORCE_SECONDARY -eq 0 && $SNAPSHOT_SECONDARY -eq 0 ]]; then
       set +e
-      s_sha=$(git rev-parse "$SECONDARY_REMOTE/$b" 2>/dev/null)
+      s_sha=$(git rev-parse "${SECONDARY_REMOTE}/${b}" 2>/dev/null)
       set -e
       if [[ -n "${s_sha:-}" ]]; then
         if ! is_ancestor "$s_sha" "$local_sha"; then
-          fail "$b is behind $SECONDARY_REMOTE/$b. Pass --force-secondary to override or --snapshot-secondary to push a history-free snapshot."
+          fail "${b} is behind ${SECONDARY_REMOTE}/${b}. Pass --force-secondary to override or --snapshot-secondary to push a history-free snapshot."
         fi
       fi
     fi
   fi
 
-  echo "Pushing to $PRIMARY_REMOTE…"
-  git push "$PRIMARY_REMOTE" "$b" --follow-tags --no-verify
+  echo "Pushing to ${PRIMARY_REMOTE}..."
+  git push "${PRIMARY_REMOTE}" "${b}" --follow-tags --no-verify
 
   if [[ -n "$SECONDARY_REMOTE" ]]; then
     if [[ $SNAPSHOT_SECONDARY -eq 1 ]]; then
-      echo "Pushing snapshot of $b to $SECONDARY_REMOTE (single commit, no history)…"
+      echo "Pushing snapshot of ${b} to ${SECONDARY_REMOTE} (single commit, no history)..."
       tree=$(git write-tree)
       parent_arg=()
       # No parent -> orphan snapshot
-      commit=$(echo "Snapshot sync of $b on $(date -u +%Y-%m-%dT%H:%M:%SZ)" | git commit-tree "$tree" "${parent_arg[@]}")
-      git push "$SECONDARY_REMOTE" "$commit:refs/heads/$b" --force --no-verify
-      echo "✓ Snapshot pushed to $SECONDARY_REMOTE/$b"
+      commit=$(echo "Snapshot sync of ${b} on $(date -u +%Y-%m-%dT%H:%M:%SZ)" | git commit-tree "$tree" "${parent_arg[@]}")
+      git push "${SECONDARY_REMOTE}" "$commit:refs/heads/${b}" --force --no-verify
+      echo "✓ Snapshot pushed to ${SECONDARY_REMOTE}/${b}"
     else
-      echo "Pushing to $SECONDARY_REMOTE…"
+      echo "Pushing to ${SECONDARY_REMOTE}..."
       if [[ $FORCE_SECONDARY -eq 1 ]]; then
-        git push "$SECONDARY_REMOTE" "$b" --force-with-lease --follow-tags --no-verify
+        git push "${SECONDARY_REMOTE}" "${b}" --force-with-lease --follow-tags --no-verify
       else
-        git push "$SECONDARY_REMOTE" "$b" --follow-tags --no-verify
+        git push "${SECONDARY_REMOTE}" "${b}" --follow-tags --no-verify
       fi
-      echo "✓ Synced $b to $PRIMARY_REMOTE and $SECONDARY_REMOTE"
+      echo "✓ Synced ${b} to ${PRIMARY_REMOTE} and ${SECONDARY_REMOTE}"
     fi
   else
-    echo "✓ Pushed $b to $PRIMARY_REMOTE (no secondary remote configured)"
+    echo "✓ Pushed ${b} to ${PRIMARY_REMOTE} (no secondary remote configured)"
   fi
 done
 
