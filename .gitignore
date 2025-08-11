@@ -23,6 +23,8 @@ page_source.html
 
 # build/output
 *.tar
+backend.tar
+frontend.tar
 dist/
 build/
 
