@@ -1789,9 +1789,11 @@ def upload_game_artwork(game_id: int):
         dest_path = os.path.join(dest_dir, final_filename)
         file.save(dest_path)
 
-        # Store relative path for serving via static endpoint
-        rel_path = os.path.relpath(dest_path, PROJECT_ROOT)
-        url_path = f"/media/{rel_path}"
+        # Build simple, stable URL rooted at /media/artwork/ ... regardless of container paths
+        subdir = "grids" if artwork_type == "grid" else "heroes" if artwork_type == "hero" else "logos" if artwork_type == "logo" else "icons"
+        url_path = f"/media/artwork/{subdir}/{final_filename}"
+        # Also store a relative DB path under data/ for reference
+        rel_path = os.path.relpath(dest_path, DATA_DIR).replace('\\', '/')  # e.g., artwork/grids/file.png
 
         # Update DB columns
         column_map = {
@@ -1808,11 +1810,15 @@ def upload_game_artwork(game_id: int):
         conn.commit()
         conn.close()
 
+        file_exists = os.path.isfile(dest_path)
+
         return jsonify({
             "message": "Artwork uploaded successfully",
             "game_id": game_id,
             "artwork_type": artwork_type,
             "url": url_path,
+            "file_exists": file_exists,
+            "path": rel_path,
         }), 200
     except Exception as e:
         logging.error(f"Error uploading artwork: {e}")
@@ -1828,6 +1834,12 @@ def serve_media(filename: str):
         return jsonify({"error": "Invalid path"}), 400
     rel_dir, fname = os.path.split(filename)
     return send_from_directory(os.path.join(directory, rel_dir), fname)
+
+@app.route("/media/artwork/<path:subpath>")
+def serve_artwork(subpath: str):
+    # Serve files from the ARTWORK_DIR for cleaner URLs
+    # subpath is like "grids/123_grid_manual.png"
+    return send_from_directory(ARTWORK_DIR, subpath)
 
 # -------------------------
 # Gallery API Endpoints - Phase 1

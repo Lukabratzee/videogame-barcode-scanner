@@ -109,9 +109,15 @@ echo ""
 echo "🎯 Images built and pushed:"
 echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:${DATE_TAG}${NC}"
 echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:${BRANCH_TAG}${NC}"
-$( [ "${BRANCH_TAG}" = "main" ] && echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:main${NC}\n   Backend:  ${GREEN}${BACKEND_IMAGE}:latest${NC}" )
+if [ "${BRANCH_TAG}" = "main" ]; then
+  echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:main${NC}"
+  echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:latest${NC}"
+fi
 echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:${DATE_TAG}${NC}"
 echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:${BRANCH_TAG}${NC}"
-$( [ "${BRANCH_TAG}" = "main" ] && echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:main${NC}\n   Frontend: ${GREEN}${FRONTEND_IMAGE}:latest${NC}" )
+if [ "${BRANCH_TAG}" = "main" ]; then
+  echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:main${NC}"
+  echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:latest${NC}"
+fi
 echo ""
 echo -e "${BLUE}🚀 Ready for deployment! Run your deployment script to use the updated images.${NC}"

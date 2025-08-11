@@ -32,13 +32,22 @@ print("Project root added to sys.path:", PROJECT_ROOT)
 
 from modules.scrapers import scrape_ebay_prices, scrape_amazon_price, scrape_barcode_lookup, scrape_cex_price, scrape_pricecharting_price, get_best_pricecharting_price, get_pricecharting_price_by_condition
 
-# Retrieve the backend host from environment variables, default to 'localhost' if using Python locally
+# Retrieve the backend host from environment variables
 backend_host = os.getenv("BACKEND_HOST", "localhost")
-backend_port = 5001  # Assuming the backend is running on this port
+backend_port = int(os.getenv("BACKEND_PORT", "5001"))
 
-# Backend API base URL
+# Backend API base URL (used for server-side requests from the frontend container)
 BACKEND_URL = f"http://{backend_host}:{backend_port}"
-print(f"Connecting to backend at {BACKEND_URL}")  # Debugging output
+print(f"Connecting to backend (server-side) at {BACKEND_URL}")  # Debugging output
+
+# Browser-facing base URL for assets (what the user's browser can reach)
+# If running in Docker, the backend host inside the network is 'backend', but the browser cannot resolve that.
+# Use localhost for the browser in that case. Allow override via BACKEND_BROWSER_BASE_URL.
+BACKEND_BROWSER_BASE_URL = os.getenv(
+    "BACKEND_BROWSER_BASE_URL",
+    f"http://localhost:{backend_port}" if backend_host == "backend" else BACKEND_URL,
+)
+print(f"Browser will load assets from {BACKEND_BROWSER_BASE_URL}")
 
 # iCloud shortcut link (replace with actual link as needed)
 ICLOUD_LINK = "https://www.icloud.com/shortcuts/024bf54a6f584cc78c3ed394bcda8e84"
@@ -171,11 +180,11 @@ def normalize_asset_url(url: str) -> str:
     if isinstance(url, str) and url.startswith("//"):
         return f"https:{url}"
     if isinstance(url, str) and url.startswith("/media/"):
-        return f"{BACKEND_URL}{url}"
+        return f"{BACKEND_BROWSER_BASE_URL}{url}"
     if isinstance(url, str) and (url.startswith("data/artwork/") or url.startswith("./data/artwork/")):
         # Ensure backend serves this path
         cleaned = url.lstrip("./")
-        return f"{BACKEND_URL}/media/{cleaned}"
+        return f"{BACKEND_BROWSER_BASE_URL}/media/{cleaned}"
     return url
 
 
@@ -958,7 +967,8 @@ def game_detail_page():
             # Update prices for all games on current page using current price source
             if st.button("Update Prices (This Page)", key="update_prices_page"):
                 updated = 0
-                for g in games:
+                current_page_games = st.session_state.get("current_gallery_games", [])
+                for g in current_page_games:
                     gid2 = g.get("id")
                     if gid2:
                         try:
@@ -2120,9 +2130,21 @@ def main():
                             st.success("✅ Artwork updated successfully!")
                             st.write(f"**Game:** {result['game_title']}")
                             st.write(f"**Game ID:** {result['game_id']}")
-                            # Refresh artwork coverage widget and gallery listing
+                            # Refresh current view to show updated artwork without rerun
+                            filters = {}
+                            if st.session_state.get("filter_publisher"):
+                                filters["publisher"] = st.session_state["filter_publisher"]
+                            if st.session_state.get("filter_platform"):
+                                filters["platform"] = st.session_state["filter_platform"]
+                            if st.session_state.get("filter_genre"):
+                                filters["genre"] = st.session_state["filter_genre"]
+                            if st.session_state.get("filter_year"):
+                                filters["year"] = st.session_state["filter_year"]
+                            try:
+                                _ = fetch_games(filters)
+                            except Exception:
+                                pass
                             st.session_state["refresh_artwork_stats"] = True
-                            st.rerun()
                         elif result and result.get("error") == "api_key_missing":
                             st.error("❌ SteamGridDB API key not configured")
                             st.info("To use this feature:")

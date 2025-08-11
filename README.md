@@ -80,7 +80,7 @@ Edit `config/config.json` and provide your own keys:
 
 The app persists your choices back into this file, so you can also change sources from the UI.
 
-## Example docker-compose
+## Example docker-compose (Portainer/Compose)
 
 ```yaml
 services:
@@ -90,10 +90,10 @@ services:
     platform: linux/amd64
     container_name: video-game-catalogue-backend-debug
     ports:
-      - "5002:5001"
+      - "5002:5001"   # Host 5002 → container 5001 (Flask listens on 5001)
     environment:
       - DATABASE_PATH=/app/data/games.db
-      - BACKEND_PORT=5002
+      - BACKEND_PORT=5001   # Optional; app binds 0.0.0.0:5001
       - DOCKER_ENV=true
       - PYTHONUNBUFFERED=1
       - DEBUG=true
@@ -117,8 +117,11 @@ services:
     ports:
       - "8501:8501"
     environment:
+      # Inside the Docker network, call the backend on its container port (5001)
       - BACKEND_HOST=backend
-      - BACKEND_PORT=5002
+      - BACKEND_PORT=5001
+      # What the user's browser can reach. If you expose backend as 5002 on your host:
+      - BACKEND_BROWSER_BASE_URL=http://localhost:5002
       - FRONTEND_PORT=8501
     # Remove dependency for now to test backend separately
     # depends_on:
@@ -136,6 +139,14 @@ networks:
   default:
     driver: bridge
 ```
+
+Notes:
+- Internal vs browser ports:
+  - Frontend container makes server-side HTTP calls to `http://backend:5001`.
+  - The browser loads images from the host’s published port (e.g., `http://localhost:5002`).
+  - `BACKEND_BROWSER_BASE_URL` controls the base used in image URLs that the browser fetches.
+- If you access from another device, set `BACKEND_BROWSER_BASE_URL` to your host IP:
+  - Example: `http://192.168.1.111:5002`
 
  
 
