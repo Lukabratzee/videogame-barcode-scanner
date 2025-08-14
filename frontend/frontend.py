@@ -133,18 +133,34 @@ def get_price_source():
         return "eBay"  # fallback
 
 def search_game_by_name(game_name):
-    response = requests.post(f"{BACKEND_URL}/search_game_by_name", json={"game_name": game_name})
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return None
+    try:
+        response = requests.post(f"{BACKEND_URL}/search_game_by_name", json={"game_name": game_name})
+        if response.status_code == 200:
+            return response.json()
+        else:
+            # Try to get error details from response
+            try:
+                error_data = response.json()
+                return {"error": error_data.get("error", "Unknown error"), "details": error_data.get("details"), "instructions": error_data.get("instructions")}
+            except:
+                return {"error": f"Search failed with status {response.status_code}", "details": "Unable to search for games", "instructions": "Please check your configuration"}
+    except Exception as e:
+        return {"error": "Connection error", "details": f"Failed to connect to backend: {str(e)}", "instructions": "Please ensure the backend service is running"}
 
 def search_game_by_id(igdb_id):
-    response = requests.post(f"{BACKEND_URL}/search_game_by_id", json={"igdb_id": igdb_id})
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return None
+    try:
+        response = requests.post(f"{BACKEND_URL}/search_game_by_id", json={"igdb_id": igdb_id})
+        if response.status_code == 200:
+            return response.json()
+        else:
+            # Try to get error details from response
+            try:
+                error_data = response.json()
+                return {"error": error_data.get("error", "Unknown error"), "details": error_data.get("details"), "instructions": error_data.get("instructions")}
+            except:
+                return {"error": f"Search failed with status {response.status_code}", "details": "Unable to search for games", "instructions": "Please check your configuration"}
+    except Exception as e:
+        return {"error": "Connection error", "details": f"Failed to connect to backend: {str(e)}", "instructions": "Please ensure the backend service is running"}
 
 def fetch_top_games():
     try:
@@ -2388,7 +2404,16 @@ def main():
     if st.button("Search Game", key="search_game_button"):
         search_response = search_game_by_name(game_name)
         if search_response:
-            st.session_state["search_results"] = search_response
+            # Check if the response contains an error
+            if "error" in search_response:
+                st.error(f"❌ {search_response['error']}")
+                if search_response.get("details"):
+                    st.info(f"**Details:** {search_response['details']}")
+                if search_response.get("instructions"):
+                    st.info(f"**Instructions:** {search_response['instructions']}")
+                st.session_state["search_results"] = None
+            else:
+                st.session_state["search_results"] = search_response
         else:
             st.error("No game found with the provided name.")
             st.session_state["search_results"] = None
@@ -2539,7 +2564,16 @@ def main():
     if st.button("IGDB: Search Game by ID", key="search_game_by_id_button"):
         search_response = search_game_by_id(igdb_id)
         if search_response:
-            st.session_state["selected_game_by_id"] = search_response
+            # Check if the response contains an error
+            if "error" in search_response:
+                st.error(f"❌ {search_response['error']}")
+                if search_response.get("details"):
+                    st.info(f"**Details:** {search_response['details']}")
+                if search_response.get("instructions"):
+                    st.info(f"**Instructions:** {search_response['instructions']}")
+                st.session_state["selected_game_by_id"] = None
+            else:
+                st.session_state["selected_game_by_id"] = search_response
         else:
             st.error("No game found with the provided IGDB ID.")
             st.session_state["selected_game_by_id"] = None
@@ -2715,6 +2749,44 @@ def main():
         else:
             st.info("No games with prices found yet. Add some games to see the top 5!")
 
+    # -------------------------
+    # Sidebar: Price Source Testing
+    # -------------------------
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Config Testing")
+    
+    if st.sidebar.button("Test Config Save", key="test_config_save_button"):
+        try:
+            response = requests.post(
+                f"{BACKEND_URL}/test/config_save",
+                json={"test_key": "test_config_save", "test_value": f"test_{int(time.time())}"}
+            )
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success"):
+                    st.sidebar.success("✅ Config save test successful!", icon="✅")
+                    st.sidebar.info(f"Config file: {result.get('config_file_absolute', 'Unknown')}")
+                else:
+                    st.sidebar.error("❌ Config save test failed!", icon="❌")
+            else:
+                st.sidebar.error(f"❌ Config save test failed with status {response.status_code}", icon="❌")
+        except Exception as e:
+            st.sidebar.error(f"❌ Config save test error: {e}", icon="❌")
+    
+    if st.sidebar.button("Show Config Info", key="show_config_info_button"):
+        try:
+            response = requests.get(f"{BACKEND_URL}/debug/config")
+            if response.status_code == 200:
+                config_info = response.json()
+                st.sidebar.success("✅ Config info retrieved!", icon="✅")
+                st.sidebar.info(f"Config file: {config_info.get('config_file_absolute', 'Unknown')}")
+                st.sidebar.info(f"File exists: {config_info.get('config_file_exists', False)}")
+                if config_info.get('config_contents'):
+                    st.sidebar.info(f"Current price source: {config_info.get('config_contents', {}).get('price_source', 'Unknown')}")
+            else:
+                st.sidebar.error(f"❌ Failed to get config info: {response.status_code}", icon="❌")
+        except Exception as e:
+            st.sidebar.error(f"❌ Config info error: {e}", icon="❌")
 
 if __name__ == "__main__":
     main()

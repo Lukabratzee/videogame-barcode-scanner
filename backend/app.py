@@ -217,23 +217,27 @@ def load_config():
     
     # Debug logging
     logging.info(f"Loading config from: {CONFIG_FILE}")
+    logging.info(f"Config file absolute path: {os.path.abspath(CONFIG_FILE)}")
     logging.info(f"Docker environment: {os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv')}")
     
     # Ensure config directory exists
     config_dir = os.path.dirname(CONFIG_FILE)
     logging.info(f"Config directory: {config_dir}")
+    logging.info(f"Config directory absolute path: {os.path.abspath(config_dir)}")
     
     if not os.path.exists(config_dir):
         try:
             os.makedirs(config_dir, exist_ok=True)
-            logging.info(f"Created config directory: {config_dir}")
+            logging.info(f"✅ Created config directory: {config_dir}")
         except OSError as e:
-            logging.error(f"Failed to create config directory: {e}")
+            logging.error(f"❌ Failed to create config directory: {e}")
             return default_config
+    else:
+        logging.info(f"✅ Config directory already exists: {config_dir}")
     
     if os.path.exists(CONFIG_FILE):
         try:
-            logging.info(f"Config file exists, loading...")
+            logging.info(f"✅ Config file exists, loading...")
             with open(CONFIG_FILE, 'r') as f:
                 config = json.load(f)
                 # Ensure price_source exists and is valid
@@ -252,17 +256,18 @@ def load_config():
                     config["igdb_client_secret"] = ""
                     changed = True
                 if changed:
+                    logging.info(f"📝 Updating config with missing keys...")
                     save_config(config)
                 
-                logging.info(f"Config loaded successfully")
+                logging.info(f"✅ Config loaded successfully from {CONFIG_FILE}")
                 return config
         except (json.JSONDecodeError, IOError) as e:
-            logging.warning(f"Failed to load config file: {e}, creating default config")
+            logging.warning(f"⚠️  Failed to load config file: {e}, creating default config")
     else:
-        logging.info(f"Config file does not exist at {CONFIG_FILE}")
+        logging.info(f"📝 Config file does not exist at {CONFIG_FILE}")
     
     # Create default config file
-    logging.info(f"Creating default config file at: {CONFIG_FILE}")
+    logging.info(f"📝 Creating default config file at: {CONFIG_FILE}")
     save_config(default_config)
     return default_config
 
@@ -277,14 +282,24 @@ def save_config(config):
         
         # Debug logging
         logging.info(f"Attempting to save config to: {CONFIG_FILE}")
+        logging.info(f"Config file absolute path: {os.path.abspath(CONFIG_FILE)}")
         logging.info(f"Config directory exists: {os.path.exists(config_dir)}")
         logging.info(f"Config directory writable: {os.access(config_dir, os.W_OK) if os.path.exists(config_dir) else False}")
+        logging.info(f"Config file writable: {os.access(os.path.dirname(CONFIG_FILE), os.W_OK) if os.path.dirname(CONFIG_FILE) else False}")
         
         with open(CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
-        logging.info(f"Config saved successfully to: {CONFIG_FILE}")
+        logging.info(f"✅ Config saved successfully to: {CONFIG_FILE}")
+        
+        # Verify the file was created and has the right content
+        if os.path.exists(CONFIG_FILE):
+            file_size = os.path.getsize(CONFIG_FILE)
+            logging.info(f"Config file created successfully. Size: {file_size} bytes")
+        else:
+            logging.error(f"❌ Config file was not created at {CONFIG_FILE}")
+            
     except IOError as e:
-        logging.error(f"Failed to save config to {CONFIG_FILE}: {e}")
+        logging.error(f"❌ Failed to save config to {CONFIG_FILE}: {e}")
         # In Docker, try to use a fallback location
         if os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv'):
             try:
@@ -294,6 +309,7 @@ def save_config(config):
                 logging.warning(f"Config saved to fallback location: {fallback_config}")
             except Exception as fallback_error:
                 logging.error(f"Failed to save config to fallback location: {fallback_error}")
+        raise  # Re-raise the exception so the calling function knows it failed
 
 def get_price_source():
     """Get current price source preference"""
@@ -307,10 +323,31 @@ def set_price_source(price_source):
         return False
     
     logging.info(f"Setting price source to: {price_source}")
+    logging.info(f"Config file path: {CONFIG_FILE}")
+    logging.info(f"Config file absolute path: {os.path.abspath(CONFIG_FILE)}")
+    
     config = load_config()
     config["price_source"] = price_source
+    
+    # Log the current config before saving
+    logging.info(f"Current config before saving: {config}")
+    
     save_config(config)
-    logging.info(f"Price source saved successfully to config")
+    
+    # Verify the save was successful by reading it back
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            saved_config = json.load(f)
+            logging.info(f"Config file after saving: {saved_config}")
+            if saved_config.get("price_source") == price_source:
+                logging.info(f"✅ Price source '{price_source}' saved successfully to {CONFIG_FILE}")
+            else:
+                logging.error(f"❌ Price source verification failed. Expected: {price_source}, Got: {saved_config.get('price_source')}")
+                return False
+    except Exception as e:
+        logging.error(f"❌ Failed to verify saved config: {e}")
+        return False
+    
     return True
 
 ####################
@@ -372,10 +409,38 @@ def get_db_connection():
 # Get IGDB access token
 def get_igdb_access_token():
     client_id, client_secret = get_igdb_credentials()
-    url = f"https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
-    response = requests.post(url)
-    logging.debug(f"IGDB access token response: {response.json()}")
-    return response.json().get("access_token")
+    
+    # Check if credentials are properly configured
+    if not client_id or not client_secret:
+        logging.error("IGDB credentials not configured")
+        return None
+    
+    if client_id.startswith("your_igdb_client_id") or client_secret.startswith("your_igdb_client_secret"):
+        logging.error("IGDB credentials are set to placeholder values")
+        return None
+    
+    try:
+        url = f"https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
+        response = requests.post(url)
+        response.raise_for_status()
+        response_data = response.json()
+        
+        if "error" in response_data:
+            logging.error(f"IGDB authentication error: {response_data.get('error_description', 'Unknown error')}")
+            return None
+            
+        access_token = response_data.get("access_token")
+        if not access_token:
+            logging.error("No access token received from IGDB")
+            return None
+            
+        return access_token
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to get IGDB access token: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error getting IGDB access token: {e}")
+        return None
 
 # Clean the game title by removing console names
 
@@ -695,10 +760,29 @@ class GameScan:
             barcode = data.get("barcode")
             logging.debug(f"Received barcode: {barcode}")
 
+            # Check IGDB credentials first
+            client_id, client_secret = get_igdb_credentials()
+            if not client_id or not client_secret:
+                return jsonify({
+                    "error": "IGDB API credentials not configured",
+                    "details": "Please add 'igdb_client_id' and 'igdb_client_secret' to your config.json file",
+                    "instructions": "Get your credentials from https://dev.twitch.tv/console/apps"
+                }), 400
+            
+            if client_id.startswith("your_igdb_client_id") or client_secret.startswith("your_igdb_client_secret"):
+                return jsonify({
+                    "error": "IGDB API credentials are set to placeholder values",
+                    "details": "Please update your config.json file with actual IGDB credentials",
+                    "instructions": "Get your credentials from https://dev.twitch.tv/console/apps"
+                }), 400
+
             igdb_access_token = get_igdb_access_token()
             if not igdb_access_token:
-                logging.error("Failed to retrieve IGDB access token")
-                return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
+                return jsonify({
+                    "error": "Failed to authenticate with IGDB",
+                    "details": "Unable to retrieve access token. Please check your IGDB credentials.",
+                    "instructions": "Verify your 'igdb_client_id' and 'igdb_client_secret' in config.json"
+                }), 500
 
             # Lookup via barcode to obtain game title
             game_title, _ = scrape_barcode_lookup(barcode)
@@ -728,29 +812,20 @@ class GameScan:
 
             # Store the IGDB results for later use in /confirm
             GameScan.response_data = {
+                "barcode": barcode,
+                "game_title": game_title,
                 "exact_match": exact_match,
                 "alternative_matches": alternative_matches,
-                "average_price": combined_price,
+                "combined_price": combined_price
             }
 
-            response = {
-                "exact_match": {
-                    "index": 1,
-                    "name": exact_match["name"],
-                    "platforms": [p["name"] for p in exact_match.get("platforms", [])],
-                } if exact_match else {},
-                "alternative_matches": [
-                    {
-                        "index": idx,
-                        "name": alt["name"],
-                        "platforms": [p["name"] for p in alt.get("platforms", [])],
-                    }
-                    for idx, alt in enumerate(alternative_matches, start=2)
-                ],
-                "average_price": combined_price,
-            }
-            logging.debug(f"Returning /scan response: {response}")
-            return jsonify(response)
+            return jsonify({
+                "message": "Game found on IGDB",
+                "game_title": game_title,
+                "exact_match": exact_match,
+                "alternative_matches": alternative_matches
+            }), 200
+
         except Exception as e:
             logging.error(f"Error in /scan route: {e}")
             return jsonify({"error": str(e)}), 500
@@ -1066,9 +1141,29 @@ def search_game_by_id():
         data = request.json
         igdb_id = data.get("igdb_id")
 
+        # Check IGDB credentials first
+        client_id, client_secret = get_igdb_credentials()
+        if not client_id or not client_secret:
+            return jsonify({
+                "error": "IGDB API credentials not configured",
+                "details": "Please add 'igdb_client_id' and 'igdb_client_secret' to your config.json file",
+                "instructions": "Get your credentials from https://dev.twitch.tv/console/apps"
+            }), 400
+        
+        if client_id.startswith("your_igdb_client_id") or client_secret.startswith("your_igdb_client_secret"):
+            return jsonify({
+                "error": "IGDB API credentials are set to placeholder values",
+                "details": "Please update your config.json file with actual IGDB credentials",
+                "instructions": "Get your credentials from https://dev.twitch.tv/console/apps"
+            }), 400
+
         igdb_access_token = get_igdb_access_token()
         if not igdb_access_token:
-            return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
+            return jsonify({
+                "error": "Failed to authenticate with IGDB",
+                "details": "Unable to retrieve access token. Please check your IGDB credentials.",
+                "instructions": "Verify your 'igdb_client_id' and 'igdb_client_secret' in config.json"
+            }), 500
 
         url = f"https://api.igdb.com/v4/games"
         client_id, _ = get_igdb_credentials()
@@ -1097,9 +1192,29 @@ def search_game_by_name():
         data = request.json
         game_name = data.get("game_name")
 
+        # Check IGDB credentials first
+        client_id, client_secret = get_igdb_credentials()
+        if not client_id or not client_secret:
+            return jsonify({
+                "error": "IGDB API credentials not configured",
+                "details": "Please add 'igdb_client_id' and 'igdb_client_secret' to your config.json file",
+                "instructions": "Get your credentials from https://dev.twitch.tv/console/apps"
+            }), 400
+        
+        if client_id.startswith("your_igdb_client_id") or client_secret.startswith("your_igdb_client_secret"):
+            return jsonify({
+                "error": "IGDB API credentials are set to placeholder values",
+                "details": "Please update your config.json file with actual IGDB credentials",
+                "instructions": "Get your credentials from https://dev.twitch.tv/console/apps"
+            }), 400
+
         igdb_access_token = get_igdb_access_token()
         if not igdb_access_token:
-            return jsonify({"error": "Failed to retrieve IGDB access token"}), 500
+            return jsonify({
+                "error": "Failed to authenticate with IGDB",
+                "details": "Unable to retrieve access token. Please check your IGDB credentials.",
+                "instructions": "Verify your 'igdb_client_id' and 'igdb_client_secret' in config.json"
+            }), 500
 
         exact_match, alternative_matches = search_game_with_alternatives(game_name, igdb_access_token)
 
@@ -1572,17 +1687,28 @@ def set_price_source_endpoint():
         data = request.json
         price_source = data.get("price_source")
         
+        logging.info(f"Received price source change request: {price_source}")
+        logging.info(f"Request data: {data}")
+        
         if not price_source:
+            logging.error("No price_source provided in request")
             return jsonify({"error": "price_source is required"}), 400
         
+        if price_source not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
+            logging.error(f"Invalid price source requested: {price_source}")
+            return jsonify({"error": "Invalid price source. Must be eBay, Amazon, CeX, or PriceCharting"}), 400
+        
+        logging.info(f"Attempting to set price source to: {price_source}")
+        
         if set_price_source(price_source):
-            logging.debug(f"Price source updated to: {price_source}")
-            return jsonify({"message": f"Price source set to {price_source}"}), 200
+            logging.info(f"✅ Price source successfully changed to: {price_source}")
+            return jsonify({"message": f"Price source updated to {price_source}", "price_source": price_source}), 200
         else:
-            return jsonify({"error": "Invalid price source. Must be eBay, Amazon, or CeX"}), 400
+            logging.error(f"❌ Failed to set price source to: {price_source}")
+            return jsonify({"error": "Failed to update price source"}), 500
             
     except Exception as e:
-        logging.error(f"Error setting price source: {e}")
+        logging.error(f"❌ Error in set_price_source_endpoint: {e}")
         return jsonify({"error": str(e)}), 500
 
 # -------------------------
@@ -2696,9 +2822,97 @@ def check_high_res_artwork_status():
             'error': str(e)
         }), 500
 
+@app.route("/debug/config", methods=["GET"])
+def debug_config():
+    """Debug endpoint to show config file location and contents"""
+    try:
+        config_info = {
+            "config_file": CONFIG_FILE,
+            "config_file_absolute": os.path.abspath(CONFIG_FILE),
+            "config_file_exists": os.path.exists(CONFIG_FILE),
+            "config_dir": os.path.dirname(CONFIG_FILE),
+            "config_dir_exists": os.path.exists(os.path.dirname(CONFIG_FILE)),
+            "docker_environment": os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv'),
+            "base_dir": BASE_DIR,
+            "current_working_dir": os.getcwd()
+        }
+        
+        # Try to read the actual config file
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r') as f:
+                    config_contents = json.load(f)
+                config_info["config_contents"] = config_contents
+                config_info["config_file_size"] = os.path.getsize(CONFIG_FILE)
+            except Exception as e:
+                config_info["config_read_error"] = str(e)
+        else:
+            config_info["config_contents"] = "File does not exist"
+        
+        return jsonify(config_info), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/test/config_save", methods=["POST"])
+def test_config_save():
+    """Test endpoint to verify config saving functionality"""
+    try:
+        data = request.json
+        test_key = data.get("test_key", "test_value")
+        test_value = data.get("test_value", "test_value")
+        
+        logging.info(f"Testing config save with key: {test_key}, value: {test_value}")
+        
+        # Load current config
+        config = load_config()
+        original_value = config.get(test_key)
+        
+        # Set test value
+        config[test_key] = test_value
+        
+        # Save config
+        save_config(config)
+        
+        # Verify save by reading back
+        with open(CONFIG_FILE, 'r') as f:
+            saved_config = json.load(f)
+        
+        if saved_config.get(test_key) == test_value:
+            # Restore original value
+            config[test_key] = original_value
+            save_config(config)
+            
+            result = {
+                "success": True,
+                "message": f"Config save test successful. Test value '{test_value}' was saved and retrieved correctly.",
+                "config_file": CONFIG_FILE,
+                "config_file_absolute": os.path.abspath(CONFIG_FILE),
+                "test_key": test_key,
+                "test_value": test_value,
+                "saved_value": saved_config.get(test_key)
+            }
+            return jsonify(result), 200
+        else:
+            result = {
+                "success": False,
+                "message": "Config save test failed. Value was not saved correctly.",
+                "expected": test_value,
+                "actual": saved_config.get(test_key)
+            }
+            return jsonify(result), 500
+            
+    except Exception as e:
+        logging.error(f"Config save test failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 if __name__ == "__main__":
     # Initialize configuration on startup
     print("🔧 Initializing configuration...")
+    print(f"📁 Config file location: {CONFIG_FILE}")
+    print(f"📁 Config file absolute path: {os.path.abspath(CONFIG_FILE)}")
+    print(f"🐳 Docker environment: {os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv')}")
+    
     config = load_config()
     print(f"✅ Configuration loaded. Price source: {config.get('price_source', 'Unknown')}")
     if 'steamgriddb_api_key' in config:
