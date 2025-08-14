@@ -44,6 +44,7 @@ python3 database_setup.py || true
 python3 migrate_gallery_v1.py || true
 python3 add_price_history.py || true
 python3 migrate_artwork_columns.py || true
+python3 add_region_column.py || true
 
 # Start the Flask application
 echo "Starting Flask application..."

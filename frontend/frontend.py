@@ -58,8 +58,21 @@ ICLOUD_LINK_ALT = "https://www.icloud.com/shortcuts/bea9f60437194f0fad2f89b87c9d
 # -------------------------
 
 def fetch_games(filters=None):
-    response = requests.get(f"{BACKEND_URL}/games", params=filters)
-    return response.json()
+    try:
+        response = requests.get(f"{BACKEND_URL}/games", params=filters)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            try:
+                # Attempt to parse error JSON if provided
+                return response.json()
+            except Exception:
+                # Log raw body for debugging and fail gracefully
+                print(f"Error fetching games: HTTP {response.status_code} body=\n{response.text}")
+                return []
+    except Exception as e:
+        print(f"Error fetching games: {e}")
+        return []
 
 def fetch_consoles():
     response = requests.get(f"{BACKEND_URL}/consoles")
@@ -76,7 +89,15 @@ def fetch_unique_values(value_type):
 
 def calculate_total_cost(games):
     total = 0
+    # Handle case where games might be an error string instead of a list
+    if not isinstance(games, list):
+        return total
+    
     for game in games:
+        # Skip if game is not a dictionary (shouldn't happen with proper data)
+        if not isinstance(game, dict):
+            continue
+            
         price = game.get("average_price")
         if price is not None:
             try:
@@ -87,7 +108,29 @@ def calculate_total_cost(games):
                 continue
     return total
 
+def normalize_region(region):
+    """Normalize region values to standard codes: PAL, US, JP"""
+    if not region:
+        return "PAL"
+    
+    region_upper = region.upper().strip()
+    
+    # Map various region formats to standard codes
+    if region_upper in {"JAPAN", "JP", "JPN"}:
+        return "JP"
+    elif region_upper in {"US", "USA", "UNITED STATES", "NORTH AMERICA", "NA"}:
+        return "US"
+    elif region_upper in {"PAL", "EU", "EUROPE", "EUROPEAN"}:
+        return "PAL"
+    else:
+        # Default to PAL for unknown regions
+        return "PAL"
+
 def add_game(game_data):
+    # Normalize the region before sending to backend
+    if "region" in game_data:
+        game_data["region"] = normalize_region(game_data["region"])
+    
     response = requests.post(f"{BACKEND_URL}/add_game", json=game_data)
     return response.status_code == 201
 
@@ -96,6 +139,10 @@ def delete_game(game_id):
     return response.status_code == 200
 
 def update_game(game_id, game_data):
+    # Normalize the region before sending to backend
+    if "region" in game_data:
+        game_data["region"] = normalize_region(game_data["region"])
+    
     response = requests.put(f"{BACKEND_URL}/update_game/{game_id}", json=game_data)
     return response.status_code == 200
 
@@ -272,22 +319,37 @@ def scan_game(barcode):
 
 def fetch_gallery_games(filters=None, page=1, per_page=20):
     """Fetch games for gallery display with pagination and filtering"""
-    params = {"page": page, "per_page": per_page}
+    params = {"page": page, "limit": per_page}  # API uses "limit" not "per_page"
     if filters:
         params.update(filters)
     response = requests.get(f"{BACKEND_URL}/api/gallery/games", params=params)
     if response.status_code == 200:
-        return response.json()
+        result = response.json()
+        if result.get("success"):
+            data = result.get("data", {})
+            # Transform to match expected frontend structure
+            return {
+                "games": data.get("games", []),
+                "pagination": data.get("pagination", {}),
+                "total_games": data.get("pagination", {}).get("total_count", 0),
+                "total_pages": data.get("pagination", {}).get("total_pages", 0)
+            }
+        else:
+            return {"games": [], "pagination": {}, "total_games": 0, "total_pages": 0}
     else:
-        return {"games": [], "total_games": 0, "total_pages": 0}
+        return {"games": [], "pagination": {}, "total_games": 0, "total_pages": 0}
 
 def fetch_gallery_filters():
     """Fetch available filter options for gallery"""
     response = requests.get(f"{BACKEND_URL}/api/gallery/filters")
     if response.status_code == 200:
-        return response.json()
+        result = response.json()
+        if result.get("success"):
+            return result.get("data", {})
+        else:
+            return {"platforms": [], "genres": [], "regions": [], "completion_statuses": [], "sort_options": []}
     else:
-        return {"tags": [], "platforms": [], "publishers": [], "genres": [], "release_years": []}
+        return {"platforms": [], "genres": [], "regions": [], "completion_statuses": [], "sort_options": []}
 
 def fetch_price_history(game_id):
     """Fetch price history for a specific game"""
@@ -532,6 +594,7 @@ def display_game_item(game):
                         <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
                         <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
                         <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
+                        <div><strong>Region:</strong> {(game.get('region') or 'PAL').upper()}</div>
                         <div><strong>Average Price:</strong> {average_price}</div>
                     </div>
                 </div>
@@ -613,6 +676,13 @@ def display_game_item(game):
         
         new_series = st.text_input("Series", game.get("series"), key=f"edit_series_{game.get('id')}")
         new_release = st.text_input("Release Date", game.get("release_date"), key=f"edit_release_{game.get('id')}")
+        # Region selector
+        region_options = ["PAL", "US", "JP"]
+        current_region = (game.get("region") or "PAL").upper()
+        if current_region not in region_options:
+            current_region = "PAL"
+        region_index = region_options.index(current_region)
+        new_region = st.selectbox("Region", region_options, index=region_index, key=f"edit_region_{game.get('id')}")
         new_price = st.number_input("Average Price", value=game.get("average_price") or 0.0, step=0.01, format="%.2f", key=f"edit_price_{game.get('id')}")
         new_youtube_url = st.text_input("YouTube Trailer URL", game.get("youtube_trailer_url", ""), key=f"edit_youtube_{game.get('id')}", help="Full YouTube URL (e.g., https://www.youtube.com/watch?v=...)")
         
@@ -627,6 +697,7 @@ def display_game_item(game):
                 "release_date": new_release,
                 "average_price": new_price,
                 "youtube_trailer_url": new_youtube_url,
+                "region": new_region,
             }
             if update_game(game.get("id"), updated_game_data):
                 st.success("Game updated successfully!")
@@ -697,15 +768,6 @@ def game_detail_page():
     # Search by title
     title_search = st.sidebar.text_input("Search titles", key="detail_gallery_title_search", on_change=lambda: st.session_state.update({"gallery_page": 1}))
     
-    # Tag filters (multi-select)
-    available_tags = filter_options.get("tags", [])
-    selected_tags = st.sidebar.multiselect(
-        "Tags", 
-        available_tags,
-        key="detail_gallery_tags_filter",
-        help="Select multiple tags to filter games"
-    )
-    
     # Platform filter
     available_platforms = filter_options.get("platforms", [])
     selected_platform = st.sidebar.selectbox(
@@ -720,6 +782,14 @@ def game_detail_page():
         "Genre", 
         ["All"] + available_genres,
         key="detail_gallery_genre_filter"
+    )
+    
+    # Region filter
+    available_regions = filter_options.get("regions", ["PAL", "US", "JP"])
+    selected_region = st.sidebar.selectbox(
+        "Region", 
+        ["All"] + available_regions,
+        key="detail_gallery_region_filter"
     )
     
     # Release year range
@@ -759,13 +829,13 @@ def game_detail_page():
         # Build filters dictionary
         filters = {}
         if title_search:
-            filters["title"] = title_search
-        if selected_tags:
-            filters["tags"] = selected_tags
+            filters["search"] = title_search  # Changed to match API
         if selected_platform != "All":
             filters["platform"] = selected_platform
         if selected_genre != "All":
             filters["genre"] = selected_genre
+        if selected_region != "All":
+            filters["region"] = selected_region
         if year_range and year_range != (min_year, max_year):
             filters["year_min"] = year_range[0]
             filters["year_max"] = year_range[1]
@@ -780,12 +850,12 @@ def game_detail_page():
         # Set the corresponding library filter keys so they show up when we switch
         if title_search:
             st.session_state["gallery_title_search"] = title_search
-        if selected_tags:
-            st.session_state["gallery_tags_filter"] = selected_tags
         if selected_platform != "All":
             st.session_state["gallery_platform_filter"] = selected_platform
         if selected_genre != "All":
             st.session_state["gallery_genre_filter"] = selected_genre
+        if selected_region != "All":
+            st.session_state["gallery_region_filter"] = selected_region
         if year_range and year_range != (min_year, max_year):
             st.session_state["gallery_year_range"] = year_range
         
@@ -899,6 +969,7 @@ def game_detail_page():
         with col_left:
             st.markdown(f"**Game ID:** {game.get('id', 'Unknown')}")
             st.markdown(f"**Platform:** {get_platform_display(game)}")
+            st.markdown(f"**Region:** {(game.get('region') or 'PAL').upper()}")
             
             # Release date and year
             release_date = game.get("release_date")
@@ -1312,15 +1383,6 @@ def gallery_page():
     # Search by title
     title_search = st.sidebar.text_input("Search titles", key="gallery_title_search", on_change=lambda: st.session_state.update({"gallery_page": 1}))
     
-    # Tag filters (multi-select)
-    available_tags = filter_options.get("tags", [])
-    selected_tags = st.sidebar.multiselect(
-        "Tags", 
-        available_tags,
-        key="gallery_tags_filter",
-        help="Select multiple tags to filter games"
-    )
-    
     # Platform filter
     available_platforms = filter_options.get("platforms", [])
     selected_platform = st.sidebar.selectbox(
@@ -1329,12 +1391,20 @@ def gallery_page():
         key="gallery_platform_filter"
     )
     
-    # Genre filter
+    # Genre filter (individual genres like tags)
     available_genres = filter_options.get("genres", [])
     selected_genre = st.sidebar.selectbox(
         "Genre", 
         ["All"] + available_genres,
         key="gallery_genre_filter"
+    )
+    
+    # Region filter
+    available_regions = filter_options.get("regions", ["PAL", "US", "JP"])
+    selected_region = st.sidebar.selectbox(
+        "Region", 
+        ["All"] + available_regions,
+        key="gallery_region_filter"
     )
     
     # Release year range
@@ -1387,13 +1457,13 @@ def gallery_page():
     # Build filters dictionary
     filters = {}
     if title_search:
-        filters["title"] = title_search
-    if selected_tags:
-        filters["tags"] = selected_tags
+        filters["search"] = title_search  # Changed from "title" to "search" to match backend API
     if selected_platform != "All":
         filters["platform"] = selected_platform
     if selected_genre != "All":
         filters["genre"] = selected_genre
+    if selected_region != "All":
+        filters["region"] = selected_region
     if year_range and year_range != (min_year, max_year):
         filters["year_min"] = year_range[0]
         filters["year_max"] = year_range[1]
@@ -1422,13 +1492,13 @@ def gallery_page():
         if filters:
             active_filters = []
             if title_search:
-                active_filters.append(f"Title: '{title_search}'")
-            if selected_tags:
-                active_filters.append(f"Tags: {', '.join(selected_tags)}")
+                active_filters.append(f"Search: '{title_search}'")
             if selected_platform != "All":
                 active_filters.append(f"Platform: {selected_platform}")
             if selected_genre != "All":
                 active_filters.append(f"Genre: {selected_genre}")
+            if selected_region != "All":
+                active_filters.append(f"Region: {selected_region}")
             if year_range and year_range != (min_year, max_year):
                 active_filters.append(f"Years: {year_range[0]}-{year_range[1]}")
             
@@ -1508,19 +1578,22 @@ def display_gallery_tile(column, game):
         # Game details
         game_id = game.get('id')
         game_title = game.get('title', 'Unknown Game')
-        platform = game.get('platform', 'Unknown Platform')
+        platform = game.get('platforms', ['Unknown Platform'])
+        platform_text = ', '.join(platform) if isinstance(platform, list) else str(platform)
+        region = game.get('region', 'PAL')
+        platform_region_text = f"{platform_text} ({region})"
         
-        # Tags HTML
-        tags_html = ""
-        tags = game.get("tags", [])
-        if tags:
-            display_tags = tags[:2]
-            tag_colors = ["#667eea", "#764ba2", "#f093fb", "#f5576c", "#4ecdc4", "#45b7d1"]
-            for i, tag in enumerate(display_tags):
-                color = tag_colors[i % len(tag_colors)]
-                tags_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin-right: 4px; display: inline-block;">{tag}</span>'
-            if len(tags) > 2:
-                tags_html += f'<span style="color: #888; font-size: 9px; font-style: italic;">+{len(tags) - 2}</span>'
+        # Genre display (replacing tags)
+        genres = game.get("genres", [])
+        genre_html = ""
+        if genres:
+            display_genres = genres[:2]  # Show up to 2 genres
+            genre_colors = ["#667eea", "#764ba2", "#f093fb", "#f5576c", "#4ecdc4", "#45b7d1"]
+            for i, genre in enumerate(display_genres):
+                color = genre_colors[i % len(genre_colors)]
+                genre_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin-right: 4px; display: inline-block;">{genre.strip()}</span>'
+            if len(genres) > 2:
+                genre_html += f'<span style="color: #888; font-size: 9px; font-style: italic;">+{len(genres) - 2}</span>'
         
         # Price and year
         price = game.get("average_price")
@@ -1625,10 +1698,10 @@ def display_gallery_tile(column, game):
                         {game_title}
                     </h4>
                     <p style="margin: 0 0 8px 0; font-size: 12px; color: #666;">
-                        {platform}
+                        {platform_region_text}
                     </p>
                     <div style="margin-bottom: 8px;">
-                        {tags_html}
+                        {genre_html}
                     </div>
                     <div style="margin-top: 8px; font-weight: bold; color: #333; font-size: 12px;">
                         {price_text}{year_text}
@@ -2030,6 +2103,13 @@ def main():
             new_series_list = [s.strip() for s in edit_series_input.split(",") if s.strip()]
 
             edit_release_date = st.date_input("Release Date", key="edit_release_date")
+            # Region selector for sidebar editor
+            region_options = ["PAL", "US", "JP"]
+            current_region = (game_details.get("region") or "PAL").upper()
+            if current_region not in region_options:
+                current_region = "PAL"
+            region_index = region_options.index(current_region)
+            edit_region = st.selectbox("Region", region_options, index=region_index, key="edit_region_sidebar")
             default_price = float(game_details.get("average_price") or 0)
             edit_average_price = st.number_input("Average Price", value=default_price, step=0.01, format="%.2f", key="edit_average_price")
 
@@ -2046,6 +2126,7 @@ def main():
                         edit_release_date.strftime("%Y-%m-%d") if edit_release_date else "1900-01-01"
                     ),
                     "average_price": edit_average_price,
+                    "region": edit_region,
                 }
                 if update_game(edit_game_id, updated_game_data):
                     st.success("Game updated successfully")
@@ -2226,12 +2307,14 @@ def main():
         platforms = sorted(fetch_unique_values("platform"))
         genres = sorted(fetch_unique_values("genre"))
         years = sorted(fetch_unique_values("year"))
+        regions = ["JP", "PAL", "US"]
 
         if st.button("Clear Filters", key="clear_filter_button"):
             st.session_state["filter_publisher"] = ""
             st.session_state["filter_platform"] = ""
             st.session_state["filter_genre"] = ""
             st.session_state["filter_year"] = ""
+            st.session_state["filter_region"] = "All"
             st.session_state["filters_active"] = False
             games = fetch_games()  # Re-fetch all games
 
@@ -2239,6 +2322,7 @@ def main():
         selected_platform = st.selectbox("Platform", [""] + platforms, key="filter_platform")
         selected_genre = st.selectbox("Genre", [""] + genres, key="filter_genre")
         selected_year = st.selectbox("Release Year", [""] + years, key="filter_year")
+        selected_region = st.selectbox("Region", ["All"] + regions, key="filter_region")
 
         # Add checkboxes for sorting
         sort_alphabetical = st.checkbox("Sort Alphabetically", key="filter_sort_alphabetical")
@@ -2253,6 +2337,8 @@ def main():
             filters["genre"] = selected_genre
         if selected_year:
             filters["year"] = selected_year
+        if selected_region and selected_region != "All":
+            filters["region"] = selected_region
 
         # Decide which sort to apply. If both are checked, highest takes precedence.
         if sort_highest_value:
@@ -2493,6 +2579,13 @@ def main():
             else:
                 release_date = "N/A"
             st.markdown(f"**Release Date:** {release_date}")
+            
+            # Region selection for the game to be added
+            region_options = ["PAL", "US", "JP"]
+            default_region = st.session_state.get("pricecharting_region", "PAL")
+            if default_region not in region_options:
+                default_region = "PAL"
+            selected_region_for_add = st.selectbox("Region", region_options, index=region_options.index(default_region), key="add_region_select")
         else:
             st.error("No game selected.")
 
@@ -2550,6 +2643,7 @@ def main():
                     "series": selected_game_data.get("series", []),
                     "release_date": None,
                     "average_price": scraped_price,
+                    "region": selected_region_for_add,
                 }
                 if selected_game_data.get("release_date"):
                     game_data["release_date"] = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data["release_date"]))
@@ -2669,6 +2763,8 @@ def main():
                 st.markdown(f"**Scraped Price from {global_price_source} (to add):** £{scraped_price:.2f}")
             else:
                 st.markdown(f"**Scraped Price from {global_price_source} (to add):** N/A")
+            # Region for add-by-id: mirror the sidebar PriceCharting region selection
+            selected_region_for_add_by_id = st.session_state.get("pricecharting_region", "PAL")
             game_data = {
                 "title": selected_game_data_by_id["name"],
                 "cover_image": selected_game_data_by_id.get("cover", {}).get("url"),
@@ -2695,6 +2791,7 @@ def main():
                 ],
                 "release_date": None,
                 "average_price": scraped_price,
+                "region": selected_region_for_add_by_id,
             }
             if selected_game_data_by_id.get("first_release_date"):
                 game_data["release_date"] = time.strftime("%Y-%m-%d", time.gmtime(selected_game_data_by_id["first_release_date"]))

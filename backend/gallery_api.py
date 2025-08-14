@@ -66,7 +66,8 @@ def serialize_game_with_metadata(game_row, metadata_row=None, tags=None):
         'genres': game_row['genres'].split(',') if game_row['genres'] else [],
         'series': game_row['series'],
         'release_date': game_row['release_date'],
-        'average_price': game_row['average_price']
+        'average_price': game_row['average_price'],
+        'region': game_row.get('region', 'PAL')  # Default to PAL if not set
     }
     
     # Add gallery metadata if available
@@ -123,7 +124,8 @@ def get_gallery_games():
     - platform: Filter by platform
     - completion: Filter by completion status
     - favorite: Filter favorites only (true/false)
-    - tag: Filter by tag name or ID
+    - genre: Filter by individual genre (e.g., Adventure, Action, RPG)
+    - region: Filter by region (PAL, US, JP)
     - search: Search query for title
     """
     try:
@@ -134,19 +136,18 @@ def get_gallery_games():
         platform_filter = request.args.get('platform')
         completion_filter = request.args.get('completion')
         favorite_filter = request.args.get('favorite')
-        tag_filter = request.args.get('tag')
+        genre_filter = request.args.get('genre')  # Changed from tag_filter to genre_filter
+        region_filter = request.args.get('region')  # New region filter
         search_query = request.args.get('search')
         
         # Calculate offset
         offset = (page - 1) * limit
         
-        # Build the query
+        # Build the query (simplified - removed tag joins since we're using genre filtering)
         base_query = '''
         SELECT DISTINCT g.*, gm.* 
         FROM games g
         LEFT JOIN game_gallery_metadata gm ON g.id = gm.game_id
-        LEFT JOIN game_tag_associations gta ON g.id = gta.game_id
-        LEFT JOIN game_tags gt ON gta.tag_id = gt.id
         WHERE g.id != -1  -- Exclude placeholder
         '''
         
@@ -154,8 +155,6 @@ def get_gallery_games():
         SELECT COUNT(DISTINCT g.id) 
         FROM games g
         LEFT JOIN game_gallery_metadata gm ON g.id = gm.game_id
-        LEFT JOIN game_tag_associations gta ON g.id = gta.game_id
-        LEFT JOIN game_tags gt ON gta.tag_id = gt.id
         WHERE g.id != -1  -- Exclude placeholder
         '''
         
@@ -176,14 +175,15 @@ def get_gallery_games():
             base_query += " AND gm.favorite = 1"
             count_query += " AND gm.favorite = 1"
             
-        if tag_filter:
-            if tag_filter.isdigit():
-                base_query += " AND gt.id = ?"
-                count_query += " AND gt.id = ?"
-            else:
-                base_query += " AND gt.tag_name = ?"
-                count_query += " AND gt.tag_name = ?"
-            query_params.append(tag_filter)
+        if genre_filter:
+            base_query += " AND g.genres LIKE ?"
+            count_query += " AND g.genres LIKE ?"
+            query_params.append(f"%{genre_filter}%")
+            
+        if region_filter:
+            base_query += " AND UPPER(IFNULL(g.region, 'PAL')) = ?"
+            count_query += " AND UPPER(IFNULL(g.region, 'PAL')) = ?"
+            query_params.append(region_filter.upper())
             
         if search_query:
             # Enhanced search with special character normalization
@@ -232,22 +232,11 @@ def get_gallery_games():
         cursor.execute(base_query, pagination_params)
         game_rows = cursor.fetchall()
         
-        # Process results and add tags
+        # Process results (no longer fetching tags separately)
         games = []
         for row in game_rows:
-            # Get tags for this game
-            cursor.execute('''
-            SELECT gt.id, gt.tag_name, gt.tag_color 
-            FROM game_tags gt
-            JOIN game_tag_associations gta ON gt.id = gta.tag_id
-            WHERE gta.game_id = ?
-            ''', (row['id'],))
-            
-            tag_rows = cursor.fetchall()
-            tags = [{'id': tag['id'], 'name': tag['tag_name'], 'color': tag['tag_color']} for tag in tag_rows]
-            
             # Convert to dictionary
-            game_dict = serialize_game_with_metadata(row, row, tags)
+            game_dict = serialize_game_with_metadata(row, row)
             games.append(game_dict)
         
         conn.close()
@@ -273,7 +262,8 @@ def get_gallery_games():
                     'platform': platform_filter,
                     'completion': completion_filter,
                     'favorite': favorite_filter,
-                    'tag': tag_filter,
+                    'genre': genre_filter,
+                    'region': region_filter,
                     'search': search_query,
                     'sort': sort_order
                 }
@@ -368,6 +358,44 @@ def get_gallery_filters():
         
         platforms.sort()
         
+        # Get unique genres (split individual genres instead of tag-like structure)
+        cursor.execute('''
+        SELECT DISTINCT genres 
+        FROM games 
+        WHERE id != -1 AND genres IS NOT NULL AND genres != ''
+        ''')
+        
+        genre_rows = cursor.fetchall()
+        genres = []
+        for row in genre_rows:
+            if row['genres']:
+                # Split comma-separated genres and flatten
+                for genre in row['genres'].split(','):
+                    genre = genre.strip()
+                    if genre and genre not in genres:
+                        genres.append(genre)
+        
+        genres.sort()
+        
+        # Get unique regions
+        cursor.execute('''
+        SELECT DISTINCT IFNULL(region, 'PAL') as region
+        FROM games 
+        WHERE id != -1
+        ''')
+        
+        region_rows = cursor.fetchall()
+        regions = sorted(list(set([row['region'] for row in region_rows if row['region']])))
+        
+        # Ensure standard regions are available even if no games exist
+        if 'PAL' not in regions:
+            regions.append('PAL')
+        if 'US' not in regions:
+            regions.append('US')
+        if 'JP' not in regions:
+            regions.append('JP')
+        regions.sort()
+        
         # Get completion statuses
         completion_statuses = [
             {'value': 'not_started', 'label': 'Not Started'},
@@ -376,22 +404,7 @@ def get_gallery_filters():
             {'value': 'abandoned', 'label': 'Abandoned'}
         ]
         
-        # Get available tags
-        cursor.execute('''
-        SELECT id, tag_name, tag_color, tag_description,
-               (SELECT COUNT(*) FROM game_tag_associations WHERE tag_id = game_tags.id) as game_count
-        FROM game_tags
-        ORDER BY tag_name
-        ''')
-        
-        tag_rows = cursor.fetchall()
-        tags = [{
-            'id': tag['id'],
-            'name': tag['tag_name'],
-            'color': tag['tag_color'],
-            'description': tag['tag_description'],
-            'game_count': tag['game_count']
-        } for tag in tag_rows]
+        # Remove tags section - we're using genres instead
         
         # Get sort options
         sort_options = [
@@ -412,8 +425,9 @@ def get_gallery_filters():
             'success': True,
             'data': {
                 'platforms': platforms,
+                'genres': genres,
+                'regions': regions,
                 'completion_statuses': completion_statuses,
-                'tags': tags,
                 'sort_options': sort_options
             }
         })

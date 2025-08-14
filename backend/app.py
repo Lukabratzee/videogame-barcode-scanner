@@ -1130,6 +1130,7 @@ def get_top_games():
                 "icon_image_path": game[17] if len(game) > 17 else None,
                 "steamgriddb_id": game[18] if len(game) > 18 else None,
                 "artwork_last_updated": game[19] if len(game) > 19 else None,
+                "region": (game[20] if len(game) > 20 else None) or "PAL",
             }
         )
 
@@ -1257,15 +1258,17 @@ def save_game_to_db(game_data):
 
         release_date = game_data.get("release_date") or "1900-01-01"
         
-        # Use TRIM on title and check for matching platform as well.
+        # Use TRIM on title and check for matching platform AND region as well.
         # We'll consider the first platform from the list for comparison.
         platform_str = ""
         if game_data["platforms"]:
             platform_str = game_data["platforms"][0]
+        # Default region to PAL if not provided
+        region = (game_data.get("region") or "PAL").strip().upper()
         
         cursor.execute(
-            "SELECT COUNT(*) FROM games WHERE TRIM(title) = ? AND platforms LIKE ?",
-            (game_data["title"].strip(), f"%{platform_str}%")
+            "SELECT COUNT(*) FROM games WHERE TRIM(title) = ? AND platforms LIKE ? AND UPPER(IFNULL(region, 'PAL')) = ?",
+            (game_data["title"].strip(), f"%{platform_str}%", region)
         )
         count = cursor.fetchone()[0]
 
@@ -1288,8 +1291,8 @@ def save_game_to_db(game_data):
             game_id = generate_random_id()
             cursor.execute(
                 """
-                INSERT INTO games (id, title, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO games (id, title, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url, region)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     game_id,
@@ -1302,6 +1305,7 @@ def save_game_to_db(game_data):
                     game_data["release_date"],
                     game_data["average_price"],
                     youtube_trailer_url,
+                    region,
                 ),
             )
             conn.commit()
@@ -1375,6 +1379,12 @@ def get_games():
         params.append(f"%{title.lower()}%")
         params.append(f"%{normalized_search}%")
 
+    # Optional region filter
+    region = request.args.get("region")
+    if region:
+        query += " AND UPPER(IFNULL(region, 'PAL')) = ?"
+        params.append(region.upper())
+
     if sort == "alphabetical":
         query += " ORDER BY title ASC"
     elif sort == "highest":
@@ -1382,8 +1392,13 @@ def get_games():
         #Handles NULLS by placing them at the end
         query += " NULLS LAST"
 
-    cursor.execute(query, params)
-    games = cursor.fetchall()
+    try:
+        cursor.execute(query, params)
+        games = cursor.fetchall()
+    except Exception as e:
+        logging.error(f"/games query failed: {e}\nQuery: {query}\nParams: {params}")
+        conn.close()
+        return jsonify({"error": "Query failed"}), 500
     conn.close()
 
     game_list = []
@@ -1412,6 +1427,7 @@ def get_games():
                 "icon_image_path": game[17] if len(game) > 17 else None,
                 "steamgriddb_id": game[18] if len(game) > 18 else None,
                 "artwork_last_updated": game[19] if len(game) > 19 else None,
+                "region": (game[20] if len(game) > 20 else None) or "PAL",
             }
         )
 
@@ -1453,6 +1469,8 @@ def get_unique_values():
             cursor.execute("SELECT DISTINCT genres FROM games WHERE id != -1")
         elif value_type == "year":
             cursor.execute('SELECT DISTINCT strftime("%Y", release_date) FROM games WHERE id != -1')
+        elif value_type == "region":
+            cursor.execute("SELECT DISTINCT UPPER(IFNULL(region, 'PAL')) FROM games WHERE id != -1")
         else:
             conn.close()
             return jsonify([]), 400
@@ -1468,7 +1486,7 @@ def get_unique_values():
             if not value or value.strip() == "" or value == "__PLACEHOLDER__":
                 continue
 
-            if value_type == "year":
+            if value_type in ("year", "region"):
                 unique_values.add(value)
             else:
                 value_list = value.split(", ")
@@ -1535,9 +1553,12 @@ def update_game(game_id):
         cursor = conn.cursor()
 
         # Update game data, including average_price and youtube_trailer_url
+        # Default region handling
+        region = (data.get("region") or "PAL").strip().upper()
+
         cursor.execute("""
             UPDATE games
-            SET title = ?, description = ?, publisher = ?, platforms = ?, genres = ?, series = ?, release_date = ?, average_price = ?, youtube_trailer_url = ?
+            SET title = ?, description = ?, publisher = ?, platforms = ?, genres = ?, series = ?, release_date = ?, average_price = ?, youtube_trailer_url = ?, region = ?
             WHERE id = ?
         """, (
             data["title"],
@@ -1549,6 +1570,7 @@ def update_game(game_id):
             data["release_date"],
             data["average_price"],
             data.get("youtube_trailer_url", ""),
+            region,
             game_id
         ))
 
@@ -1594,6 +1616,7 @@ def fetch_game_by_id(game_id):
                 "icon_image_path": game[17] if len(game) > 17 else None,
                 "steamgriddb_id": game[18] if len(game) > 18 else None,
                 "artwork_last_updated": game[19] if len(game) > 19 else None,
+                "region": (game[20] if len(game) > 20 else None) or "PAL",
             }), 200
         else:
             return jsonify({"error": "Game not found"}), 404
@@ -1993,37 +2016,36 @@ def get_gallery_games():
         page = int(request.args.get('page', 1))
         per_page = min(int(request.args.get('per_page', 20)), 100)  # Cap at 100
         
-        # Filter parameters
-        title_filter = request.args.get('title', '').strip()
+        # Filter parameters (updated to match new API)
+        search_filter = request.args.get('search', '').strip()  # Changed from title to search
         platform_filter = request.args.get('platform', '').strip()
         genre_filter = request.args.get('genre', '').strip()
-        tags_filter = request.args.get('tags', '').strip()
+        region_filter = request.args.get('region', '').strip()  # New region filter
         year_min = request.args.get('year_min')
         year_max = request.args.get('year_max')
         completion_status = request.args.get('completion_status', '').strip()
         sort_order = request.args.get('sort', 'title_asc')
         
-        # Convert tags filter to list
-        tags_list = [tag.strip() for tag in tags_filter.split(',') if tag.strip()] if tags_filter else []
+        # Also support "limit" parameter (in addition to per_page) to match gallery_api.py
+        if request.args.get('limit'):
+            per_page = min(int(request.args.get('limit', 20)), 100)
         
         conn = sqlite3.connect(database_path)
         cursor = conn.cursor()
         
-        # Build the base query with JOINs for gallery metadata and tags
+        # Build the base query (simplified - no more tag joins)
         base_query = """
         FROM games g
         LEFT JOIN game_gallery_metadata ggm ON g.id = ggm.game_id
-        LEFT JOIN game_tag_associations gta ON g.id = gta.game_id
-        LEFT JOIN game_tags gt ON gta.tag_id = gt.id
         """
         
         # Build WHERE conditions
         where_conditions = []
         params = []
         
-        if title_filter:
+        if search_filter:
             # Enhanced search with special character normalization
-            normalized_search = normalize_for_search(title_filter)
+            normalized_search = normalize_for_search(search_filter)
             
             # Search using both the original term and the accent-stripped version
             where_conditions.append("""(
@@ -2033,7 +2055,7 @@ def get_gallery_games():
                     'á', 'a'), 'à', 'a'), 'ä', 'a'), 'â', 'a'),
                     'ó', 'o'), 'ò', 'o')) LIKE ?
             )""")
-            params.append(f"%{title_filter.lower()}%")
+            params.append(f"%{search_filter.lower()}%")
             params.append(f"%{normalized_search}%")
         
         if platform_filter:
@@ -2054,21 +2076,9 @@ def get_gallery_games():
             where_conditions.append("g.genres LIKE ?")
             params.append(f"%{genre_filter}%")
         
-        if tags_list:
-            # For tags, we need to find games that have ALL the specified tags
-            tag_placeholders = ','.join(['?' for _ in tags_list])
-            where_conditions.append(f"""
-                g.id IN (
-                    SELECT gta2.game_id 
-                    FROM game_tag_associations gta2 
-                    JOIN game_tags gt2 ON gta2.tag_id = gt2.id 
-                    WHERE gt2.tag_name IN ({tag_placeholders})
-                    GROUP BY gta2.game_id 
-                    HAVING COUNT(DISTINCT gt2.tag_name) = ?
-                )
-            """)
-            params.extend(tags_list)
-            params.append(len(tags_list))
+        if region_filter:
+            where_conditions.append("UPPER(IFNULL(g.region, 'PAL')) = ?")
+            params.append(region_filter.upper())
         
         if year_min:
             where_conditions.append("CAST(substr(g.release_date, 1, 4) AS INTEGER) >= ?")
@@ -2124,6 +2134,7 @@ def get_gallery_games():
             g.release_date,
             g.average_price,
             g.youtube_trailer_url,
+            g.region,
             ggm.completion_status,
             ggm.personal_rating,
             ggm.play_time_hours,
@@ -2150,21 +2161,10 @@ def get_gallery_games():
         cursor.execute(main_query, params + [per_page, offset])
         games_data = cursor.fetchall()
         
-        # Process games and add tags
+        # Process games (no longer fetching tags)
         games = []
         for game_row in games_data:
             game_id = game_row[0]
-            
-            # Get tags for this game
-            tags_query = """
-            SELECT gt.tag_name 
-            FROM game_tag_associations gta 
-            JOIN game_tags gt ON gta.tag_id = gt.id 
-            WHERE gta.game_id = ?
-            ORDER BY gt.tag_name
-            """
-            cursor.execute(tags_query, (game_id,))
-            tags = [row[0] for row in cursor.fetchall()]
             
             # Parse release year
             release_year = None
@@ -2186,38 +2186,57 @@ def get_gallery_games():
                 except (json.JSONDecodeError, TypeError):
                     platform = str(game_row[4])
             
+            # Split genres into list (for individual genre filtering)
+            genres_list = []
+            if game_row[5]:  # genres column
+                genres_list = [g.strip() for g in game_row[5].split(',') if g.strip()]
+                
+            # Split platforms into list 
+            platforms_list = []
+            if game_row[4]:  # platforms column
+                try:
+                    # Try to parse as JSON first
+                    platforms_data = json.loads(game_row[4])
+                    if isinstance(platforms_data, list):
+                        platforms_list = platforms_data
+                    else:
+                        platforms_list = [str(platforms_data)]
+                except (json.JSONDecodeError, TypeError):
+                    # Fall back to comma-separated string
+                    platforms_list = [p.strip() for p in str(game_row[4]).split(',') if p.strip()]
+            
             game = {
                 'id': game_id,
                 'title': game_row[1],
                 'description': game_row[2],
                 'publisher': game_row[3],
-                'platform': platform,  # Single platform for display
-                'platforms': game_row[4],  # Full platforms data
-                'genres': game_row[5],
+                'platform': platform,  # Single platform for display (backward compatibility)
+                'platforms': platforms_list,  # Convert platforms to list
+                'genres': genres_list,  # Convert to list for frontend
                 'series': game_row[6],
                 'release_date': game_row[7],
                 'release_year': release_year,
                 'average_price': game_row[8],
                 'youtube_trailer_url': game_row[9],
-                'completion_status': game_row[10],
-                'personal_rating': game_row[11],
-                'play_time_hours': game_row[12],
-                'notes': game_row[13],
-                'display_priority': game_row[14],
-                'is_favorite': bool(game_row[15]),
-                'date_acquired': game_row[16],
-                'date_completed': game_row[17],
-                'tags': tags,
-                # High-resolution artwork from SteamGridDB
-                'high_res_cover_url': game_row[18],
-                'high_res_cover_path': game_row[19],
-                'hero_image_url': game_row[20],
-                'hero_image_path': game_row[21],
-                'logo_image_url': game_row[22],
-                'logo_image_path': game_row[23],
-                'icon_image_url': game_row[24],
-                'icon_image_path': game_row[25],
-                'steamgriddb_id': game_row[26]
+                'region': game_row[10] or 'PAL',  # New region field
+                'completion_status': game_row[11],
+                'personal_rating': game_row[12],
+                'play_time_hours': game_row[13],
+                'notes': game_row[14],
+                'display_priority': game_row[15],
+                'is_favorite': bool(game_row[16]),
+                'date_acquired': game_row[17],
+                'date_completed': game_row[18],
+                # High-resolution artwork from SteamGridDB  
+                'high_res_cover_url': game_row[19],
+                'high_res_cover_path': game_row[20],
+                'hero_image_url': game_row[21],
+                'hero_image_path': game_row[22],
+                'logo_image_url': game_row[23],
+                'logo_image_path': game_row[24],
+                'icon_image_url': game_row[25],
+                'icon_image_path': game_row[26],
+                'steamgriddb_id': game_row[27]
             }
             games.append(game)
         
@@ -2225,24 +2244,26 @@ def get_gallery_games():
         
         return jsonify({
             'success': True,
-            'games': games,
-            'pagination': {
-                'current_page': page,
-                'per_page': per_page,
-                'total_games': total_games,
-                'total_pages': total_pages,
-                'has_prev': page > 1,
-                'has_next': page < total_pages
-            },
-            'filters_applied': {
-                'title': title_filter,
-                'platform': platform_filter,
-                'genre': genre_filter,
-                'tags': tags_list,
-                'year_min': year_min,
-                'year_max': year_max,
-                'completion_status': completion_status,
-                'sort': sort_order
+            'data': {
+                'games': games,
+                'pagination': {
+                    'current_page': page,
+                    'total_pages': total_pages,
+                    'total_count': total_games,
+                    'per_page': per_page,
+                    'has_next': page < total_pages,
+                    'has_prev': page > 1
+                },
+                'filters_applied': {
+                    'search': search_filter,
+                    'platform': platform_filter,
+                    'genre': genre_filter,
+                    'region': region_filter,
+                    'year_min': year_min,
+                    'year_max': year_max,
+                    'completion_status': completion_status,
+                    'sort': sort_order
+                }
             }
         })
         
@@ -2441,7 +2462,7 @@ def get_gallery_filters():
         
         platforms = sorted(unique_platforms)
         
-        # Get unique genres  
+        # Get unique genres (split from comma-separated strings)
         cursor.execute("""
             SELECT DISTINCT genres 
             FROM games 
@@ -2451,23 +2472,31 @@ def get_gallery_filters():
         genre_rows = cursor.fetchall()
         genres = []
         for row in genre_rows:
-            try:
-                genre_data = json.loads(row[0])
-                if isinstance(genre_data, list):
-                    genres.extend(genre_data)
-                elif isinstance(genre_data, str):
-                    genres.append(genre_data)
-            except (json.JSONDecodeError, TypeError):
-                genres.append(str(row[0]))
-        genres = sorted(list(set(genres)))
+            genre_data = row[0]
+            if genre_data:
+                # Split comma-separated genres and flatten
+                for genre in genre_data.split(','):
+                    genre = genre.strip()
+                    if genre and genre not in genres:
+                        genres.append(genre)
+        genres.sort()
         
-        # Get available tags
+        # Get unique regions
         cursor.execute("""
-            SELECT tag_name 
-            FROM game_tags 
-            ORDER BY tag_name
+            SELECT DISTINCT IFNULL(region, 'PAL') as region
+            FROM games 
         """)
-        tags = [row[0] for row in cursor.fetchall()]
+        region_rows = cursor.fetchall()
+        regions = sorted(list(set([row[0] for row in region_rows if row[0]])))
+        
+        # Ensure standard regions are available
+        if 'PAL' not in regions:
+            regions.append('PAL')
+        if 'US' not in regions:
+            regions.append('US')
+        if 'JP' not in regions:
+            regions.append('JP')
+        regions.sort()
         
         # Get release years
         cursor.execute("""
@@ -2494,11 +2523,23 @@ def get_gallery_filters():
         
         return jsonify({
             'success': True,
-            'platforms': platforms,
-            'genres': genres,  
-            'tags': tags,
-            'release_years': release_years,
-            'completion_statuses': completion_statuses
+            'data': {
+                'platforms': platforms,
+                'genres': genres,  
+                'regions': regions,
+                'completion_statuses': completion_statuses,
+                'sort_options': [
+                    {'value': 'title_asc', 'label': 'Title (A-Z)'},
+                    {'value': 'title_desc', 'label': 'Title (Z-A)'},
+                    {'value': 'date_desc', 'label': 'Release Date (Newest)'},
+                    {'value': 'date_asc', 'label': 'Release Date (Oldest)'},
+                    {'value': 'rating_desc', 'label': 'Personal Rating (High)'},
+                    {'value': 'rating_asc', 'label': 'Personal Rating (Low)'},
+                    {'value': 'price_desc', 'label': 'Price (High)'},
+                    {'value': 'price_asc', 'label': 'Price (Low)'},
+                    {'value': 'priority_desc', 'label': 'Display Priority'}
+                ]
+            }
         })
         
     except Exception as e:
