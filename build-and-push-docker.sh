@@ -2,6 +2,11 @@
 
 # Video Game Catalogue - Docker Build and Push Script
 # This script builds the Docker images from current source code and pushes them to the registry
+#
+# Usage:
+#   ./build-and-push-docker.sh                    # Use git branch as tag
+#   ./build-and-push-docker.sh -tag dev           # Use custom tag 'dev'
+#   ./build-and-push-docker.sh --tag feature-123  # Use custom tag 'feature-123'
 
 set -e
 
@@ -18,12 +23,46 @@ BACKEND_IMAGE="${REGISTRY_PREFIX}-backend"
 FRONTEND_IMAGE="${REGISTRY_PREFIX}-frontend"
 DATE_TAG=$(date +%Y%m%d-%H%M)
 
-# Determine branch and create a Docker-safe tag (no slashes or spaces)
-GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached")
-# Sanitize: lowercase, replace invalid chars (anything not [a-z0-9._-]) with '-'
-BRANCH_TAG=$(echo "$GIT_BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g')
+# Parse command line arguments
+CUSTOM_TAG=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -tag|--tag)
+      CUSTOM_TAG="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [-tag|--tag TAG_NAME]"
+      echo ""
+      echo "Examples:"
+      echo "  $0                    # Use git branch as tag"
+      echo "  $0 -tag dev           # Use custom tag 'dev'"
+      echo "  $0 --tag feature-123  # Use custom tag 'feature-123'"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Use -h or --help for usage information"
+      exit 1
+      ;;
+  esac
+done
 
-echo -e "${BLUE}🔖 Git branch: ${GREEN}${GIT_BRANCH}${NC} → tag: ${GREEN}${BRANCH_TAG}${NC}"
+# Determine tag to use
+if [ -n "$CUSTOM_TAG" ]; then
+    # Use custom tag provided by user
+    # Sanitize: lowercase, replace invalid chars (anything not [a-z0-9._-]) with '-'
+    MAIN_TAG=$(echo "$CUSTOM_TAG" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g')
+    echo -e "${BLUE}🏷️  Using custom tag: ${GREEN}${CUSTOM_TAG}${NC} → sanitized: ${GREEN}${MAIN_TAG}${NC}"
+    IS_MAIN_BRANCH=false
+else
+    # Use git branch as tag (existing behavior)
+    GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached")
+    # Sanitize: lowercase, replace invalid chars (anything not [a-z0-9._-]) with '-'
+    MAIN_TAG=$(echo "$GIT_BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g')
+    echo -e "${BLUE}🔖 Git branch: ${GREEN}${GIT_BRANCH}${NC} → tag: ${GREEN}${MAIN_TAG}${NC}"
+    IS_MAIN_BRANCH=$( [ "$MAIN_TAG" = "main" ] && echo true || echo false )
+fi
 
 echo -e "${BLUE}🐳 Video Game Catalogue - Docker Build & Push${NC}"
 echo "=================================================="
@@ -50,9 +89,9 @@ docker build \
     --platform linux/amd64 \
     -f backend/Dockerfile \
     -t ${BACKEND_IMAGE}:${DATE_TAG} \
-    -t ${BACKEND_IMAGE}:${BRANCH_TAG} \
-    $( [ "${BRANCH_TAG}" = "main" ] && echo -t ${BACKEND_IMAGE}:latest ) \
-    $( [ "${BRANCH_TAG}" = "main" ] && echo -t ${BACKEND_IMAGE}:main ) \
+    -t ${BACKEND_IMAGE}:${MAIN_TAG} \
+    $( [ "$IS_MAIN_BRANCH" = "true" ] && echo -t ${BACKEND_IMAGE}:latest ) \
+    $( [ "$IS_MAIN_BRANCH" = "true" ] && echo -t ${BACKEND_IMAGE}:main ) \
     .
 
 if [ $? -ne 0 ]; then
@@ -69,9 +108,9 @@ docker build \
     --platform linux/amd64 \
     -f frontend/Dockerfile \
     -t ${FRONTEND_IMAGE}:${DATE_TAG} \
-    -t ${FRONTEND_IMAGE}:${BRANCH_TAG} \
-    $( [ "${BRANCH_TAG}" = "main" ] && echo -t ${FRONTEND_IMAGE}:latest ) \
-    $( [ "${BRANCH_TAG}" = "main" ] && echo -t ${FRONTEND_IMAGE}:main ) \
+    -t ${FRONTEND_IMAGE}:${MAIN_TAG} \
+    $( [ "$IS_MAIN_BRANCH" = "true" ] && echo -t ${FRONTEND_IMAGE}:latest ) \
+    $( [ "$IS_MAIN_BRANCH" = "true" ] && echo -t ${FRONTEND_IMAGE}:main ) \
     frontend/
 
 if [ $? -ne 0 ]; then
@@ -86,9 +125,9 @@ echo -e "${BLUE}📤 Pushing images to Docker Hub...${NC}"
 
 echo -e "${BLUE}📤 Pushing backend:${DATE_TAG}...${NC}"
 docker push ${BACKEND_IMAGE}:${DATE_TAG}
-echo -e "${BLUE}📤 Pushing backend:${BRANCH_TAG}...${NC}"
-docker push ${BACKEND_IMAGE}:${BRANCH_TAG}
-if [ "${BRANCH_TAG}" = "main" ]; then
+echo -e "${BLUE}📤 Pushing backend:${MAIN_TAG}...${NC}"
+docker push ${BACKEND_IMAGE}:${MAIN_TAG}
+if [ "$IS_MAIN_BRANCH" = "true" ]; then
   echo -e "${BLUE}📤 Pushing backend:main and backend:latest...${NC}"
   docker push ${BACKEND_IMAGE}:main
   docker push ${BACKEND_IMAGE}:latest
@@ -96,9 +135,9 @@ fi
 
 echo -e "${BLUE}📤 Pushing frontend:${DATE_TAG}...${NC}"
 docker push ${FRONTEND_IMAGE}:${DATE_TAG}
-echo -e "${BLUE}📤 Pushing frontend:${BRANCH_TAG}...${NC}"
-docker push ${FRONTEND_IMAGE}:${BRANCH_TAG}
-if [ "${BRANCH_TAG}" = "main" ]; then
+echo -e "${BLUE}📤 Pushing frontend:${MAIN_TAG}...${NC}"
+docker push ${FRONTEND_IMAGE}:${MAIN_TAG}
+if [ "$IS_MAIN_BRANCH" = "true" ]; then
   echo -e "${BLUE}📤 Pushing frontend:main and frontend:latest...${NC}"
   docker push ${FRONTEND_IMAGE}:main
   docker push ${FRONTEND_IMAGE}:latest
@@ -108,14 +147,14 @@ echo -e "${GREEN}✅ All images pushed successfully!${NC}"
 echo ""
 echo "🎯 Images built and pushed:"
 echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:${DATE_TAG}${NC}"
-echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:${BRANCH_TAG}${NC}"
-if [ "${BRANCH_TAG}" = "main" ]; then
+echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:${MAIN_TAG}${NC}"
+if [ "$IS_MAIN_BRANCH" = "true" ]; then
   echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:main${NC}"
   echo -e "   Backend:  ${GREEN}${BACKEND_IMAGE}:latest${NC}"
 fi
 echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:${DATE_TAG}${NC}"
-echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:${BRANCH_TAG}${NC}"
-if [ "${BRANCH_TAG}" = "main" ]; then
+echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:${MAIN_TAG}${NC}"
+if [ "$IS_MAIN_BRANCH" = "true" ]; then
   echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:main${NC}"
   echo -e "   Frontend: ${GREEN}${FRONTEND_IMAGE}:latest${NC}"
 fi
