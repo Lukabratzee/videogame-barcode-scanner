@@ -2001,6 +2001,18 @@ def main():
     
     # Region selector for PriceCharting only
     if global_price_source == "PriceCharting":
+        # Initialize region from backend if no local preference exists
+        if (
+            "pricecharting_region" not in st.session_state
+            and "pricecharting_region" not in st.query_params
+        ):
+            try:
+                resp = requests.get(f"{BACKEND_URL}/default_region")
+                if resp.status_code == 200:
+                    backend_region = resp.json().get("default_region", "PAL")
+                    st.session_state["pricecharting_region"] = backend_region
+            except Exception:
+                pass
         region_options = ["PAL", "NTSC", "Japan"]
         
         # Initialize region selection with PAL as default
