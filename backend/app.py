@@ -1336,6 +1336,12 @@ def get_games():
     year = request.args.get("year")
     title = request.args.get("title")
     sort = request.args.get("sort")  # e.g. "alphabetical"
+    
+    # Pagination parameters
+    page = int(request.args.get("page", 1))
+    per_page = request.args.get("per_page")
+    if per_page:
+        per_page = min(int(per_page), 100)  # Cap at 100 games per page
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(BASE_DIR, database_path)
@@ -1384,6 +1390,22 @@ def get_games():
     if region:
         query += " AND UPPER(IFNULL(region, 'PAL')) = ?"
         params.append(region.upper())
+    
+    # Optional price range filter
+    price_min = request.args.get("price_min")
+    price_max = request.args.get("price_max")
+    if price_min:
+        try:
+            query += " AND average_price >= ?"
+            params.append(float(price_min))
+        except (ValueError, TypeError):
+            pass
+    if price_max:
+        try:
+            query += " AND average_price <= ?"
+            params.append(float(price_max))
+        except (ValueError, TypeError):
+            pass
 
     if sort == "alphabetical":
         query += " ORDER BY title ASC"
@@ -1392,6 +1414,22 @@ def get_games():
         #Handles NULLS by placing them at the end
         query += " NULLS LAST"
 
+    # Handle pagination if requested
+    if per_page:
+        # Get total count first
+        count_query = query.replace("SELECT *", "SELECT COUNT(*)")
+        try:
+            cursor.execute(count_query, params)
+            total_count = cursor.fetchone()[0]
+        except Exception as e:
+            logging.error(f"/games count query failed: {e}")
+            conn.close()
+            return jsonify({"error": "Count query failed"}), 500
+        
+        # Add pagination to main query
+        offset = (page - 1) * per_page
+        query += f" LIMIT {per_page} OFFSET {offset}"
+    
     try:
         cursor.execute(query, params)
         games = cursor.fetchall()
@@ -1431,8 +1469,23 @@ def get_games():
             }
         )
 
-    # logging.debug(f"Fetched games: {game_list}")
-    return jsonify(game_list)
+    # Return with pagination info if requested, otherwise just the games list
+    if per_page:
+        total_pages = (total_count + per_page - 1) // per_page
+        return jsonify({
+            "games": game_list,
+            "pagination": {
+                "current_page": page,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "per_page": per_page,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            }
+        })
+    else:
+        # Backward compatibility - return just the list
+        return jsonify(game_list)
 
 
 @app.route("/consoles", methods=["GET"])
@@ -2087,6 +2140,22 @@ def get_gallery_games():
         if year_max:
             where_conditions.append("CAST(substr(g.release_date, 1, 4) AS INTEGER) <= ?")
             params.append(int(year_max))
+        
+        # Price range filters
+        price_min = request.args.get('price_min')
+        price_max = request.args.get('price_max')
+        if price_min:
+            try:
+                where_conditions.append("g.average_price >= ?")
+                params.append(float(price_min))
+            except (ValueError, TypeError):
+                pass
+        if price_max:
+            try:
+                where_conditions.append("g.average_price <= ?")
+                params.append(float(price_max))
+            except (ValueError, TypeError):
+                pass
         
         if completion_status:
             where_conditions.append("ggm.completion_status = ?")

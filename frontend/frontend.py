@@ -57,11 +57,28 @@ ICLOUD_LINK_ALT = "https://www.icloud.com/shortcuts/bea9f60437194f0fad2f89b87c9d
 # Backend API Helper Functions
 # -------------------------
 
-def fetch_games(filters=None):
+def fetch_games(filters=None, page=1, per_page=None):
+    """Fetch games with optional pagination support"""
     try:
-        response = requests.get(f"{BACKEND_URL}/games", params=filters)
+        params = filters.copy() if filters else {}
+        
+        # Add pagination if per_page is specified
+        if per_page:
+            params["page"] = page
+            params["per_page"] = per_page
+        
+        response = requests.get(f"{BACKEND_URL}/games", params=params)
         if response.status_code == 200:
-            return response.json()
+            result = response.json()
+            
+            # If pagination was requested, return with pagination info
+            if per_page and isinstance(result, dict) and "games" in result:
+                return result
+            # Otherwise return just the games list (backward compatibility)
+            elif isinstance(result, list):
+                return result
+            else:
+                return result.get("games", [])
         else:
             try:
                 # Attempt to parse error JSON if provided
@@ -806,6 +823,37 @@ def game_detail_page():
     else:
         year_range = None
     
+    # Price range filter
+    st.sidebar.markdown("### Price Filters")
+    
+    # Get price range from all games for slider bounds
+    try:
+        # Fetch price range from backend or calculate from current games
+        all_games_for_price = fetch_gallery_games(filters={})
+        games_with_prices = [g for g in all_games_for_price.get("games", []) if g.get("average_price") is not None and g.get("average_price") > 0]
+        
+        if games_with_prices:
+            prices = [float(g["average_price"]) for g in games_with_prices]
+            min_price, max_price = min(prices), max(prices)
+            
+            if min_price < max_price:
+                detail_price_range = st.sidebar.slider(
+                    "Price Range (£)",
+                    min_value=float(min_price),
+                    max_value=float(max_price),
+                    value=(float(min_price), float(max_price)),
+                    step=0.50,
+                    format="£%.2f",
+                    key="detail_gallery_price_range"
+                )
+            else:
+                st.sidebar.info(f"Only price available: £{min_price:.2f}")
+                detail_price_range = (min_price, max_price)
+        else:
+            detail_price_range = None
+    except Exception as e:
+        detail_price_range = None
+    
     # Gallery view options
     st.sidebar.markdown("### Display Options")
     per_page = st.sidebar.selectbox(
@@ -839,6 +887,13 @@ def game_detail_page():
         if year_range and year_range != (min_year, max_year):
             filters["year_min"] = year_range[0]
             filters["year_max"] = year_range[1]
+        if detail_price_range:
+            # Add price filtering - always apply if detail_price_range is set
+            try:
+                filters["price_min"] = detail_price_range[0]
+                filters["price_max"] = detail_price_range[1]
+            except Exception:
+                pass
         
         # Apply the filters to the library session state
         st.session_state["gallery_filters"] = filters
@@ -1425,6 +1480,37 @@ def gallery_page():
     else:
         year_range = None
     
+    # Price range filter
+    st.sidebar.markdown("### Price Filters")
+    
+    # Get price range from all games for slider bounds
+    try:
+        # Fetch price range from backend or calculate from current games
+        all_games_for_price = fetch_gallery_games(filters={})
+        games_with_prices = [g for g in all_games_for_price.get("games", []) if g.get("average_price") is not None and g.get("average_price") > 0]
+        
+        if games_with_prices:
+            prices = [float(g["average_price"]) for g in games_with_prices]
+            min_price, max_price = min(prices), max(prices)
+            
+            if min_price < max_price:
+                price_range = st.sidebar.slider(
+                    "Price Range (£)",
+                    min_value=float(min_price),
+                    max_value=float(max_price),
+                    value=(float(min_price), float(max_price)),
+                    step=0.50,
+                    format="£%.2f",
+                    key="gallery_price_range"
+                )
+            else:
+                st.sidebar.info(f"Only price available: £{min_price:.2f}")
+                price_range = (min_price, max_price)
+        else:
+            price_range = None
+    except Exception as e:
+        price_range = None
+    
     # Library view options
     st.sidebar.markdown("### Display Options")
     per_page = st.sidebar.selectbox(
@@ -1467,6 +1553,13 @@ def gallery_page():
     if year_range and year_range != (min_year, max_year):
         filters["year_min"] = year_range[0]
         filters["year_max"] = year_range[1]
+    if price_range:
+        # Add price filtering - always apply if price_range is set
+        try:
+            filters["price_min"] = price_range[0]
+            filters["price_max"] = price_range[1]
+        except Exception:
+            pass
     
     # Update session state
     st.session_state["gallery_filters"] = filters
@@ -1483,7 +1576,7 @@ def gallery_page():
     # Store current page games for actions within forms (e.g., Update Prices in Price History form)
     st.session_state["current_gallery_games"] = games
     pagination = gallery_data.get("pagination", {})
-    total_games = pagination.get("total_games", 0)
+    total_games = pagination.get("total_count", 0)  # Backend uses total_count, not total_games
     total_pages = pagination.get("total_pages", 1)
     
     # Display results summary
@@ -1749,6 +1842,12 @@ def main():
         st.session_state["filters_active"] = False
     if "page" not in st.session_state:
         st.session_state["page"] = "home"
+    
+    # Initialize editor pagination
+    if "editor_page" not in st.session_state:
+        st.session_state["editor_page"] = 1
+    if "editor_per_page" not in st.session_state:
+        st.session_state["editor_per_page"] = 20
 
     # -------------------------
     # Sidebar: Navigation Buttons
@@ -2315,14 +2414,54 @@ def main():
             st.session_state["filter_genre"] = ""
             st.session_state["filter_year"] = ""
             st.session_state["filter_region"] = "All"
+            # Reset price range to full range
+            if "filter_price_range" in st.session_state:
+                del st.session_state["filter_price_range"]
             st.session_state["filters_active"] = False
-            games = fetch_games()  # Re-fetch all games
+            # Don't re-fetch games here, let the filter logic handle it with pagination
 
         selected_publisher = st.selectbox("Publisher", [""] + publishers, key="filter_publisher")
         selected_platform = st.selectbox("Platform", [""] + platforms, key="filter_platform")
         selected_genre = st.selectbox("Genre", [""] + genres, key="filter_genre")
         selected_year = st.selectbox("Release Year", [""] + years, key="filter_year")
         selected_region = st.selectbox("Region", ["All"] + regions, key="filter_region")
+        
+        # Price range filter for editor
+        try:
+            all_editor_games_data = fetch_games(filters={})  # Get all games for accurate price range calculation
+            if isinstance(all_editor_games_data, dict) and "games" in all_editor_games_data:
+                all_editor_games = all_editor_games_data["games"]
+            elif isinstance(all_editor_games_data, list):
+                all_editor_games = all_editor_games_data
+            else:
+                all_editor_games = []
+            
+            if all_editor_games:
+                games_with_prices = [g for g in all_editor_games if g.get("average_price") is not None and g.get("average_price") > 0]
+                
+                if games_with_prices:
+                    prices = [float(g["average_price"]) for g in games_with_prices]
+                    min_price, max_price = min(prices), max(prices)
+                    
+                    if min_price < max_price:
+                        selected_price_range = st.slider(
+                            "Price Range (£)",
+                            min_value=float(min_price),
+                            max_value=float(max_price),
+                            value=(float(min_price), float(max_price)),
+                            step=0.50,
+                            format="£%.2f",
+                            key="filter_price_range"
+                        )
+                    else:
+                        st.info(f"Only price available: £{min_price:.2f}")
+                        selected_price_range = None
+                else:
+                    selected_price_range = None
+            else:
+                selected_price_range = None
+        except Exception:
+            selected_price_range = None
 
         # Add checkboxes for sorting
         sort_alphabetical = st.checkbox("Sort Alphabetically", key="filter_sort_alphabetical")
@@ -2339,6 +2478,13 @@ def main():
             filters["year"] = selected_year
         if selected_region and selected_region != "All":
             filters["region"] = selected_region
+        if selected_price_range:
+            # Add price filtering to editor - always apply if selected_price_range is set
+            try:
+                filters["price_min"] = selected_price_range[0]
+                filters["price_max"] = selected_price_range[1]
+            except Exception:
+                pass
 
         # Decide which sort to apply. If both are checked, highest takes precedence.
         if sort_highest_value:
@@ -2346,13 +2492,32 @@ def main():
         elif sort_alphabetical:
             filters["sort"] = "alphabetical"
 
+        # Add pagination controls to Advanced Filters
+        st.markdown("### Display Options")
+        per_page = st.selectbox(
+            "Games per page",
+            [10, 20, 50, 100],
+            index=1,  # Default to 20
+            key="editor_per_page_select"
+        )
+        st.session_state["editor_per_page"] = per_page
+
         if st.button("Filter", key="filter_button"):
             st.session_state["filters_active"] = True
-            games = fetch_games(filters)
+            st.session_state["editor_page"] = 1  # Reset to first page
+            editor_data = fetch_games(filters, page=st.session_state["editor_page"], per_page=per_page)
         elif st.session_state["filters_active"]:
-            games = fetch_games(filters)
+            editor_data = fetch_games(filters, page=st.session_state["editor_page"], per_page=per_page)
         else:
-            games = []
+            editor_data = []
+
+        # Handle both old format (list) and new format (dict with pagination)
+        if isinstance(editor_data, dict) and "games" in editor_data:
+            games = editor_data["games"]
+            pagination_info = editor_data.get("pagination", {})
+        else:
+            games = editor_data if isinstance(editor_data, list) else []
+            pagination_info = {}
 
         # --- EXPORT CSV BUTTON ---
         filter_params = {}
@@ -2434,6 +2599,42 @@ def main():
                         st.info("No games selected for deletion.")
         else:
             st.warning("No games found for the applied filters.")
+        
+        # Add pagination controls for filtered games
+        if pagination_info and pagination_info.get("total_pages", 1) > 1:
+            st.markdown("---")
+            col_prev, col_info, col_next = st.columns([1, 2, 1])
+            
+            with col_prev:
+                if st.session_state["editor_page"] > 1:
+                    if st.button("Previous", key="editor_prev"):
+                        st.session_state["editor_page"] -= 1
+                        st.rerun()
+            
+            with col_info:
+                current_page = pagination_info.get("current_page", 1)
+                total_pages = pagination_info.get("total_pages", 1)
+                total_count = pagination_info.get("total_count", 0)
+                st.markdown(f"**Page {current_page} of {total_pages}** ({total_count} games total)")
+                
+                # Page jump selector for small page counts
+                if total_pages <= 10:
+                    page_options = list(range(1, total_pages + 1))
+                    selected_page = st.selectbox(
+                        "Jump to page:",
+                        page_options,
+                        index=current_page - 1,
+                        key="editor_page_jump"
+                    )
+                    if selected_page != st.session_state["editor_page"]:
+                        st.session_state["editor_page"] = selected_page
+                        st.rerun()
+            
+            with col_next:
+                if pagination_info.get("has_next", False):
+                    if st.button("Next", key="editor_next"):
+                        st.session_state["editor_page"] += 1
+                        st.rerun()
 
     export_expander = st.sidebar.expander("Export All Games")
     with export_expander:
@@ -2451,9 +2652,14 @@ def main():
 
         bulk_delete_expander = st.sidebar.expander("Bulk Delete Games")
         with bulk_delete_expander:
-            # Fetch the list of games that are currently displayed
-            # (You could use fetch_games() to get all games or the currently filtered games)
-            all_games = fetch_games()  # or use your current filtered list if desired
+            # Fetch the list of games with pagination to avoid loading everything
+            bulk_games_data = fetch_games(filters={}, page=1, per_page=100)  # Load first 100 for bulk delete selection
+            if isinstance(bulk_games_data, dict) and "games" in bulk_games_data:
+                all_games = bulk_games_data["games"]
+            elif isinstance(bulk_games_data, list):
+                all_games = bulk_games_data
+            else:
+                all_games = []
 
             # Build a dictionary mapping game titles to IDs.
             # Optionally, you can combine the title and ID in the display string.
@@ -2469,9 +2675,14 @@ def main():
                         st.success(f"Deleted game: {title}")
                     else:
                         st.error(f"Failed to delete game: {title}")
-                # Optionally, refresh the games list after deletion:
-                # e.g., st.session_state["filters_active"] = False or update the games variable
-                all_games = fetch_games()
+                # Refresh the games list after deletion with pagination
+                bulk_games_data = fetch_games(filters={}, page=1, per_page=100)
+                if isinstance(bulk_games_data, dict) and "games" in bulk_games_data:
+                    all_games = bulk_games_data["games"]
+                elif isinstance(bulk_games_data, list):
+                    all_games = bulk_games_data
+                else:
+                    all_games = []
 
     # -------------------------
     # Rest of the UI (Barcode scanning, local searches, etc.)
@@ -2803,7 +3014,15 @@ def main():
     # -------------------------
     # Overall Totals and Top Games (if no filters are active)
     # -------------------------
-    all_games = fetch_games()
+    # Get total value from ALL games (no pagination for total calculation)
+    all_games_data = fetch_games(filters={})  # No pagination - get all games for accurate total
+    if isinstance(all_games_data, dict) and "games" in all_games_data:
+        all_games = all_games_data["games"]
+    elif isinstance(all_games_data, list):
+        all_games = all_games_data
+    else:
+        all_games = []
+        
     overall_total_value = calculate_total_cost(all_games)
     st.markdown(
         f"<h3>Total Value of All Scanned Games: <span style='color: red;'>£{overall_total_value:.2f}</span></h3>",
@@ -2837,6 +3056,7 @@ def main():
                             <div><strong>Genres:</strong> {game['genres']}</div>
                             <div><strong>Series:</strong> {game['series']}</div>
                             <div><strong>Release Date:</strong> {game['release_date']}</div>
+                            <div><strong>Region:</strong> {game.get('region', 'N/A')}</div>
                             <div><strong>Average Price:</strong> {average_price}</div>
                         </div>
                     </div>
@@ -2845,6 +3065,8 @@ def main():
                 )
         else:
             st.info("No games with prices found yet. Add some games to see the top 5!")
+        
+
 
 
 

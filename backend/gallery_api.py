@@ -201,6 +201,26 @@ def get_gallery_games():
             count_query += search_condition
             query_params.extend([f"%{search_query.lower()}%", f"%{normalized_search}%"])
         
+        # Price range filters
+        price_min = request.args.get('price_min')
+        price_max = request.args.get('price_max')
+        if price_min:
+            try:
+                price_condition = " AND g.average_price >= ?"
+                base_query += price_condition
+                count_query += price_condition
+                query_params.append(float(price_min))
+            except (ValueError, TypeError):
+                pass
+        if price_max:
+            try:
+                price_condition = " AND g.average_price <= ?"
+                base_query += price_condition
+                count_query += price_condition
+                query_params.append(float(price_max))
+            except (ValueError, TypeError):
+                pass
+        
         # Add sorting
         sort_mapping = {
             'title_asc': 'g.title ASC',
