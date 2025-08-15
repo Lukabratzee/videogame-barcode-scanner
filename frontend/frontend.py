@@ -405,7 +405,7 @@ def store_gallery_state():
         "gallery_per_page", "gallery_platform_filter", 
         "gallery_genre_filter", "gallery_search_filter", "gallery_year_range",
         "gallery_region_filter", "gallery_completion_filter", "gallery_sort_order",
-        "gallery_price_min", "gallery_price_max"
+        "gallery_price_range"
     ]
     
     for key in safe_keys:
@@ -428,7 +428,7 @@ def restore_gallery_state():
             "gallery_per_page", "gallery_platform_filter", 
             "gallery_genre_filter", "gallery_search_filter", "gallery_year_range",
             "gallery_region_filter", "gallery_completion_filter", "gallery_sort_order",
-            "gallery_price_min", "gallery_price_max"
+            "gallery_price_range"
         ]
         
         for key, value in stored_state.items():
