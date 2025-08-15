@@ -829,7 +829,7 @@ def game_detail_page():
     # Get price range from all games for slider bounds
     try:
         # Fetch price range from backend or calculate from current games
-        all_games_for_price = fetch_gallery_games(filters={})
+        all_games_for_price = fetch_gallery_games(filters={}, per_page=10000)  # Get all games for price range
         games_with_prices = [g for g in all_games_for_price.get("games", []) if g.get("average_price") is not None and g.get("average_price") > 0]
         
         if games_with_prices:
@@ -1486,7 +1486,7 @@ def gallery_page():
     # Get price range from all games for slider bounds
     try:
         # Fetch price range from backend or calculate from current games
-        all_games_for_price = fetch_gallery_games(filters={})
+        all_games_for_price = fetch_gallery_games(filters={}, per_page=10000)  # Get all games for price range
         games_with_prices = [g for g in all_games_for_price.get("games", []) if g.get("average_price") is not None and g.get("average_price") > 0]
         
         if games_with_prices:

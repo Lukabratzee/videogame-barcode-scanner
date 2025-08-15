@@ -1341,7 +1341,7 @@ def get_games():
     page = int(request.args.get("page", 1))
     per_page = request.args.get("per_page")
     if per_page:
-        per_page = min(int(per_page), 100)  # Cap at 100 games per page
+        per_page = min(int(per_page), 10000)  # Cap at 10000 games per page for price range calculations
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(BASE_DIR, database_path)
@@ -2054,7 +2054,7 @@ def get_gallery_games():
     
     Query parameters:
     - page: Page number (default: 1)
-    - per_page: Games per page (default: 20, max: 100)
+    - per_page: Games per page (default: 20, max: 10000)
     - title: Filter by title (partial match)
     - platform: Filter by platform
     - genre: Filter by genre
@@ -2067,7 +2067,7 @@ def get_gallery_games():
     try:
         # Parse query parameters
         page = int(request.args.get('page', 1))
-        per_page = min(int(request.args.get('per_page', 20)), 100)  # Cap at 100
+        per_page = min(int(request.args.get('per_page', 20)), 10000)  # Cap at 10000 for price range calculations
         
         # Filter parameters (updated to match new API)
         search_filter = request.args.get('search', '').strip()  # Changed from title to search
@@ -2081,7 +2081,7 @@ def get_gallery_games():
         
         # Also support "limit" parameter (in addition to per_page) to match gallery_api.py
         if request.args.get('limit'):
-            per_page = min(int(request.args.get('limit', 20)), 100)
+            per_page = min(int(request.args.get('limit', 20)), 10000)
         
         conn = sqlite3.connect(database_path)
         cursor = conn.cursor()
