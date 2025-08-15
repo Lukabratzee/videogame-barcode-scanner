@@ -810,7 +810,9 @@ class GameScan:
             if not exact_match and not alternative_matches:
                 return jsonify({"error": "No results found on IGDB"}), 404
 
-            # Store the IGDB results for later use in /confirm
+
+
+            # Store the IGDB results (keep original for internal use in /confirm)
             GameScan.response_data = {
                 "barcode": barcode,
                 "game_title": game_title,
@@ -819,12 +821,25 @@ class GameScan:
                 "combined_price": combined_price
             }
 
-            return jsonify({
-                "message": "Game found on IGDB",
-                "game_title": game_title,
-                "exact_match": exact_match,
-                "alternative_matches": alternative_matches
-            }), 200
+            # Return response in exact format that the iOS Shortcut expects
+            response = {
+                "exact_match": {
+                    "index": 1,
+                    "name": exact_match["name"],
+                    "platforms": [p["name"] for p in exact_match.get("platforms", [])],
+                } if exact_match else {},
+                "alternative_matches": [
+                    {
+                        "index": idx,
+                        "name": alt["name"],
+                        "platforms": [p["name"] for p in alt.get("platforms", [])],
+                    }
+                    for idx, alt in enumerate(alternative_matches, start=2)
+                ],
+                "average_price": combined_price,
+            }
+            logging.debug(f"Returning /scan response: {response}")
+            return jsonify(response)
 
         except Exception as e:
             logging.error(f"Error in /scan route: {e}")
@@ -865,6 +880,28 @@ class GameScan:
 
             if not selected_game:
                 return jsonify({"error": "No game found for that selection"}), 404
+
+            # Check if we need platform selection
+            selected_platform_raw = data.get("selected_platform", "").strip()
+            
+            # If selected_platform contains newlines (multiple platforms), show platform selection
+            if selected_platform_raw and "\n" in selected_platform_raw:
+                # Extract platform names from the selected game
+                platform_names = []
+                for platform in selected_game.get("platforms", []):
+                    if isinstance(platform, dict) and platform.get("name"):
+                        platform_names.append(platform.get("name"))
+                    elif isinstance(platform, str):
+                        platform_names.append(platform)
+                
+                platforms_raw = "\n".join(platform_names)
+                logging.warning("Client sent newline-separated platforms; returning platform options for selection")
+                return jsonify({
+                    "need_platform_selection": True,
+                    "selected_game_name": selected_game.get("name"),
+                    "platform_options": platform_names,
+                    "platforms": platforms_raw
+                }), 200
 
             # Safely extract cover image
             cover = selected_game.get("cover")
