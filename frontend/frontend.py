@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import requests
 import time
 import os, sys
+import logging
 
 # Configure Streamlit page - MUST be the very first Streamlit command!
 st.set_page_config(
@@ -142,6 +143,8 @@ def normalize_region(region):
     else:
         # Default to PAL for unknown regions
         return "PAL"
+
+
 
 def add_game(game_data):
     # Normalize the region before sending to backend
@@ -2011,17 +2014,32 @@ def main():
             region_index = 0
             current_region = "PAL"
             
+        # Placeholder so feedback appears directly under the region selectbox
+        region_feedback = st.sidebar.empty()
+
+        # Ensure backend config is updated immediately when user changes region
+        def _on_pricecharting_region_change():
+            new_region = st.session_state.get("pricecharting_region", "PAL")
+            try:
+                response = requests.post(
+                    f"{BACKEND_URL}/default_region",
+                    json={"default_region": new_region}
+                )
+                if response.status_code == 200:
+                    region_feedback.success(f"Region updated to {new_region}", icon="✅")
+                else:
+                    region_feedback.error("Failed to update backend region", icon="⚠️")
+            except Exception as e:
+                region_feedback.error(f"Error syncing region: {e}", icon="⚠️")
+
         selected_region = st.sidebar.selectbox(
             "PriceCharting Region:",
             region_options,
             index=region_index,
             key="pricecharting_region",
-            help="Choose the region for PriceCharting pricing:\n• PAL: European market prices\n• NTSC: North American market prices\n• Japan: Japanese market prices"
+            help="Choose the region for PriceCharting pricing:\n• PAL: European market prices\n• NTSC: North American market prices\n• Japan: Japanese market prices",
+            on_change=_on_pricecharting_region_change
         )
-        
-        # Update session state when region changes
-        if selected_region != current_region:
-            st.session_state["pricecharting_region"] = selected_region
         
         # Boxed toggle for PriceCharting condition selection
         boxed_condition = st.sidebar.checkbox(

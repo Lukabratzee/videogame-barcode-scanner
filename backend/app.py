@@ -316,6 +316,27 @@ def get_price_source():
     config = load_config()
     return config.get("price_source", "PriceCharting")
 
+def get_default_region():
+    """Get current default region preference"""
+    config = load_config()
+    return config.get("default_region", "PAL")
+
+def set_default_region(region):
+    """Set default region preference"""
+    if region not in ["PAL", "NTSC", "Japan"]:
+        logging.warning(f"Invalid region attempted: {region}")
+        return False
+    
+    try:
+        config = load_config()
+        config["default_region"] = region
+        save_config(config)
+        logging.info(f"Default region set to: {region}")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to set default region: {e}")
+        return False
+
 def set_price_source(price_source):
     """Set price source preference"""
     if price_source not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
@@ -950,14 +971,20 @@ class GameScan:
             price_source = get_price_source()
             logging.debug(f"Using price source: {price_source}")
 
+            # Get region preference from request or use configured default
+            region = data.get("region")
+            if not region:
+                region = get_default_region()
+            logging.debug(f"Using region for price scraping: {region}")
+            
             # Perform price scraping using the selected source
             if price_source == "Amazon":
                 scraped_price = scrape_amazon_price(search_query)
             elif price_source == "CeX":
                 scraped_price = scrape_cex_price(search_query)
             elif price_source == "PriceCharting":
-                # Default to PAL region for backend calls
-                pricecharting_data = scrape_pricecharting_price(search_query, None, "PAL")
+                # Use region from request or default to PAL
+                pricecharting_data = scrape_pricecharting_price(search_query, None, region)
                 # Use the best representative price (prioritizes loose -> CIB -> new)
                 scraped_price = get_best_pricecharting_price(pricecharting_data)
                 
@@ -969,8 +996,10 @@ class GameScan:
                 scraped_price = scrape_ebay_prices(search_query)
             
             game_data["average_price"] = scraped_price
+            game_data["region"] = region
 
             logging.debug(f"Scraped price from {price_source}: {scraped_price}")
+            logging.debug(f"Using region: {region}")
 
             inserted = save_game_to_db(game_data)
             if not inserted:
@@ -1824,6 +1853,46 @@ def set_price_source_endpoint():
         logging.error(f"❌ Error in set_price_source_endpoint: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/default_region", methods=["GET"])
+def get_default_region_endpoint():
+    """Get current default region preference"""
+    try:
+        current_region = get_default_region()
+        return jsonify({"default_region": current_region}), 200
+    except Exception as e:
+        logging.error(f"Error getting default region: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/default_region", methods=["POST"])
+def set_default_region_endpoint():
+    """Set default region preference"""
+    try:
+        data = request.json
+        region = data.get("default_region")
+        
+        logging.info(f"Received default region change request: {region}")
+        
+        if not region:
+            logging.error("No default_region provided in request")
+            return jsonify({"error": "default_region is required"}), 400
+        
+        if region not in ["PAL", "NTSC", "Japan"]:
+            logging.error(f"Invalid region requested: {region}")
+            return jsonify({"error": "Invalid region. Must be PAL, NTSC, or Japan"}), 400
+        
+        logging.info(f"Attempting to set default region to: {region}")
+        
+        if set_default_region(region):
+            logging.info(f"✅ Default region successfully changed to: {region}")
+            return jsonify({"message": f"Default region updated to {region}", "default_region": region}), 200
+        else:
+            logging.error(f"❌ Failed to set default region to: {region}")
+            return jsonify({"error": "Failed to update default region"}), 500
+            
+    except Exception as e:
+        logging.error(f"❌ Error in set_default_region_endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # -------------------------
 # Update Game Price Endpoint
 # -------------------------
@@ -1872,7 +1941,7 @@ def update_game_price(game_id):
         elif price_source == "CeX":
             new_price = scrape_cex_price(search_query)
         elif price_source == "PriceCharting":
-            # Default to PAL region for backend calls
+            # Default to PAL region for backend calls (could be enhanced to accept region parameter)
             pricecharting_data = scrape_pricecharting_price(search_query, None, "PAL")
             # Use the best representative price (prioritizes loose -> CIB -> new)
             new_price = get_best_pricecharting_price(pricecharting_data)
