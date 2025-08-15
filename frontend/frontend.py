@@ -1676,17 +1676,17 @@ def display_gallery_tile(column, game):
         region = game.get('region', 'PAL')
         platform_region_text = f"{platform_text} ({region})"
         
-        # Genre display (replacing tags)
+        # Genre display (limit to 1 genre to save space for price)
         genres = game.get("genres", [])
         genre_html = ""
         if genres:
-            display_genres = genres[:2]  # Show up to 2 genres
+            display_genres = genres[:1]  # Show only 1 genre to make room for price
             genre_colors = ["#667eea", "#764ba2", "#f093fb", "#f5576c", "#4ecdc4", "#45b7d1"]
             for i, genre in enumerate(display_genres):
                 color = genre_colors[i % len(genre_colors)]
                 genre_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin-right: 4px; display: inline-block;">{genre.strip()}</span>'
-            if len(genres) > 2:
-                genre_html += f'<span style="color: #888; font-size: 9px; font-style: italic;">+{len(genres) - 2}</span>'
+            if len(genres) > 1:
+                genre_html += f'<span style="color: #888; font-size: 9px; font-style: italic;">+{len(genres) - 1}</span>'
         
         # Price and year
         price = game.get("average_price")
