@@ -2383,8 +2383,9 @@ def get_gallery_games():
             
             # Split genres into list (for individual genre filtering)
             genres_list = []
-            if game_row[5]:  # genres column
-                genres_list = [g.strip() for g in game_row[5].split(',') if g.strip()]
+            genres_field = game_row[5]
+            if genres_field and str(genres_field).strip():  # genres column
+                genres_list = [g.strip() for g in str(genres_field).split(',') if g.strip()]
                 
             # Split platforms into list 
             platforms_list = []

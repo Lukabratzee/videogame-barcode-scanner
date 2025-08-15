@@ -4,6 +4,7 @@ import requests
 import time
 import os, sys
 import logging
+import html
 
 # Configure Streamlit page - MUST be the very first Streamlit command!
 st.set_page_config(
@@ -395,6 +396,53 @@ def fetch_gallery_filters():
     else:
         return {"platforms": [], "genres": [], "regions": [], "completion_statuses": [], "sort_options": []}
 
+def store_gallery_state():
+    """Store the current gallery state before navigating to game detail"""
+    gallery_state = {}
+    
+    # Store only specific gallery state keys, avoiding widget-specific ones
+    safe_keys = [
+        "gallery_per_page", "gallery_platform_filter", 
+        "gallery_genre_filter", "gallery_search_filter", "gallery_year_range",
+        "gallery_region_filter", "gallery_completion_filter", "gallery_sort_order",
+        "gallery_price_min", "gallery_price_max"
+    ]
+    
+    for key in safe_keys:
+        if key in st.session_state:
+            gallery_state[key] = st.session_state[key]
+    
+    # Store the current page type
+    gallery_state["previous_page"] = "gallery"
+    
+    # Store the state
+    st.session_state["stored_gallery_state"] = gallery_state
+
+def restore_gallery_state():
+    """Restore the previously stored gallery state when returning from game detail"""
+    stored_state = st.session_state.get("stored_gallery_state", {})
+    
+    if stored_state:
+        # Restore only safe gallery session state
+        safe_keys = [
+            "gallery_per_page", "gallery_platform_filter", 
+            "gallery_genre_filter", "gallery_search_filter", "gallery_year_range",
+            "gallery_region_filter", "gallery_completion_filter", "gallery_sort_order",
+            "gallery_price_min", "gallery_price_max"
+        ]
+        
+        for key, value in stored_state.items():
+            if key in safe_keys and key != "previous_page":  # Don't restore meta keys
+                try:
+                    st.session_state[key] = value
+                except Exception as e:
+                    # Log any issues with specific keys but continue
+                    pass
+        
+        # Clear the stored state
+        if "stored_gallery_state" in st.session_state:
+            del st.session_state["stored_gallery_state"]
+
 def fetch_price_history(game_id):
     """Fetch price history for a specific game"""
     try:
@@ -624,22 +672,22 @@ def display_game_item(game):
                     average_price = "N/A"
             else:
                 average_price = "N/A"
-            # Display game details using HTML formatting
+            # Display game details using HTML formatting with proper escaping
             st.markdown(
                 f"""
                 <div class="game-container">
-                    <img src="{cover_image_url}" class="game-image">
+                    <img src="{html.escape(cover_image_url)}" class="game-image">
                     <div class="game-details">
-                        <div><strong>ID:</strong> {game.get('id', 'N/A')}</div>
-                        <div><strong>Title:</strong> {game.get('title', 'N/A')}</div>
-                        <div><strong>Description:</strong> {game.get('description', 'N/A')}</div>
-                        <div><strong>Publisher:</strong> {game.get('publisher', 'N/A')}</div>
-                        <div><strong>Platforms:</strong> {game.get('platforms', 'N/A')}</div>
-                        <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
-                        <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
-                        <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
-                        <div><strong>Region:</strong> {backend_to_frontend_region(game.get('region') or 'PAL')}</div>
-                        <div><strong>Average Price:</strong> {average_price}</div>
+                        <div><strong>ID:</strong> {html.escape(str(game.get('id', 'N/A')))}</div>
+                        <div><strong>Title:</strong> {html.escape(str(game.get('title', 'N/A')))}</div>
+                        <div><strong>Description:</strong> {html.escape(str(game.get('description', 'N/A')))}</div>
+                        <div><strong>Publisher:</strong> {html.escape(str(game.get('publisher', 'N/A')))}</div>
+                        <div><strong>Platforms:</strong> {html.escape(str(game.get('platforms', 'N/A')))}</div>
+                        <div><strong>Genres:</strong> {html.escape(str(game.get('genres', 'N/A')))}</div>
+                        <div><strong>Series:</strong> {html.escape(str(game.get('series', 'N/A')))}</div>
+                        <div><strong>Release Date:</strong> {html.escape(str(game.get('release_date', 'N/A')))}</div>
+                        <div><strong>Region:</strong> {html.escape(str(backend_to_frontend_region(game.get('region') or 'PAL')))}</div>
+                        <div><strong>Average Price:</strong> {html.escape(str(average_price))}</div>
                     </div>
                 </div>
                 """,
@@ -760,9 +808,18 @@ def game_detail_page():
     game = st.session_state.get("selected_game_detail")
     if not game:
         st.error("No game selected. Returning to library...")
+        restore_gallery_state()
         st.session_state["page"] = "gallery"
         st.rerun()
         return
+    
+    # Add Back button at the top
+    col_back, col_spacer = st.columns([1, 4])
+    with col_back:
+        if st.button("← Back to Library", type="secondary", use_container_width=True):
+            restore_gallery_state()
+            st.session_state["page"] = "gallery"
+            st.rerun()
     # Always refresh the selected game's data from the backend so price/rating reflects latest
     try:
         game_id = game.get("id")
@@ -944,7 +1001,7 @@ def game_detail_page():
         if year_range and year_range != (min_year, max_year):
             st.session_state["gallery_year_range"] = year_range
         
-        # Navigate to library
+        # Navigate to library (don't restore state here as we're intentionally setting new filters)
         st.session_state["page"] = "gallery"
         st.rerun()
     
@@ -999,7 +1056,7 @@ def game_detail_page():
                         white-space: nowrap;
                         overflow: hidden;
                         text-overflow: ellipsis;
-                    ">{game.get("title", "Unknown Game")}</h1>
+                    ">{html.escape(str(game.get("title", "Unknown Game")))}</h1>
                 </div>
             </div>
             """,
@@ -1109,7 +1166,7 @@ def game_detail_page():
             tag_html = ""
             for i, tag in enumerate(tags):
                 color = tag_colors[i % len(tag_colors)]
-                tag_html += f'<span style="background: {color}; color: white; padding: 4px 8px; border-radius: 15px; font-size: 12px; margin: 3px; display: inline-block;">{tag}</span> '
+                tag_html += f'<span style="background: {color}; color: white; padding: 4px 8px; border-radius: 15px; font-size: 12px; margin: 3px; display: inline-block;">{html.escape(str(tag))}</span> '
             
             st.markdown(tag_html, unsafe_allow_html=True)
         
@@ -1283,7 +1340,7 @@ def game_detail_page():
                 box-shadow: 0 4px 15px rgba(255,0,0,0.3);
                 transition: all 0.3s ease;
             " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                Search for '{game_title}' Trailer on YouTube
+                Search for '{html.escape(str(game_title))}' Trailer on YouTube
             </a>
         </div>
         """, unsafe_allow_html=True)
@@ -1698,30 +1755,35 @@ def display_gallery_tile(column, game):
         # Use best available cover image
         cover_url = get_best_cover_image(game)
         
-        # Game details
-        game_id = game.get('id')
-        game_title = game.get('title', 'Unknown Game')
+        # Game details - ensure all fields have safe defaults
+        game_id = game.get('id', 'unknown')
+        game_title = game.get('title', 'Unknown Game') or 'Unknown Game'
         platform = game.get('platforms', ['Unknown Platform'])
-        platform_text = ', '.join(platform) if isinstance(platform, list) else str(platform)
+        platform_text = ', '.join(platform) if isinstance(platform, list) else str(platform or 'Unknown Platform')
         region = backend_to_frontend_region(game.get('region', 'PAL'))
         platform_region_text = f"{platform_text} ({region})"
         
         # Genre display (limit to 1 genre to save space for price)
         genres = game.get("genres", [])
         genre_html = ""
-        if genres:
-            display_genres = genres[:1]  # Show only 1 genre to make room for price
-            genre_colors = ["#667eea", "#764ba2", "#f093fb", "#f5576c", "#4ecdc4", "#45b7d1"]
-            for i, genre in enumerate(display_genres):
-                color = genre_colors[i % len(genre_colors)]
-                genre_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin-right: 4px; display: inline-block;">{genre.strip()}</span>'
-            if len(genres) > 1:
-                genre_html += f'<span style="color: #888; font-size: 9px; font-style: italic;">+{len(genres) - 1}</span>'
         
-        # Price and year
+        # Ensure genres is a list and has valid content
+        if genres and isinstance(genres, list):
+            # Filter out empty/None genres
+            valid_genres = [g.strip() for g in genres if g and str(g).strip()]
+            if valid_genres:
+                display_genres = valid_genres[:1]  # Show only 1 genre to make room for price
+                genre_colors = ["#667eea", "#764ba2", "#f093fb", "#f5576c", "#4ecdc4", "#45b7d1"]
+                for i, genre in enumerate(display_genres):
+                    color = genre_colors[i % len(genre_colors)]
+                    genre_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 9px; margin-right: 4px; display: inline-block;">{html.escape(str(genre))}</span>'
+                if len(valid_genres) > 1:
+                    genre_html += f'<span style="color: #888; font-size: 9px; font-style: italic;">+{len(valid_genres) - 1}</span>'
+        
+        # Price and year - ensure safe handling of None/empty values
         price = game.get("average_price")
         year = game.get("release_year")
-        price_text = f"£{price:.2f}" if price else "No price"
+        price_text = f"£{price:.2f}" if price and price != 0 else "No price"
         year_text = f" • {year}" if year else ""
         
         # Create the tile with enhanced styling
@@ -1807,7 +1869,7 @@ def display_gallery_tile(column, game):
                 perspective: 1000px;
                 height: 420px;
             ">
-                <img src="{cover_url}" alt="{game_title}" style="
+                <img src="{cover_url}" alt="{html.escape(str(game_title))}" style="
                     width: 100%;
                     height: 220px;
                     object-fit: cover;
@@ -1818,16 +1880,16 @@ def display_gallery_tile(column, game):
                 ">
                 <div style="padding: 15px;">
                     <h4 style="margin: 5px 0 8px 0; font-size: 14px; color: #333; font-weight: 600; line-height: 1.2;">
-                        {game_title}
+                        {html.escape(str(game_title))}
                     </h4>
                     <p style="margin: 0 0 8px 0; font-size: 12px; color: #666;">
-                        {platform_region_text}
+                        {html.escape(str(platform_region_text))}
                     </p>
                     <div style="margin-bottom: 8px;">
                         {genre_html}
                     </div>
                     <div style="margin-top: 8px; font-weight: bold; color: #333; font-size: 12px;">
-                        {price_text}{year_text}
+                        {html.escape(str(price_text))}{html.escape(str(year_text))}
                     </div>
                 </div>
             </div>
@@ -1852,6 +1914,8 @@ def display_gallery_tile(column, game):
                 help=f"Click to view details for {game_title}",
                 use_container_width=True
             ):
+                # Store current gallery state before navigating to game detail
+                store_gallery_state()
                 st.session_state["selected_game_detail"] = game
                 st.session_state["page"] = "game_detail"
                 st.rerun()
@@ -1890,6 +1954,9 @@ def main():
         gallery_clicked = st.button("Library", type="secondary", use_container_width=True)
     
     if gallery_clicked:
+        # Check if we have stored gallery state to restore
+        if st.session_state.get("stored_gallery_state"):
+            restore_gallery_state()
         st.session_state["page"] = "gallery"
         st.rerun()
     
@@ -3121,18 +3188,18 @@ def main():
                 st.markdown(
                     f"""
                     <div class="game-container">
-                        <img src="{cover_image_url}" class="game-image">
+                        <img src="{html.escape(str(cover_image_url))}" class="game-image">
                         <div class="game-details">
-                            <div><strong>ID:</strong> {game['id']}</div>
-                            <div><strong>Title:</strong> {game['title']}</div>
-                            <div><strong>Description:</strong> {game['description']}</div>
-                            <div><strong>Publisher:</strong> {game['publisher']}</div>
-                            <div><strong>Platforms:</strong> {game['platforms']}</div>
-                            <div><strong>Genres:</strong> {game['genres']}</div>
-                            <div><strong>Series:</strong> {game['series']}</div>
-                            <div><strong>Release Date:</strong> {game['release_date']}</div>
-                            <div><strong>Region:</strong> {backend_to_frontend_region(game.get('region', 'N/A'))}</div>
-                            <div><strong>Average Price:</strong> {average_price}</div>
+                            <div><strong>ID:</strong> {html.escape(str(game['id']))}</div>
+                            <div><strong>Title:</strong> {html.escape(str(game['title']))}</div>
+                            <div><strong>Description:</strong> {html.escape(str(game['description']))}</div>
+                            <div><strong>Publisher:</strong> {html.escape(str(game['publisher']))}</div>
+                            <div><strong>Platforms:</strong> {html.escape(str(game['platforms']))}</div>
+                            <div><strong>Genres:</strong> {html.escape(str(game['genres']))}</div>
+                            <div><strong>Series:</strong> {html.escape(str(game['series']))}</div>
+                            <div><strong>Release Date:</strong> {html.escape(str(game['release_date']))}</div>
+                            <div><strong>Region:</strong> {html.escape(str(backend_to_frontend_region(game.get('region', 'N/A'))))}</div>
+                            <div><strong>Average Price:</strong> {html.escape(str(average_price))}</div>
                         </div>
                     </div>
                     """,
