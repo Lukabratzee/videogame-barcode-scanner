@@ -2492,8 +2492,8 @@ def get_gallery_filters():
         # Ensure standard regions are available
         if 'PAL' not in regions:
             regions.append('PAL')
-        if 'US' not in regions:
-            regions.append('US')
+        if 'NTSC' not in regions:
+            regions.append('NTSC')
         if 'JP' not in regions:
             regions.append('JP')
         regions.sort()

@@ -125,7 +125,7 @@ def get_gallery_games():
     - completion: Filter by completion status
     - favorite: Filter favorites only (true/false)
     - genre: Filter by individual genre (e.g., Adventure, Action, RPG)
-    - region: Filter by region (PAL, US, JP)
+    - region: Filter by region (PAL, NTSC, JP)
     - search: Search query for title
     """
     try:
@@ -390,8 +390,8 @@ def get_gallery_filters():
         # Ensure standard regions are available even if no games exist
         if 'PAL' not in regions:
             regions.append('PAL')
-        if 'US' not in regions:
-            regions.append('US')
+        if 'NTSC' not in regions:
+            regions.append('NTSC')
         if 'JP' not in regions:
             regions.append('JP')
         regions.sort()

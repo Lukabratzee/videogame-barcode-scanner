@@ -109,7 +109,7 @@ def calculate_total_cost(games):
     return total
 
 def normalize_region(region):
-    """Normalize region values to standard codes: PAL, US, JP"""
+    """Normalize region values to standard codes: PAL, NTSC, JP"""
     if not region:
         return "PAL"
     
@@ -118,8 +118,8 @@ def normalize_region(region):
     # Map various region formats to standard codes
     if region_upper in {"JAPAN", "JP", "JPN"}:
         return "JP"
-    elif region_upper in {"US", "USA", "UNITED STATES", "NORTH AMERICA", "NA"}:
-        return "US"
+    elif region_upper in {"NTSC", "US", "USA", "UNITED STATES", "NORTH AMERICA", "NA"}:
+        return "NTSC"
     elif region_upper in {"PAL", "EU", "EUROPE", "EUROPEAN"}:
         return "PAL"
     else:
@@ -677,7 +677,7 @@ def display_game_item(game):
         new_series = st.text_input("Series", game.get("series"), key=f"edit_series_{game.get('id')}")
         new_release = st.text_input("Release Date", game.get("release_date"), key=f"edit_release_{game.get('id')}")
         # Region selector
-        region_options = ["PAL", "US", "JP"]
+        region_options = ["PAL", "NTSC", "JP"]
         current_region = (game.get("region") or "PAL").upper()
         if current_region not in region_options:
             current_region = "PAL"
@@ -785,7 +785,7 @@ def game_detail_page():
     )
     
     # Region filter
-    available_regions = filter_options.get("regions", ["PAL", "US", "JP"])
+    available_regions = filter_options.get("regions", ["PAL", "NTSC", "JP"])
     selected_region = st.sidebar.selectbox(
         "Region", 
         ["All"] + available_regions,
@@ -1400,7 +1400,7 @@ def gallery_page():
     )
     
     # Region filter
-    available_regions = filter_options.get("regions", ["PAL", "US", "JP"])
+    available_regions = filter_options.get("regions", ["PAL", "NTSC", "JP"])
     selected_region = st.sidebar.selectbox(
         "Region", 
         ["All"] + available_regions,
@@ -1899,7 +1899,7 @@ def main():
     
     # Region selector for PriceCharting only
     if global_price_source == "PriceCharting":
-        region_options = ["PAL", "US", "Japan"]
+        region_options = ["PAL", "NTSC", "Japan"]
         
         # Initialize region selection with PAL as default
         current_region = st.session_state.get("pricecharting_region", "PAL")
@@ -1917,7 +1917,7 @@ def main():
             region_options,
             index=region_index,
             key="pricecharting_region",
-            help="Choose the region for PriceCharting pricing:\n• PAL: European market prices\n• US: North American market prices\n• Japan: Japanese market prices"
+            help="Choose the region for PriceCharting pricing:\n• PAL: European market prices\n• NTSC: North American market prices\n• Japan: Japanese market prices"
         )
         
         # Update session state when region changes
@@ -2104,7 +2104,7 @@ def main():
 
             edit_release_date = st.date_input("Release Date", key="edit_release_date")
             # Region selector for sidebar editor
-            region_options = ["PAL", "US", "JP"]
+            region_options = ["PAL", "NTSC", "JP"]
             current_region = (game_details.get("region") or "PAL").upper()
             if current_region not in region_options:
                 current_region = "PAL"
@@ -2307,7 +2307,7 @@ def main():
         platforms = sorted(fetch_unique_values("platform"))
         genres = sorted(fetch_unique_values("genre"))
         years = sorted(fetch_unique_values("year"))
-        regions = ["JP", "PAL", "US"]
+        regions = ["JP", "PAL", "NTSC"]
 
         if st.button("Clear Filters", key="clear_filter_button"):
             st.session_state["filter_publisher"] = ""
@@ -2581,7 +2581,7 @@ def main():
             st.markdown(f"**Release Date:** {release_date}")
             
             # Region selection for the game to be added
-            region_options = ["PAL", "US", "JP"]
+            region_options = ["PAL", "NTSC", "JP"]
             default_region = st.session_state.get("pricecharting_region", "PAL")
             if default_region not in region_options:
                 default_region = "PAL"
@@ -2846,44 +2846,7 @@ def main():
         else:
             st.info("No games with prices found yet. Add some games to see the top 5!")
 
-    # -------------------------
-    # Sidebar: Price Source Testing
-    # -------------------------
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### Config Testing")
-    
-    if st.sidebar.button("Test Config Save", key="test_config_save_button"):
-        try:
-            response = requests.post(
-                f"{BACKEND_URL}/test/config_save",
-                json={"test_key": "test_config_save", "test_value": f"test_{int(time.time())}"}
-            )
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
-                    st.sidebar.success("✅ Config save test successful!", icon="✅")
-                    st.sidebar.info(f"Config file: {result.get('config_file_absolute', 'Unknown')}")
-                else:
-                    st.sidebar.error("❌ Config save test failed!", icon="❌")
-            else:
-                st.sidebar.error(f"❌ Config save test failed with status {response.status_code}", icon="❌")
-        except Exception as e:
-            st.sidebar.error(f"❌ Config save test error: {e}", icon="❌")
-    
-    if st.sidebar.button("Show Config Info", key="show_config_info_button"):
-        try:
-            response = requests.get(f"{BACKEND_URL}/debug/config")
-            if response.status_code == 200:
-                config_info = response.json()
-                st.sidebar.success("✅ Config info retrieved!", icon="✅")
-                st.sidebar.info(f"Config file: {config_info.get('config_file_absolute', 'Unknown')}")
-                st.sidebar.info(f"File exists: {config_info.get('config_file_exists', False)}")
-                if config_info.get('config_contents'):
-                    st.sidebar.info(f"Current price source: {config_info.get('config_contents', {}).get('price_source', 'Unknown')}")
-            else:
-                st.sidebar.error(f"❌ Failed to get config info: {response.status_code}", icon="❌")
-        except Exception as e:
-            st.sidebar.error(f"❌ Config info error: {e}", icon="❌")
+
 
 if __name__ == "__main__":
     main()

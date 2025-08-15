@@ -69,15 +69,30 @@ def get_pricecharting_price_by_condition(pricing_data: Optional[Dict], prefer_bo
 
 def _pricecharting_region_segment(region: Optional[str]) -> Optional[str]:
     """Map a human region to PriceCharting URL segment.
-    US → None (default site), PAL → 'pal', JP/Japan → 'japan'.
+    NTSC → None (default site), PAL → 'pal', JP/Japan → 'japan'.
     """
     if not region:
         return None
     r = region.strip().lower()
-    if r in {"us", "usa", "na", "north america"}:
+    if r in {"ntsc", "us", "usa", "na", "north america"}:
         return None
     if r in {"pal", "eu", "europe"}:
         return "pal"
+    if r in {"jp", "jpn", "japan"}:
+        return "japan"
+    return None
+
+def _pricecharting_region_name(region: Optional[str]) -> Optional[str]:
+    """Map a human region to PriceCharting region-name parameter.
+    NTSC → 'ntsc', PAL → None (default), JP/Japan → 'japan'.
+    """
+    if not region:
+        return None
+    r = region.strip().lower()
+    if r in {"ntsc", "us", "usa", "na", "north america"}:
+        return "ntsc"
+    if r in {"pal", "eu", "europe"}:
+        return None  # PAL is the default, no region-name needed
     if r in {"jp", "jpn", "japan"}:
         return "japan"
     return None
@@ -141,9 +156,14 @@ def scrape_pricecharting_price(game_title: str, platform: Optional[str] = None, 
         import urllib.parse
         encoded_title = urllib.parse.quote(search_query)
         
-        # Use PriceCharting's search endpoint
+        # Use PriceCharting's search endpoint with region filtering
         base_url = "https://www.pricecharting.com/search-products"
         search_url = f"{base_url}?q={encoded_title}&type=prices"
+        
+        # Add region-name parameter if specified
+        region_name = _pricecharting_region_name(region)
+        if region_name:
+            search_url += f"&region-name={region_name}"
         
         driver.get(search_url)
         time.sleep(3)

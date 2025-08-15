@@ -3,7 +3,7 @@
 Migration: Add region column to games table
 
 Adds a TEXT column `region` to the `games` table to record whether a game is
-from PAL, US, or JP. Existing rows are populated with the default value 'PAL'.
+from PAL, NTSC, or JP. Existing rows are populated with the default value 'PAL'.
 The migration is idempotent and safe to run multiple times.
 """
 
