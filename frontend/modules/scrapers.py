@@ -218,7 +218,7 @@ def scrape_pricecharting_price(game_title: str, platform: Optional[str] = None, 
 
 def extract_pricecharting_pricing(driver) -> Optional[Dict]:
     """
-    Extract pricing data from a PriceCharting game detail page.
+    Extract pricing data from a PriceCharting game detail page using specific element IDs.
     
     Returns:
         Dict with pricing data or None if extraction fails
@@ -226,54 +226,69 @@ def extract_pricecharting_pricing(driver) -> Optional[Dict]:
     try:
         pricing_data = {}
         
-        # Method 1: Try to find pricing table rows
+        # Method 1: Try to extract prices using specific element IDs from the price_data table
         try:
-            # Look for table rows containing price data
-            price_rows = driver.find_elements(By.CSS_SELECTOR, "tr")
+            # Extract Loose price (also called "used_price")
+            try:
+                loose_element = driver.find_element(By.ID, "used_price")
+                price_span = loose_element.find_element(By.CSS_SELECTOR, "span.price.js-price")
+                loose_price = extract_price_from_text(price_span.text)
+                if loose_price:
+                    pricing_data["loose_price"] = loose_price
+                    logging.debug(f"Extracted loose price: ${loose_price}")
+            except Exception as e:
+                logging.debug(f"Failed to extract loose price: {e}")
             
-            for row in price_rows:
-                row_text = row.text.lower().strip()
+            # Extract Complete (CiB) price
+            try:
+                complete_element = driver.find_element(By.ID, "complete_price")
+                price_span = complete_element.find_element(By.CSS_SELECTOR, "span.price.js-price")
+                cib_price = extract_price_from_text(price_span.text)
+                if cib_price:
+                    pricing_data["cib_price"] = cib_price
+                    logging.debug(f"Extracted CiB price: ${cib_price}")
+            except Exception as e:
+                logging.debug(f"Failed to extract CiB price: {e}")
+            
+            # Extract New price
+            try:
+                new_element = driver.find_element(By.ID, "new_price")
+                price_span = new_element.find_element(By.CSS_SELECTOR, "span.price.js-price")
+                new_price = extract_price_from_text(price_span.text)
+                if new_price:
+                    pricing_data["new_price"] = new_price
+                    logging.debug(f"Extracted new price: ${new_price}")
+            except Exception as e:
+                logging.debug(f"Failed to extract new price: {e}")
                 
-                # Look for different condition types
-                if any(keyword in row_text for keyword in ["loose", "cart only", "cartridge"]):
-                    price = extract_price_from_element(row)
-                    if price:
-                        pricing_data["loose_price"] = price
-                        
-                elif any(keyword in row_text for keyword in ["complete", "cib", "box"]):
-                    price = extract_price_from_element(row)
-                    if price:
-                        pricing_data["cib_price"] = price
-                        
-                elif any(keyword in row_text for keyword in ["new", "sealed"]):
-                    price = extract_price_from_element(row)
-                    if price:
-                        pricing_data["new_price"] = price
-                        
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Failed to extract prices using element IDs: {e}")
         
-        # Method 2: If table method failed, try CSS selectors for price elements
+        # Method 2: Fallback to original generic method if specific IDs failed
         if not pricing_data:
             try:
-                price_selectors = [
-                    ".price",
-                    "[class*='price']", 
-                    ".used_price",
-                    ".new_price",
-                    ".loose_price"
-                ]
+                # Look for table rows containing price data
+                price_rows = driver.find_elements(By.CSS_SELECTOR, "tr")
                 
-                for selector in price_selectors:
-                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                    for element in elements:
-                        price = extract_price_from_element(element)
-                        if price and "loose_price" not in pricing_data:
+                for row in price_rows:
+                    row_text = row.text.lower().strip()
+                    
+                    # Look for different condition types
+                    if any(keyword in row_text for keyword in ["loose", "cart only", "cartridge"]):
+                        price = extract_price_from_element(row)
+                        if price:
                             pricing_data["loose_price"] = price
-                            break
-                    if pricing_data:
-                        break
-                        
+                            
+                    elif any(keyword in row_text for keyword in ["complete", "cib", "box"]):
+                        price = extract_price_from_element(row)
+                        if price:
+                            pricing_data["cib_price"] = price
+                            
+                    elif any(keyword in row_text for keyword in ["new", "sealed"]):
+                        price = extract_price_from_element(row)
+                        if price:
+                            pricing_data["new_price"] = price
+                            
             except Exception:
                 pass
         

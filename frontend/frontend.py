@@ -168,7 +168,17 @@ def update_game(game_id, game_data):
 
 def update_game_price(game_id):
     """Update the price of a game using the current price source configuration"""
-    response = requests.post(f"{BACKEND_URL}/update_game_price/{game_id}")
+    # Include current region and condition preferences for PriceCharting
+    payload = {}
+    if st.session_state.get("pricecharting_region"):
+        frontend_region = st.session_state.get("pricecharting_region")
+        # Convert JP to Japan for backend compatibility
+        backend_region = "Japan" if frontend_region == "JP" else frontend_region
+        payload["region"] = backend_region
+    if "pricecharting_boxed" in st.session_state:
+        payload["prefer_boxed"] = st.session_state.get("pricecharting_boxed", True)
+    
+    response = requests.post(f"{BACKEND_URL}/update_game_price/{game_id}", json=payload)
     if response.status_code == 200:
         return response.json()
     else:
@@ -2001,25 +2011,30 @@ def main():
     
     # Region selector for PriceCharting only
     if global_price_source == "PriceCharting":
-        # Initialize region from backend if no local preference exists
-        if (
-            "pricecharting_region" not in st.session_state
-            and "pricecharting_region" not in st.query_params
-        ):
+        region_options = ["PAL", "NTSC", "JP"]
+        
+        # Get current region from backend if not in session state
+        if "pricecharting_region" not in st.session_state:
             try:
                 resp = requests.get(f"{BACKEND_URL}/default_region")
                 if resp.status_code == 200:
                     backend_region = resp.json().get("default_region", "PAL")
-                    st.session_state["pricecharting_region"] = backend_region
+                    # Convert backend region to frontend format
+                    if backend_region.upper() in ["PAL", "NTSC"]:
+                        current_region = backend_region.upper()
+                    elif backend_region.lower() in ["japan", "jp", "jpn"]:
+                        current_region = "JP"
+                    else:
+                        current_region = "PAL"
+                else:
+                    current_region = "PAL"
             except Exception:
-                pass
-        region_options = ["PAL", "NTSC", "Japan"]
-        
-        # Initialize region selection with PAL as default
-        current_region = st.session_state.get("pricecharting_region", "PAL")
-        if current_region not in region_options:
-            current_region = "PAL"
-        
+                current_region = "PAL"
+        else:
+            current_region = st.session_state.get("pricecharting_region", "PAL")
+            if current_region not in region_options:
+                current_region = "PAL"
+            
         try:
             region_index = region_options.index(current_region)
         except ValueError:
@@ -2029,13 +2044,20 @@ def main():
         # Placeholder so feedback appears directly under the region selectbox
         region_feedback = st.sidebar.empty()
 
+        # Helper function to convert frontend region format to backend format
+        def frontend_to_backend_region(frontend_region):
+            if frontend_region == "JP":
+                return "Japan"
+            return frontend_region
+        
         # Ensure backend config is updated immediately when user changes region
         def _on_pricecharting_region_change():
             new_region = st.session_state.get("pricecharting_region", "PAL")
+            backend_region = frontend_to_backend_region(new_region)
             try:
                 response = requests.post(
                     f"{BACKEND_URL}/default_region",
-                    json={"default_region": new_region}
+                    json={"default_region": backend_region}
                 )
                 if response.status_code == 200:
                     region_feedback.success(f"Region updated to {new_region}", icon="✅")
@@ -2044,12 +2066,16 @@ def main():
             except Exception as e:
                 region_feedback.error(f"Error syncing region: {e}", icon="⚠️")
 
+        # Initialize session state with current region before creating selectbox
+        if "pricecharting_region" not in st.session_state:
+            st.session_state["pricecharting_region"] = current_region
+            
         selected_region = st.sidebar.selectbox(
             "PriceCharting Region:",
             region_options,
             index=region_index,
             key="pricecharting_region",
-            help="Choose the region for PriceCharting pricing:\n• PAL: European market prices\n• NTSC: North American market prices\n• Japan: Japanese market prices",
+            help="Choose the region for PriceCharting pricing:\n• PAL: European market prices\n• NTSC: North American market prices\n• JP: Japanese market prices",
             on_change=_on_pricecharting_region_change
         )
         

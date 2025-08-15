@@ -93,6 +93,7 @@ try:
         scrape_cex_price,
         scrape_pricecharting_price,
         get_best_pricecharting_price,
+        get_pricecharting_price_by_condition,
     )
     print("✅ Successfully imported scrapers from modules.scrapers")
 except ImportError:
@@ -107,6 +108,7 @@ except ImportError:
         scrape_cex_price,
         scrape_pricecharting_price,
         get_best_pricecharting_price,
+        get_pricecharting_price_by_condition,
     )
     print("✅ Successfully imported scrapers from modules directory path")
 
@@ -985,8 +987,10 @@ class GameScan:
             elif price_source == "PriceCharting":
                 # Use region from request or default to PAL
                 pricecharting_data = scrape_pricecharting_price(search_query, None, region)
-                # Use the best representative price (prioritizes loose -> CIB -> new)
-                scraped_price = get_best_pricecharting_price(pricecharting_data)
+                # Get condition preference from request (default to CiB preference)
+                prefer_boxed = data.get("prefer_boxed", True)
+                # Use condition-aware pricing based on preference
+                scraped_price = get_pricecharting_price_by_condition(pricecharting_data, prefer_boxed)
                 
                 if pricecharting_data:
                     logging.debug(f"PriceCharting pricing breakdown - Loose: £{pricecharting_data.get('loose_price')}, "
@@ -1941,10 +1945,17 @@ def update_game_price(game_id):
         elif price_source == "CeX":
             new_price = scrape_cex_price(search_query)
         elif price_source == "PriceCharting":
-            # Default to PAL region for backend calls (could be enhanced to accept region parameter)
-            pricecharting_data = scrape_pricecharting_price(search_query, None, "PAL")
-            # Use the best representative price (prioritizes loose -> CIB -> new)
-            new_price = get_best_pricecharting_price(pricecharting_data)
+            # Get region from request or current default region setting
+            region = request.json.get("region") if request.json else None
+            if not region:
+                region = get_default_region()
+            logging.debug(f"Using region for price update: {region}")
+            
+            pricecharting_data = scrape_pricecharting_price(search_query, None, region)
+            # Get condition preference from request or default to CiB preference
+            prefer_boxed = request.json.get("prefer_boxed", True) if request.json else True
+            # Use condition-aware pricing based on preference
+            new_price = get_pricecharting_price_by_condition(pricecharting_data, prefer_boxed)
             if pricecharting_data:
                 logging.debug(
                     f"PriceCharting pricing breakdown - Loose: £{pricecharting_data.get('loose_price')}, "
@@ -1959,10 +1970,19 @@ def update_game_price(game_id):
         if new_price is not None:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE games SET average_price = ? WHERE id = ?",
-                (new_price, game_id)
-            )
+            
+            # For PriceCharting, also update the region field
+            if price_source == "PriceCharting":
+                cursor.execute(
+                    "UPDATE games SET average_price = ?, region = ? WHERE id = ?",
+                    (new_price, region, game_id)
+                )
+                logging.debug(f"Updated game price to £{new_price} and region to {region}")
+            else:
+                cursor.execute(
+                    "UPDATE games SET average_price = ? WHERE id = ?",
+                    (new_price, game_id)
+                )
             # Record into price_history as well for auditing
             from datetime import datetime
             current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
