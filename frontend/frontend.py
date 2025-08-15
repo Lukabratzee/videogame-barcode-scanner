@@ -145,6 +145,20 @@ def normalize_region(region):
         return "PAL"
 
 
+def backend_to_frontend_region(backend_region):
+    """Convert backend region format to frontend display format."""
+    if not backend_region:
+        return "PAL"
+    
+    region = backend_region.upper().strip()
+    if region in ["PAL", "NTSC"]:
+        return region
+    elif region in ["JAPAN", "JP", "JPN"]:
+        return "JP"
+    else:
+        return "PAL"
+
+
 
 def add_game(game_data):
     # Normalize the region before sending to backend
@@ -624,7 +638,7 @@ def display_game_item(game):
                         <div><strong>Genres:</strong> {game.get('genres', 'N/A')}</div>
                         <div><strong>Series:</strong> {game.get('series', 'N/A')}</div>
                         <div><strong>Release Date:</strong> {game.get('release_date', 'N/A')}</div>
-                        <div><strong>Region:</strong> {(game.get('region') or 'PAL').upper()}</div>
+                        <div><strong>Region:</strong> {backend_to_frontend_region(game.get('region') or 'PAL')}</div>
                         <div><strong>Average Price:</strong> {average_price}</div>
                     </div>
                 </div>
@@ -708,7 +722,7 @@ def display_game_item(game):
         new_release = st.text_input("Release Date", game.get("release_date"), key=f"edit_release_{game.get('id')}")
         # Region selector
         region_options = ["PAL", "NTSC", "JP"]
-        current_region = (game.get("region") or "PAL").upper()
+        current_region = backend_to_frontend_region(game.get("region") or "PAL")
         if current_region not in region_options:
             current_region = "PAL"
         region_index = region_options.index(current_region)
@@ -717,6 +731,9 @@ def display_game_item(game):
         new_youtube_url = st.text_input("YouTube Trailer URL", game.get("youtube_trailer_url", ""), key=f"edit_youtube_{game.get('id')}", help="Full YouTube URL (e.g., https://www.youtube.com/watch?v=...)")
         
         if st.button("Save", key=f"save_{game.get('id')}"):
+            # Convert frontend region format to backend format for storage
+            backend_region = "Japan" if new_region == "JP" else new_region
+            
             updated_game_data = {
                 "title": new_title,
                 "description": new_desc,
@@ -727,7 +744,7 @@ def display_game_item(game):
                 "release_date": new_release,
                 "average_price": new_price,
                 "youtube_trailer_url": new_youtube_url,
-                "region": new_region,
+                "region": backend_region,
             }
             if update_game(game.get("id"), updated_game_data):
                 st.success("Game updated successfully!")
@@ -1037,7 +1054,7 @@ def game_detail_page():
         with col_left:
             st.markdown(f"**Game ID:** {game.get('id', 'Unknown')}")
             st.markdown(f"**Platform:** {get_platform_display(game)}")
-            st.markdown(f"**Region:** {(game.get('region') or 'PAL').upper()}")
+            st.markdown(f"**Region:** {backend_to_frontend_region(game.get('region') or 'PAL')}")
             
             # Release date and year
             release_date = game.get("release_date")
@@ -1686,7 +1703,7 @@ def display_gallery_tile(column, game):
         game_title = game.get('title', 'Unknown Game')
         platform = game.get('platforms', ['Unknown Platform'])
         platform_text = ', '.join(platform) if isinstance(platform, list) else str(platform)
-        region = game.get('region', 'PAL')
+        region = backend_to_frontend_region(game.get('region', 'PAL'))
         platform_region_text = f"{platform_text} ({region})"
         
         # Genre display (limit to 1 genre to save space for price)
@@ -2073,7 +2090,6 @@ def main():
         selected_region = st.sidebar.selectbox(
             "PriceCharting Region:",
             region_options,
-            index=region_index,
             key="pricecharting_region",
             help="Choose the region for PriceCharting pricing:\n• PAL: European market prices\n• NTSC: North American market prices\n• JP: Japanese market prices",
             on_change=_on_pricecharting_region_change
@@ -2260,7 +2276,7 @@ def main():
             edit_release_date = st.date_input("Release Date", key="edit_release_date")
             # Region selector for sidebar editor
             region_options = ["PAL", "NTSC", "JP"]
-            current_region = (game_details.get("region") or "PAL").upper()
+            current_region = backend_to_frontend_region(game_details.get("region") or "PAL")
             if current_region not in region_options:
                 current_region = "PAL"
             region_index = region_options.index(current_region)
@@ -2269,6 +2285,9 @@ def main():
             edit_average_price = st.number_input("Average Price", value=default_price, step=0.01, format="%.2f", key="edit_average_price")
 
             if st.button("Update Game", key="update_game_button"):
+                # Convert frontend region format to backend format for storage
+                backend_region = "Japan" if edit_region == "JP" else edit_region
+                
                 updated_game_data = {
                     "title": edit_title,
                     "cover_image": "",  # Cover Image URL field removed - now uses high-res artwork system
@@ -2281,7 +2300,7 @@ def main():
                         edit_release_date.strftime("%Y-%m-%d") if edit_release_date else "1900-01-01"
                     ),
                     "average_price": edit_average_price,
-                    "region": edit_region,
+                    "region": backend_region,
                 }
                 if update_game(edit_game_id, updated_game_data):
                     st.success("Game updated successfully")
@@ -3112,7 +3131,7 @@ def main():
                             <div><strong>Genres:</strong> {game['genres']}</div>
                             <div><strong>Series:</strong> {game['series']}</div>
                             <div><strong>Release Date:</strong> {game['release_date']}</div>
-                            <div><strong>Region:</strong> {game.get('region', 'N/A')}</div>
+                            <div><strong>Region:</strong> {backend_to_frontend_region(game.get('region', 'N/A'))}</div>
                             <div><strong>Average Price:</strong> {average_price}</div>
                         </div>
                     </div>

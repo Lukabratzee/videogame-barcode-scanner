@@ -70,6 +70,7 @@ def get_pricecharting_price_by_condition(pricing_data: Optional[Dict], prefer_bo
 def _pricecharting_region_segment(region: Optional[str]) -> Optional[str]:
     """Map a human region to PriceCharting URL segment.
     NTSC → None (default site), PAL → 'pal', JP/Japan → 'japan'.
+    Used for direct game page URLs like /pal/game/...
     """
     if not region:
         return None
@@ -84,7 +85,7 @@ def _pricecharting_region_segment(region: Optional[str]) -> Optional[str]:
 
 def _pricecharting_region_name(region: Optional[str]) -> Optional[str]:
     """Map a human region to PriceCharting region-name parameter.
-    NTSC → 'ntsc', PAL → None (default), JP/Japan → 'japan'.
+    NTSC → 'ntsc', PAL → 'pal', JP/Japan → 'japan'.
     """
     if not region:
         return None
@@ -92,7 +93,7 @@ def _pricecharting_region_name(region: Optional[str]) -> Optional[str]:
     if r in {"ntsc", "us", "usa", "na", "north america"}:
         return "ntsc"
     if r in {"pal", "eu", "europe"}:
-        return None  # PAL is the default, no region-name needed
+        return "pal"
     if r in {"jp", "jpn", "japan"}:
         return "japan"
     return None
@@ -164,6 +165,9 @@ def scrape_pricecharting_price(game_title: str, platform: Optional[str] = None, 
         region_name = _pricecharting_region_name(region)
         if region_name:
             search_url += f"&region-name={region_name}"
+        
+        logging.debug(f"PriceCharting search URL for region '{region}': {search_url}")
+        logging.debug(f"Region name parameter: {region_name}")
         
         driver.get(search_url)
         time.sleep(3)
