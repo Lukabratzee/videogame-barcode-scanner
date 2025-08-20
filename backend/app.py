@@ -2958,7 +2958,8 @@ def fetch_high_res_artwork():
         if game_id:
             cmd.extend(['--game-id', str(game_id)])
         elif bulk_mode:
-            cmd.append('--bulk')
+            # Non-interactive bulk run
+            cmd.extend(['--bulk', '--yes'])
         
         if api_key:
             cmd.extend(['--api-key', api_key])

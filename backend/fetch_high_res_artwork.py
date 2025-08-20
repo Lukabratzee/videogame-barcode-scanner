@@ -446,8 +446,18 @@ class HighResArtworkFetcher:
         print(f"\nFound {len(games)} games without high resolution artwork")
         
         if not limit:
-            confirm = input(f"Process all {len(games)} games? This will take some time. (y/N): ")
-            if confirm.lower() != 'y':
+            proceed = False
+            try:
+                import sys, os
+                # Auto-confirm for non-interactive runs, explicit --yes, or env override
+                if globals().get("ASSUME_YES", False) or os.getenv("FETCH_ARTWORK_ASSUME_YES") == "1" or not sys.stdin or not sys.stdin.isatty():
+                    proceed = True
+                else:
+                    resp = input(f"Process all {len(games)} games? This will take some time. (y/N): ")
+                    proceed = resp.strip().lower() == "y"
+            except EOFError:
+                proceed = True
+            if not proceed:
                 print("Cancelled.")
                 return
         
@@ -514,8 +524,12 @@ def main():
     parser.add_argument('--game-id', type=int, help='Process specific game by ID')
     parser.add_argument('--api-key', help='SteamGridDB API key (get from https://www.steamgriddb.com/profile/preferences/api)')
     parser.add_argument('--limit', type=int, help='Limit number of games to process (for testing)')
+    parser.add_argument('--yes', action='store_true', help='Assume yes for prompts (non-interactive)')
     
     args = parser.parse_args()
+    # Plumb --yes through a module-level switch used by bulk flow
+    global ASSUME_YES
+    ASSUME_YES = bool(getattr(args, 'yes', False))
     
     if not args.bulk and not args.game_id:
         parser.error("Must specify either --bulk or --game-id")

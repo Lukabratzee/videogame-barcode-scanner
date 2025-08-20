@@ -476,6 +476,43 @@ def add_price_history_entry(game_id: int, price: float, source: str = "Manual"):
         return None
 
 # -------------------------
+# Flash Notification Helpers
+# -------------------------
+def set_flash(message: str, level: str = "success"):
+    """
+    Store a transient notification in session so it survives st.rerun().
+    level: 'success' | 'info' | 'warning' | 'error'
+    """
+    try:
+        st.session_state["__flash__"] = {
+            "message": str(message),
+            "level": str(level),
+            "ts": time.time(),
+        }
+    except Exception:
+        # Fall back silently if session is unavailable
+        pass
+
+def show_flash():
+    """
+    Display and clear any pending flash notification.
+    Call near the top of each page render.
+    """
+    data = st.session_state.pop("__flash__", None)
+    if not data:
+        return
+    lvl = (data.get("level") or "info").lower()
+    msg = data.get("message") or ""
+    if lvl == "success":
+        st.success(msg)
+    elif lvl == "warning":
+        st.warning(msg)
+    elif lvl == "error":
+        st.error(msg)
+    else:
+        st.info(msg)
+
+# -------------------------
 # CSS Styling for Layout
 # -------------------------
 st.markdown(
@@ -832,6 +869,9 @@ def game_detail_page():
         # Non-fatal; keep existing session copy if refresh fails
         pass
     
+    # Surface any pending notifications
+    show_flash()
+    
     # -------------------------
     # Game Detail Sidebar: Same as Library for Consistency
     # -------------------------
@@ -860,6 +900,260 @@ def game_detail_page():
             </div>
             """
             components.html(iframe_html, height=450)
+
+    st.sidebar.markdown("---")  # Add separator
+    
+    # -------------------------
+    # Library Sidebar: Update Game Price Section
+    # -------------------------
+    update_price_expander = st.sidebar.expander("Update Game Price")
+    with update_price_expander:
+        st.markdown("**Update price using current price source configuration**")
+        
+        # Get current price source for display
+        current_price_source = get_price_source()
+        st.info(f"Current price source: **{current_price_source}**")
+        
+        update_price_game_id = st.text_input("Game ID to Update Price", key="gallery_update_price_game_id")
+        confirm_update_price = st.checkbox("I confirm that I want to update this game's price", key="gallery_update_price_confirm")
+        
+        if st.button("Update Price", key="gallery_update_price_button") and confirm_update_price:
+            if update_price_game_id:
+                with st.spinner(f"Updating price using {current_price_source}..."):
+                    result = update_game_price(update_price_game_id)
+                    if result:
+                        st.success(f"✅ Price updated successfully!")
+                        st.write(f"**Game:** {result['game_title']}")
+                        st.write(f"**Old Price:** £{result['old_price']:.2f}" if result['old_price'] else "**Old Price:** Not set")
+                        st.write(f"**New Price:** £{result['new_price']:.2f}" if result['new_price'] else "**New Price:** Not found")
+                        st.write(f"**Source:** {result['price_source']}")
+                        
+                        # Refresh the library view if needed
+                        st.rerun()
+                    else:
+                        st.error("Failed to update game price. Please check the Game ID and try again.")
+            else:
+                st.warning("Please enter a Game ID.")
+
+    # -------------------------
+    # Library Sidebar: Update Game Artwork Section
+    # -------------------------
+    update_artwork_expander = st.sidebar.expander("Update Game Artwork")
+    with update_artwork_expander:
+        st.markdown("**Update artwork using SteamGridDB API**")
+        st.info("Fetches high-resolution grid covers, heroes, logos, and icons")
+        
+        update_artwork_game_id = st.text_input("Game ID to Update Artwork", key="gallery_update_artwork_game_id")
+        mode = st.selectbox(
+            "Artwork update mode",
+            options=["Automatic (SteamGridDB)", "Manual upload"],
+            index=0,
+            key="gallery_artwork_update_mode",
+        )
+
+        if mode == "Automatic (SteamGridDB)":
+            confirm_update_artwork = st.checkbox(
+                "I confirm that I want to update this game's artwork",
+                key="gallery_update_artwork_confirm",
+            )
+            if st.button("Update Artwork", key="gallery_update_artwork_button") and confirm_update_artwork:
+                if update_artwork_game_id:
+                    with st.spinner("Fetching artwork from SteamGridDB..."):
+                        result = update_game_artwork(update_artwork_game_id)
+                        if result and "error" not in result:
+                            st.success("✅ Artwork updated successfully!")
+                            st.write(f"**Game:** {result['game_title']}")
+                            st.write(f"**Game ID:** {result['game_id']}")
+                            # Refresh the library view to show updated artwork
+                            st.rerun()
+                        elif result and result.get("error") == "api_key_missing":
+                            st.error("❌ SteamGridDB API key not configured")
+                            st.info("To use this feature:")
+                            st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
+                            st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
+                            st.write("3. Restart the backend service")
+                        elif result and result.get("error") == "no_artwork_found":
+                            st.warning("⚠️ No artwork found for this game")
+                            st.write(f"**Game:** {result['details']['game_title']}")
+                            st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
+                        else:
+                            st.error("Failed to update game artwork. Please check the Game ID and try again.")
+        else:
+            st.markdown("**Manually upload artwork** (grid/hero/logo/icon)")
+            artwork_type = st.selectbox(
+                "Artwork type",
+                options=["grid", "hero", "logo", "icon"],
+                index=0,
+                key="gallery_manual_art_type",
+                help="Select which artwork slot to fill",
+            )
+            upload_file = st.file_uploader(
+                "Choose an image file (png/jpg/jpeg/webp)",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="gallery_manual_art_file",
+            )
+            if st.button("Upload Artwork", key="gallery_manual_art_upload"):
+                if not update_artwork_game_id:
+                    st.error("Please enter a Game ID")
+                elif not upload_file:
+                    st.error("Please choose an image file to upload")
+                else:
+                    with st.spinner("Uploading artwork..."):
+                        files = {"file": (upload_file.name, upload_file.getvalue(), upload_file.type or "application/octet-stream")}
+                        data = {"artwork_type": artwork_type}
+                        resp = requests.post(
+                            f"{BACKEND_URL}/upload_game_artwork/{update_artwork_game_id}",
+                            files=files,
+                            data=data,
+                            timeout=30,
+                        )
+                        if resp.status_code == 200:
+                            rj = resp.json()
+                            st.success("✅ Artwork uploaded successfully!")
+                            st.write(f"**Game ID:** {rj.get('game_id')}")
+                            st.write(f"**Type:** {rj.get('artwork_type')}")
+                            if rj.get("url"):
+                                st.image(f"{BACKEND_URL}{rj['url']}", caption="Preview")
+                            st.rerun()  # Refresh to show updated artwork
+                        else:
+                            try:
+                                st.error(resp.json())
+                            except Exception:
+                                st.error(f"Upload failed: HTTP {resp.status_code}")
+
+    st.sidebar.markdown("---")  # Add separator
+    
+    # -------------------------
+    # Detail Page Sidebar: Update Game Price Section
+    # -------------------------
+    update_price_expander = st.sidebar.expander("Update Game Price")
+    with update_price_expander:
+        st.markdown("**Update price using current price source configuration**")
+        
+        # Get current price source for display
+        current_price_source = get_price_source()
+        st.info(f"Current price source: **{current_price_source}**")
+        
+        # Pre-fill with current game ID
+        current_game_id = str(game.get("id", ""))
+        update_price_game_id = st.text_input("Game ID to Update Price", value=current_game_id, key="detail_update_price_game_id")
+        confirm_update_price = st.checkbox("I confirm that I want to update this game's price", key="detail_update_price_confirm")
+        
+        if st.button("Update Price", key="detail_update_price_button") and confirm_update_price:
+            if update_price_game_id:
+                with st.spinner(f"Updating price using {current_price_source}..."):
+                    result = update_game_price(update_price_game_id)
+                    if result:
+                        old_price = f"£{result['old_price']:.2f}" if result.get('old_price') else "Not set"
+                        new_price = f"£{result['new_price']:.2f}" if result.get('new_price') else "Not found"
+                        set_flash(f"Price updated: {result.get('game_title','Game')} {old_price} → {new_price} via {result.get('price_source','')}", "success")
+                        
+                        # Refresh the current game data to show updated price
+                        try:
+                            fresh = fetch_game_by_id(update_price_game_id)
+                            if isinstance(fresh, dict) and fresh:
+                                st.session_state["selected_game_detail"] = fresh
+                        except Exception:
+                            pass
+                        st.rerun()
+                    else:
+                        st.error("Failed to update game price. Please check the Game ID and try again.")
+            else:
+                st.warning("Please enter a Game ID.")
+
+    # -------------------------
+    # Detail Page Sidebar: Update Game Artwork Section
+    # -------------------------
+    update_artwork_expander = st.sidebar.expander("Update Game Artwork")
+    with update_artwork_expander:
+        st.markdown("**Update artwork using SteamGridDB API**")
+        st.info("Fetches high-resolution grid covers, heroes, logos, and icons")
+        
+        # Pre-fill with current game ID
+        update_artwork_game_id = st.text_input("Game ID to Update Artwork", value=current_game_id, key="detail_update_artwork_game_id")
+        mode = st.selectbox(
+            "Artwork update mode",
+            options=["Automatic (SteamGridDB)", "Manual upload"],
+            index=0,
+            key="detail_artwork_update_mode",
+        )
+
+        if mode == "Automatic (SteamGridDB)":
+            confirm_update_artwork = st.checkbox(
+                "I confirm that I want to update this game's artwork",
+                key="detail_update_artwork_confirm",
+            )
+            if st.button("Update Artwork", key="detail_update_artwork_button") and confirm_update_artwork:
+                if update_artwork_game_id:
+                    with st.spinner("Fetching artwork from SteamGridDB..."):
+                        result = update_game_artwork(update_artwork_game_id)
+                        if result and "error" not in result:
+                            set_flash(f"Artwork updated for Game ID {result.get('game_id', update_artwork_game_id)} • {result.get('game_title','')}", "success")
+                            # Refresh the current game data to show updated artwork
+                            try:
+                                fresh = fetch_game_by_id(update_artwork_game_id)
+                                if isinstance(fresh, dict) and fresh:
+                                    st.session_state["selected_game_detail"] = fresh
+                            except Exception:
+                                pass
+                            st.rerun()
+                        elif result and result.get("error") == "api_key_missing":
+                            st.error("❌ SteamGridDB API key not configured")
+                            st.info("To use this feature:")
+                            st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
+                            st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
+                            st.write("3. Restart the backend service")
+                        elif result and result.get("error") == "no_artwork_found":
+                            st.warning("⚠️ No artwork found for this game")
+                            st.write(f"**Game:** {result['details']['game_title']}")
+                            st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
+                        else:
+                            st.error("Failed to update game artwork. Please check the Game ID and try again.")
+        else:
+            st.markdown("**Manually upload artwork** (grid/hero/logo/icon)")
+            artwork_type = st.selectbox(
+                "Artwork type",
+                options=["grid", "hero", "logo", "icon"],
+                index=0,
+                key="detail_manual_art_type",
+                help="Select which artwork slot to fill",
+            )
+            upload_file = st.file_uploader(
+                "Choose an image file (png/jpg/jpeg/webp)",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="detail_manual_art_file",
+            )
+            if st.button("Upload Artwork", key="detail_manual_art_upload"):
+                if not update_artwork_game_id:
+                    st.error("Please enter a Game ID")
+                elif not upload_file:
+                    st.error("Please choose an image file to upload")
+                else:
+                    with st.spinner("Uploading artwork..."):
+                        files = {"file": (upload_file.name, upload_file.getvalue(), upload_file.type or "application/octet-stream")}
+                        data = {"artwork_type": artwork_type}
+                        resp = requests.post(
+                            f"{BACKEND_URL}/upload_game_artwork/{update_artwork_game_id}",
+                            files=files,
+                            data=data,
+                            timeout=30,
+                        )
+                        if resp.status_code == 200:
+                            rj = resp.json()
+                            set_flash(f"Artwork uploaded successfully • Game ID {rj.get('game_id')} • Type {rj.get('artwork_type')}", "success")
+                            # Refresh the current game data to show updated artwork
+                            try:
+                                fresh = fetch_game_by_id(update_artwork_game_id)
+                                if isinstance(fresh, dict) and fresh:
+                                    st.session_state["selected_game_detail"] = fresh
+                            except Exception:
+                                pass
+                            st.rerun()
+                        else:
+                            try:
+                                st.error(resp.json())
+                            except Exception:
+                                st.error(f"Upload failed: HTTP {resp.status_code}")
 
     st.sidebar.markdown("---")  # Add separator
     
@@ -1421,6 +1715,8 @@ def gallery_page():
     """Library page with visual game display, filtering, and 3D-ready layout"""
     st.title("Game Library")
     st.markdown("*Visual game collection browser with advanced filtering*")
+    # Show any persisted notifications from prior actions
+    show_flash()
 
     # Artwork coverage widget (optional)
     try:
@@ -1519,7 +1815,10 @@ def gallery_page():
 
     st.sidebar.markdown("---")  # Add separator
     
-    # Create filter interface in sidebar
+    # Load filter options for the gallery filters
+    filter_options = fetch_gallery_filters()
+    
+    # Create filter interface in sidebar (same as library)
     st.sidebar.markdown("### Library Filters")
     
     # Search by title
@@ -1651,6 +1950,520 @@ def gallery_page():
     # Update session state
     st.session_state["gallery_filters"] = filters
     st.session_state["gallery_per_page"] = per_page
+    
+    # -------------------------
+    # Library Sidebar: Update Game Price Section (moved below filters)
+    # -------------------------
+    st.sidebar.markdown("---")  # Add separator
+    update_price_expander = st.sidebar.expander("Update Game Price")
+    with update_price_expander:
+        st.markdown("**Update price using current price source configuration**")
+        
+        # Get current price source for display
+        current_price_source = get_price_source()
+        st.info(f"Current price source: **{current_price_source}**")
+        
+        # Individual game price update
+        st.markdown("**Single Game Price Update**")
+        update_price_game_id = st.text_input("Game ID to Update Price", key="gallery_update_price_game_id")
+        confirm_update_price = st.checkbox("I confirm that I want to update this game's price", key="gallery_update_price_confirm")
+        
+        if st.button("Update Price", key="gallery_update_price_button") and confirm_update_price:
+            if update_price_game_id:
+                with st.spinner(f"Updating price using {current_price_source}..."):
+                    result = update_game_price(update_price_game_id)
+                    if result:
+                        old_price = f"£{result['old_price']:.2f}" if result.get('old_price') else "Not set"
+                        new_price = f"£{result['new_price']:.2f}" if result.get('new_price') else "Not found"
+                        set_flash(f"Price updated: {result.get('game_title','Game')} {old_price} → {new_price} via {result.get('price_source','')}", "success")
+                        st.rerun()
+                    else:
+                        st.error("Failed to update game price. Please check the Game ID and try again.")
+            else:
+                st.warning("Please enter a Game ID.")
+        
+        # ---- Bulk: Update Games Without Prices ----
+        st.markdown("---")
+        st.markdown("**Bulk: Update Games Without Prices**")
+        
+        # Show games that would be processed (games without prices)
+        try:
+            resp = requests.get(f"{BACKEND_URL}/api/games")
+            if resp.status_code == 200:
+                all_games = resp.json()
+                games_without_prices = [game for game in all_games if not game.get('price') or game.get('price') == 0]
+                if games_without_prices:
+                    st.info(f"📋 **{len(games_without_prices)} games** need price updates")
+                    
+                    # Show expandable list of games to be processed
+                    with st.expander(f"View games without prices ({len(games_without_prices)})", expanded=False):
+                        for i, game in enumerate(games_without_prices[:20]):  # Show first 20
+                            current_price = f"£{game.get('price', 0):.2f}" if game.get('price') else "No price"
+                            st.write(f"• **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')}) - {current_price}")
+                        if len(games_without_prices) > 20:
+                            st.caption(f"... and {len(games_without_prices) - 20} more games")
+                else:
+                    st.success("✅ All games already have prices!")
+                    st.info("No games need price updates at this time.")
+        except Exception:
+            st.warning("Could not check price status")
+        
+        confirm_bulk_price = st.checkbox(
+            "I confirm I want to update all games without prices",
+            key="gallery_bulk_price_confirm",
+        )
+        
+        # Enhanced bulk processing with real-time current game display
+        if st.button("Update All Games Without Prices", key="gallery_bulk_price_button") and confirm_bulk_price:
+            # Check if any games actually need updating
+            games_without_prices = []
+            try:
+                resp = requests.get(f"{BACKEND_URL}/api/games")
+                if resp.status_code == 200:
+                    all_games = resp.json()
+                    games_without_prices = [game for game in all_games if not game.get('price') or game.get('price') == 0]
+                    if not games_without_prices:
+                        st.warning("No games need price updates. All games already have prices!")
+                        st.stop()
+                    
+                    st.info(f"🚀 Starting bulk price update for {len(games_without_prices)} games...")
+            except Exception:
+                st.error("Could not check which games need price updates")
+                st.stop()
+            
+            # Process games one by one to show current game being processed
+            progress_bar = st.progress(0)
+            current_game_status = st.empty()
+            
+            successful_updates = []
+            failed_updates = []
+            
+            for i, game in enumerate(games_without_prices):
+                # Update current game display
+                current_game_status.info(f"💰 **Processing:** {game.get('title', 'Unknown')} (ID: {game.get('id', 'N/A')}) • {i+1}/{len(games_without_prices)}")
+                
+                # Update progress bar
+                progress = (i + 1) / len(games_without_prices)
+                progress_bar.progress(progress)
+                
+                # Process this individual game
+                try:
+                    game_id = game.get('id')
+                    if game_id:
+                        result = update_game_price(game_id)
+                        if result and result.get('new_price'):
+                            successful_updates.append(game)
+                        else:
+                            failed_updates.append(game)
+                    else:
+                        failed_updates.append(game)
+                        
+                    # Small delay to make progress visible
+                    time.sleep(0.1)
+                        
+                except Exception as e:
+                    failed_updates.append(game)
+                    continue
+            
+            # Clear current game status and show final results
+            current_game_status.empty()
+            
+            # Show completion stats
+            st.success(f"✅ Bulk price update completed!")
+            
+            # Show detailed results
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Games Processed", len(games_without_prices))
+            with col2:
+                st.metric("Successful Updates", len(successful_updates))
+            with col3:
+                st.metric("Errors", len(failed_updates))
+            
+            # Store results in session state to display outside expander
+            st.session_state["bulk_price_results"] = {
+                "successful_updates": successful_updates,
+                "failed_updates": failed_updates
+            }
+            
+            # Auto-refresh to show updated prices
+            st.rerun()
+        
+        # ---- Bulk: Update ALL Game Prices ----
+        st.markdown("---")
+        st.markdown("**⚠️ Bulk: Update ALL Game Prices**")
+        st.warning("⚠️ **WARNING:** This will update prices for ALL games in your database. This operation will take a very long time and may hit rate limits.")
+        
+        # Show total games count
+        try:
+            resp = requests.get(f"{BACKEND_URL}/api/games")
+            if resp.status_code == 200:
+                all_games = resp.json()
+                st.info(f"📋 **{len(all_games)} total games** would be processed")
+                st.caption("⏱️ Estimated time: ~5-10 seconds per game")
+        except Exception:
+            st.warning("Could not get total games count")
+        
+        confirm_bulk_all_prices = st.checkbox(
+            "⚠️ I understand this will take a very long time and want to update ALL game prices",
+            key="gallery_bulk_all_price_confirm",
+        )
+        
+        # Enhanced bulk processing for ALL games
+        if st.button("⚠️ Update ALL Game Prices", key="gallery_bulk_all_price_button") and confirm_bulk_all_prices:
+            # Get all games
+            all_games = []
+            try:
+                resp = requests.get(f"{BACKEND_URL}/api/games")
+                if resp.status_code == 200:
+                    all_games = resp.json()
+                    if not all_games:
+                        st.warning("No games found in database!")
+                        st.stop()
+                    
+                    st.info(f"🚀 Starting bulk price update for ALL {len(all_games)} games...")
+                    st.warning("⏱️ This operation may take several hours. Please be patient and do not close this tab.")
+            except Exception:
+                st.error("Could not fetch games from database")
+                st.stop()
+            
+            # Process games one by one to show current game being processed
+            progress_bar = st.progress(0)
+            current_game_status = st.empty()
+            
+            successful_updates = []
+            failed_updates = []
+            
+            for i, game in enumerate(all_games):
+                # Update current game display
+                current_game_status.info(f"💰 **Processing:** {game.get('title', 'Unknown')} (ID: {game.get('id', 'N/A')}) • {i+1}/{len(all_games)}")
+                
+                # Update progress bar
+                progress = (i + 1) / len(all_games)
+                progress_bar.progress(progress)
+                
+                # Process this individual game
+                try:
+                    game_id = game.get('id')
+                    if game_id:
+                        result = update_game_price(game_id)
+                        if result:
+                            successful_updates.append(game)
+                        else:
+                            failed_updates.append(game)
+                    else:
+                        failed_updates.append(game)
+                        
+                    # Small delay to make progress visible and avoid rate limits
+                    time.sleep(0.2)
+                        
+                except Exception as e:
+                    failed_updates.append(game)
+                    continue
+            
+            # Clear current game status and show final results
+            current_game_status.empty()
+            
+            # Show completion stats
+            st.success(f"✅ Bulk price update for ALL games completed!")
+            
+            # Show detailed results
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Games Processed", len(all_games))
+            with col2:
+                st.metric("Successful Updates", len(successful_updates))
+            with col3:
+                st.metric("Errors", len(failed_updates))
+            
+            # Store results in session state to display outside expander
+            st.session_state["bulk_price_results"] = {
+                "successful_updates": successful_updates,
+                "failed_updates": failed_updates
+            }
+            
+            # Auto-refresh to show updated prices
+            st.rerun()
+    
+    # -------------------------
+    # Library Sidebar: Update Game Artwork Section (moved below filters)
+    # -------------------------
+    update_artwork_expander = st.sidebar.expander("Update Game Artwork")
+    with update_artwork_expander:
+        st.markdown("**Update artwork using SteamGridDB API**")
+        st.info("Fetches high-resolution grid covers, heroes, logos, and icons")
+        
+        update_artwork_game_id = st.text_input("Game ID to Update Artwork", key="gallery_update_artwork_game_id")
+        
+        # Show game information when ID is entered
+        if update_artwork_game_id and update_artwork_game_id.isdigit():
+            try:
+                game_info = fetch_game_by_id(update_artwork_game_id)
+                if game_info:
+                    st.info(f"🎮 **{game_info.get('title', 'Unknown')}** (ID: {update_artwork_game_id})")
+                    # Show current artwork status
+                    has_grid = bool(game_info.get('high_res_cover_url'))
+                    has_hero = bool(game_info.get('hero_image_url'))
+                    has_logo = bool(game_info.get('logo_image_url'))
+                    has_icon = bool(game_info.get('icon_image_url'))
+                    
+                    artwork_status = []
+                    if has_grid: artwork_status.append("✅ Grid")
+                    else: artwork_status.append("❌ Grid")
+                    if has_hero: artwork_status.append("✅ Hero")
+                    else: artwork_status.append("❌ Hero")
+                    if has_logo: artwork_status.append("✅ Logo")
+                    else: artwork_status.append("❌ Logo")
+                    if has_icon: artwork_status.append("✅ Icon")
+                    else: artwork_status.append("❌ Icon")
+                    
+                    st.caption(f"Current artwork: {' | '.join(artwork_status)}")
+                else:
+                    st.warning(f"⚠️ Game ID {update_artwork_game_id} not found")
+            except Exception:
+                st.warning(f"⚠️ Could not fetch game information for ID {update_artwork_game_id}")
+        
+        mode = st.selectbox(
+            "Artwork update mode",
+            options=["Automatic (SteamGridDB)", "Manual upload"],
+            index=0,
+            key="gallery_artwork_update_mode",
+        )
+
+        if mode == "Automatic (SteamGridDB)":
+            confirm_update_artwork = st.checkbox(
+                "I confirm that I want to update this game's artwork",
+                key="gallery_update_artwork_confirm",
+            )
+            if st.button("Update Artwork", key="gallery_update_artwork_button") and confirm_update_artwork:
+                if update_artwork_game_id:
+                    # Try to fetch game title for more informative spinner text
+                    _title = None
+                    try:
+                        gd = fetch_game_by_id(update_artwork_game_id)
+                        if isinstance(gd, dict):
+                            _title = gd.get("title")
+                    except Exception:
+                        pass
+                    _spinner_msg = f"Fetching artwork for '{_title}' (ID {update_artwork_game_id})..." if _title else "Fetching artwork from SteamGridDB..."
+                    with st.spinner(_spinner_msg):
+                        result = update_game_artwork(update_artwork_game_id)
+                        if result and "error" not in result:
+                            set_flash(f"Artwork updated for Game ID {result.get('game_id', update_artwork_game_id)} • {result.get('game_title','')}", "success")
+                            st.session_state["refresh_artwork_stats"] = True
+                            st.rerun()
+                        elif result and result.get("error") == "api_key_missing":
+                            st.error("❌ SteamGridDB API key not configured")
+                            st.info("To use this feature:")
+                            st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
+                            st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
+                            st.write("3. Restart the backend service")
+                        elif result and result.get("error") == "no_artwork_found":
+                            st.warning("⚠️ No artwork found for this game")
+                            st.write(f"**Game:** {result['details']['game_title']}")
+                            st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
+                        else:
+                            st.error("Failed to update game artwork. Please check the Game ID and try again.")
+        else:
+            st.markdown("**Manually upload artwork** (grid/hero/logo/icon)")
+            artwork_type = st.selectbox(
+                "Artwork type",
+                options=["grid", "hero", "logo", "icon"],
+                index=0,
+                key="gallery_manual_art_type",
+                help="Select which artwork slot to fill",
+            )
+            upload_file = st.file_uploader(
+                "Choose an image file (png/jpg/jpeg/webp)",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="gallery_manual_art_file",
+            )
+            if st.button("Upload Artwork", key="gallery_manual_art_upload"):
+                if not update_artwork_game_id:
+                    st.error("Please enter a Game ID")
+                elif not upload_file:
+                    st.error("Please choose an image file to upload")
+                else:
+                    with st.spinner("Uploading artwork..."):
+                        files = {"file": (upload_file.name, upload_file.getvalue(), upload_file.type or "application/octet-stream")}
+                        data = {"artwork_type": artwork_type}
+                        resp = requests.post(
+                            f"{BACKEND_URL}/upload_game_artwork/{update_artwork_game_id}",
+                            files=files,
+                            data=data,
+                            timeout=30,
+                        )
+                        if resp.status_code == 200:
+                            rj = resp.json()
+                            set_flash(f"Artwork uploaded successfully • Game ID {rj.get('game_id')} • Type {rj.get('artwork_type')}", "success")
+                            st.rerun()
+                        else:
+                            try:
+                                st.error(resp.json())
+                            except Exception:
+                                st.error(f"Upload failed: HTTP {resp.status_code}")
+
+        # ---- Bulk: Update All Missing Artwork ----
+        st.markdown("---")
+        st.markdown("**Bulk: Update All Missing Artwork**")
+        
+        # Show games that would be processed
+        try:
+            resp = requests.get(f"{BACKEND_URL}/api/high_res_artwork/status")
+            if resp.status_code == 200:
+                stats = resp.json()
+                if stats.get("success"):
+                    missing_games = stats.get("games_without_artwork", [])
+                    if missing_games:
+                        st.info(f"📋 **{len(missing_games)} games** need artwork updates")
+                        
+                        # Show expandable list of games to be processed
+                        with st.expander(f"View games missing artwork ({len(missing_games)})", expanded=False):
+                            for i, game in enumerate(missing_games[:20]):  # Show first 20
+                                st.write(f"• **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+                            if len(missing_games) > 20:
+                                st.caption(f"... and {len(missing_games) - 20} more games")
+                    else:
+                        st.success("✅ All games already have artwork!")
+                        st.info("No games need artwork updates at this time.")
+        except Exception:
+            st.warning("Could not check artwork status")
+        
+        confirm_bulk_art = st.checkbox(
+            "I confirm I want to update all games missing artwork",
+            key="gallery_bulk_art_confirm",
+        )
+        
+        # Enhanced bulk processing with real-time current game display
+        if st.button("Update All Missing Artwork", key="gallery_bulk_art_button") and confirm_bulk_art:
+            # Check if any games actually need updating
+            missing_games = []
+            try:
+                resp = requests.get(f"{BACKEND_URL}/api/high_res_artwork/status")
+                if resp.status_code == 200:
+                    stats = resp.json()
+                    if stats.get("success"):
+                        missing_games = stats.get("games_without_artwork", [])
+                        if not missing_games:
+                            st.warning("No games need artwork updates. All games already have artwork!")
+                            st.stop()
+                        
+                        st.info(f"🚀 Starting bulk artwork update for {len(missing_games)} games...")
+            except Exception:
+                st.error("Could not check which games need artwork updates")
+                st.stop()
+            
+            # Process games one by one to show current game being processed
+            progress_bar = st.progress(0)
+            current_game_status = st.empty()
+            results_placeholder = st.empty()
+            
+            successful_updates = []
+            failed_updates = []
+            
+            for i, game in enumerate(missing_games):
+                # Update current game display
+                current_game_status.info(f"🎮 **Processing:** {game.get('title', 'Unknown')} (ID: {game.get('id', 'N/A')}) • {i+1}/{len(missing_games)}")
+                
+                # Update progress bar
+                progress = (i + 1) / len(missing_games)
+                progress_bar.progress(progress)
+                
+                # Process this individual game
+                try:
+                    game_id = game.get('id')
+                    if game_id:
+                        result = update_game_artwork(game_id)
+                        if result and "error" not in result:
+                            successful_updates.append(game)
+                        else:
+                            failed_updates.append(game)
+                    else:
+                        failed_updates.append(game)
+                        
+                    # Small delay to make progress visible
+                    time.sleep(0.1)
+                        
+                except Exception as e:
+                    failed_updates.append(game)
+                    continue
+            
+            # Clear current game status and show final results
+            current_game_status.empty()
+            
+            # Show completion stats
+            st.success(f"✅ Bulk artwork update completed!")
+            
+            # Show detailed results
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Games Processed", len(missing_games))
+            with col2:
+                st.metric("Successful Updates", len(successful_updates))
+            with col3:
+                st.metric("Errors", len(failed_updates))
+            
+            # Store results in session state to display outside expander
+            st.session_state["bulk_artwork_results"] = {
+                "successful_updates": successful_updates,
+                "failed_updates": failed_updates
+            }
+            st.session_state["refresh_artwork_stats"] = True
+            
+            # Auto-refresh to show updated artwork
+            st.rerun()
+    
+    # Display bulk price results outside of expanders (to avoid nesting)
+    if "bulk_price_results" in st.session_state:
+        results = st.session_state["bulk_price_results"]
+        successful_updates = results.get("successful_updates", [])
+        failed_updates = results.get("failed_updates", [])
+        
+        st.markdown("---")
+        st.subheader("💰 Bulk Price Update Results")
+        
+        # Show list of updated games
+        if successful_updates:
+            with st.expander(f"✅ Successfully updated ({len(successful_updates)})", expanded=False):
+                for game in successful_updates:
+                    st.write(f"✅ **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+        
+        # Show list of failed games
+        if failed_updates:
+            with st.expander(f"❌ Failed updates ({len(failed_updates)})", expanded=False):
+                for game in failed_updates:
+                    st.write(f"❌ **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+        
+        # Clear results after displaying
+        if st.button("Clear Results", key="clear_bulk_price_results"):
+            del st.session_state["bulk_price_results"]
+            st.rerun()
+    
+    # Display bulk artwork results outside of expanders (to avoid nesting)
+    if "bulk_artwork_results" in st.session_state:
+        results = st.session_state["bulk_artwork_results"]
+        successful_updates = results.get("successful_updates", [])
+        failed_updates = results.get("failed_updates", [])
+        
+        st.markdown("---")
+        st.subheader("🎨 Bulk Artwork Update Results")
+        
+        # Show list of updated games
+        if successful_updates:
+            with st.expander(f"✅ Successfully updated ({len(successful_updates)})", expanded=False):
+                for game in successful_updates:
+                    st.write(f"✅ **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+        
+        # Show list of failed games
+        if failed_updates:
+            with st.expander(f"❌ Failed updates ({len(failed_updates)})", expanded=False):
+                for game in failed_updates:
+                    st.write(f"❌ **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+        
+        # Clear results after displaying
+        if st.button("Clear Results", key="clear_bulk_artwork_results"):
+            del st.session_state["bulk_artwork_results"]
+            st.rerun()
     
     # Fetch gallery data
     gallery_data = fetch_gallery_games(
@@ -2408,10 +3221,12 @@ def main():
         current_price_source = get_price_source()
         st.info(f"Current price source: **{current_price_source}**")
         
-        update_price_game_id = st.text_input("Game ID to Update Price", key="update_price_game_id")
-        confirm_update_price = st.checkbox("I confirm that I want to update this game's price", key="update_price_confirm")
+        # Individual game price update
+        st.markdown("**Single Game Price Update**")
+        update_price_game_id = st.text_input("Game ID to Update Price", key="editor_update_price_game_id")
+        confirm_update_price = st.checkbox("I confirm that I want to update this game's price", key="editor_update_price_confirm")
         
-        if st.button("Update Price", key="update_price_button") and confirm_update_price:
+        if st.button("Update Price", key="editor_update_price_button") and confirm_update_price:
             if update_price_game_id:
                 with st.spinner(f"Updating price using {current_price_source}..."):
                     result = update_game_price(update_price_game_id)
@@ -2438,6 +3253,209 @@ def main():
                         st.error("Failed to update game price. Please check the Game ID and try again.")
             else:
                 st.warning("Please enter a Game ID.")
+        
+        # ---- Bulk: Update Games Without Prices ----
+        st.markdown("---")
+        st.markdown("**Bulk: Update Games Without Prices**")
+        
+        # Show games that would be processed (games without prices)
+        try:
+            resp = requests.get(f"{BACKEND_URL}/api/games")
+            if resp.status_code == 200:
+                all_games = resp.json()
+                games_without_prices = [game for game in all_games if not game.get('price') or game.get('price') == 0]
+                if games_without_prices:
+                    st.info(f"📋 **{len(games_without_prices)} games** need price updates")
+                    
+                    # Show expandable list of games to be processed
+                    with st.expander(f"View games without prices ({len(games_without_prices)})", expanded=False):
+                        for i, game in enumerate(games_without_prices[:20]):  # Show first 20
+                            current_price = f"£{game.get('price', 0):.2f}" if game.get('price') else "No price"
+                            st.write(f"• **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')}) - {current_price}")
+                        if len(games_without_prices) > 20:
+                            st.caption(f"... and {len(games_without_prices) - 20} more games")
+                else:
+                    st.success("✅ All games already have prices!")
+                    st.info("No games need price updates at this time.")
+        except Exception:
+            st.warning("Could not check price status")
+        
+        confirm_bulk_price = st.checkbox(
+            "I confirm I want to update all games without prices",
+            key="editor_bulk_price_confirm",
+        )
+        
+        # Enhanced bulk processing with real-time current game display
+        if st.button("Update All Games Without Prices", key="editor_bulk_price_button") and confirm_bulk_price:
+            # Check if any games actually need updating
+            games_without_prices = []
+            try:
+                resp = requests.get(f"{BACKEND_URL}/api/games")
+                if resp.status_code == 200:
+                    all_games = resp.json()
+                    games_without_prices = [game for game in all_games if not game.get('price') or game.get('price') == 0]
+                    if not games_without_prices:
+                        st.warning("No games need price updates. All games already have prices!")
+                        st.stop()
+                    
+                    st.info(f"🚀 Starting bulk price update for {len(games_without_prices)} games...")
+            except Exception:
+                st.error("Could not check which games need price updates")
+                st.stop()
+            
+            # Process games one by one to show current game being processed
+            progress_bar = st.progress(0)
+            current_game_status = st.empty()
+            
+            successful_updates = []
+            failed_updates = []
+            
+            for i, game in enumerate(games_without_prices):
+                # Update current game display
+                current_game_status.info(f"💰 **Processing:** {game.get('title', 'Unknown')} (ID: {game.get('id', 'N/A')}) • {i+1}/{len(games_without_prices)}")
+                
+                # Update progress bar
+                progress = (i + 1) / len(games_without_prices)
+                progress_bar.progress(progress)
+                
+                # Process this individual game
+                try:
+                    game_id = game.get('id')
+                    if game_id:
+                        result = update_game_price(game_id)
+                        if result and result.get('new_price'):
+                            successful_updates.append(game)
+                        else:
+                            failed_updates.append(game)
+                    else:
+                        failed_updates.append(game)
+                        
+                    # Small delay to make progress visible
+                    time.sleep(0.1)
+                        
+                except Exception as e:
+                    failed_updates.append(game)
+                    continue
+            
+            # Clear current game status and show final results
+            current_game_status.empty()
+            
+            # Show completion stats
+            st.success(f"✅ Bulk price update completed!")
+            
+            # Show detailed results
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Games Processed", len(games_without_prices))
+            with col2:
+                st.metric("Successful Updates", len(successful_updates))
+            with col3:
+                st.metric("Errors", len(failed_updates))
+            
+            # Store results in session state to display outside expander
+            st.session_state["editor_bulk_price_results"] = {
+                "successful_updates": successful_updates,
+                "failed_updates": failed_updates
+            }
+            
+            # Auto-refresh to show updated prices
+            st.rerun()
+        
+        # ---- Bulk: Update ALL Game Prices ----
+        st.markdown("---")
+        st.markdown("**⚠️ Bulk: Update ALL Game Prices**")
+        st.warning("⚠️ **WARNING:** This will update prices for ALL games in your database. This operation will take a very long time and may hit rate limits.")
+        
+        # Show total games count
+        try:
+            resp = requests.get(f"{BACKEND_URL}/api/games")
+            if resp.status_code == 200:
+                all_games = resp.json()
+                st.info(f"📋 **{len(all_games)} total games** would be processed")
+                st.caption("⏱️ Estimated time: ~5-10 seconds per game")
+        except Exception:
+            st.warning("Could not get total games count")
+        
+        confirm_bulk_all_prices = st.checkbox(
+            "⚠️ I understand this will take a very long time and want to update ALL game prices",
+            key="editor_bulk_all_price_confirm",
+        )
+        
+        # Enhanced bulk processing for ALL games
+        if st.button("⚠️ Update ALL Game Prices", key="editor_bulk_all_price_button") and confirm_bulk_all_prices:
+            # Get all games
+            all_games = []
+            try:
+                resp = requests.get(f"{BACKEND_URL}/api/games")
+                if resp.status_code == 200:
+                    all_games = resp.json()
+                    if not all_games:
+                        st.warning("No games found in database!")
+                        st.stop()
+                    
+                    st.info(f"🚀 Starting bulk price update for ALL {len(all_games)} games...")
+                    st.warning("⏱️ This operation may take several hours. Please be patient and do not close this tab.")
+            except Exception:
+                st.error("Could not fetch games from database")
+                st.stop()
+            
+            # Process games one by one to show current game being processed
+            progress_bar = st.progress(0)
+            current_game_status = st.empty()
+            
+            successful_updates = []
+            failed_updates = []
+            
+            for i, game in enumerate(all_games):
+                # Update current game display
+                current_game_status.info(f"💰 **Processing:** {game.get('title', 'Unknown')} (ID: {game.get('id', 'N/A')}) • {i+1}/{len(all_games)}")
+                
+                # Update progress bar
+                progress = (i + 1) / len(all_games)
+                progress_bar.progress(progress)
+                
+                # Process this individual game
+                try:
+                    game_id = game.get('id')
+                    if game_id:
+                        result = update_game_price(game_id)
+                        if result:
+                            successful_updates.append(game)
+                        else:
+                            failed_updates.append(game)
+                    else:
+                        failed_updates.append(game)
+                        
+                    # Small delay to make progress visible and avoid rate limits
+                    time.sleep(0.2)
+                        
+                except Exception as e:
+                    failed_updates.append(game)
+                    continue
+            
+            # Clear current game status and show final results
+            current_game_status.empty()
+            
+            # Show completion stats
+            st.success(f"✅ Bulk price update for ALL games completed!")
+            
+            # Show detailed results
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Games Processed", len(all_games))
+            with col2:
+                st.metric("Successful Updates", len(successful_updates))
+            with col3:
+                st.metric("Errors", len(failed_updates))
+            
+            # Store results in session state to display outside expander
+            st.session_state["editor_bulk_price_results"] = {
+                "successful_updates": successful_updates,
+                "failed_updates": failed_updates
+            }
+            
+            # Auto-refresh to show updated prices
+            st.rerun()
 
     # -------------------------
     # Sidebar: Update Game Artwork Section
@@ -2447,22 +3465,62 @@ def main():
         st.markdown("**Update artwork using SteamGridDB API**")
         st.info("Fetches high-resolution grid covers, heroes, logos, and icons")
         
-        update_artwork_game_id = st.text_input("Game ID to Update Artwork", key="update_artwork_game_id")
+        # Individual game artwork update
+        st.markdown("**Single Game Artwork Update**")
+        update_artwork_game_id = st.text_input("Game ID to Update Artwork", key="editor_update_artwork_game_id")
+        
+        # Show game information when ID is entered
+        if update_artwork_game_id and update_artwork_game_id.isdigit():
+            try:
+                game_info = fetch_game_by_id(update_artwork_game_id)
+                if game_info:
+                    st.info(f"🎮 **{game_info.get('title', 'Unknown')}** (ID: {update_artwork_game_id})")
+                    # Show current artwork status
+                    has_grid = bool(game_info.get('high_res_cover_url'))
+                    has_hero = bool(game_info.get('hero_image_url'))
+                    has_logo = bool(game_info.get('logo_image_url'))
+                    has_icon = bool(game_info.get('icon_image_url'))
+                    
+                    artwork_status = []
+                    if has_grid: artwork_status.append("✅ Grid")
+                    else: artwork_status.append("❌ Grid")
+                    if has_hero: artwork_status.append("✅ Hero")
+                    else: artwork_status.append("❌ Hero")
+                    if has_logo: artwork_status.append("✅ Logo")
+                    else: artwork_status.append("❌ Logo")
+                    if has_icon: artwork_status.append("✅ Icon")
+                    else: artwork_status.append("❌ Icon")
+                    
+                    st.caption(f"Current artwork: {' | '.join(artwork_status)}")
+                else:
+                    st.warning(f"⚠️ Game ID {update_artwork_game_id} not found")
+            except Exception:
+                st.warning(f"⚠️ Could not fetch game information for ID {update_artwork_game_id}")
+        
         mode = st.selectbox(
             "Artwork update mode",
             options=["Automatic (SteamGridDB)", "Manual upload"],
             index=0,
-            key="artwork_update_mode",
+            key="editor_artwork_update_mode",
         )
 
         if mode == "Automatic (SteamGridDB)":
             confirm_update_artwork = st.checkbox(
                 "I confirm that I want to update this game's artwork",
-                key="update_artwork_confirm",
+                key="editor_update_artwork_confirm",
             )
-            if st.button("Update Artwork", key="update_artwork_button") and confirm_update_artwork:
+            if st.button("Update Artwork", key="editor_update_artwork_button") and confirm_update_artwork:
                 if update_artwork_game_id:
-                    with st.spinner("Fetching artwork from SteamGridDB..."):
+                    # Try to fetch game title for more informative spinner text
+                    _title = None
+                    try:
+                        gd = fetch_game_by_id(update_artwork_game_id)
+                        if isinstance(gd, dict):
+                            _title = gd.get("title")
+                    except Exception:
+                        pass
+                    _spinner_msg = f"Fetching artwork for '{_title}' (ID {update_artwork_game_id})..." if _title else "Fetching artwork from SteamGridDB..."
+                    with st.spinner(_spinner_msg):
                         result = update_game_artwork(update_artwork_game_id)
                         if result and "error" not in result:
                             st.success("✅ Artwork updated successfully!")
@@ -2501,15 +3559,15 @@ def main():
                 "Artwork type",
                 options=["grid", "hero", "logo", "icon"],
                 index=0,
-                key="manual_art_type",
+                key="editor_manual_art_type",
                 help="Select which artwork slot to fill",
             )
             upload_file = st.file_uploader(
                 "Choose an image file (png/jpg/jpeg/webp)",
                 type=["png", "jpg", "jpeg", "webp"],
-                key="manual_art_file",
+                key="editor_manual_art_file",
             )
-            if st.button("Upload Artwork", key="manual_art_upload"):
+            if st.button("Upload Artwork", key="editor_manual_art_upload"):
                 if not update_artwork_game_id:
                     st.error("Please enter a Game ID")
                 elif not upload_file:
@@ -2536,6 +3594,115 @@ def main():
                                 st.error(resp.json())
                             except Exception:
                                 st.error(f"Upload failed: HTTP {resp.status_code}")
+
+        # ---- Bulk: Update All Missing Artwork ----
+        st.markdown("---")
+        st.markdown("**Bulk: Update All Missing Artwork**")
+        
+        # Show games that would be processed
+        try:
+            resp = requests.get(f"{BACKEND_URL}/api/high_res_artwork/status")
+            if resp.status_code == 200:
+                stats = resp.json()
+                if stats.get("success"):
+                    missing_games = stats.get("games_without_artwork", [])
+                    if missing_games:
+                        st.info(f"📋 **{len(missing_games)} games** need artwork updates")
+                        
+                        # Show expandable list of games to be processed
+                        with st.expander(f"View games missing artwork ({len(missing_games)})", expanded=False):
+                            for i, game in enumerate(missing_games[:20]):  # Show first 20
+                                st.write(f"• **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+                            if len(missing_games) > 20:
+                                st.caption(f"... and {len(missing_games) - 20} more games")
+                    else:
+                        st.success("✅ All games already have artwork!")
+                        st.info("No games need artwork updates at this time.")
+        except Exception:
+            st.warning("Could not check artwork status")
+        
+        confirm_bulk_art = st.checkbox(
+            "I confirm I want to update all games missing artwork",
+            key="editor_bulk_art_confirm",
+        )
+        
+        # Enhanced bulk processing with real-time current game display
+        if st.button("Update All Missing Artwork", key="editor_bulk_art_button") and confirm_bulk_art:
+            # Check if any games actually need updating
+            missing_games = []
+            try:
+                resp = requests.get(f"{BACKEND_URL}/api/high_res_artwork/status")
+                if resp.status_code == 200:
+                    stats = resp.json()
+                    if stats.get("success"):
+                        missing_games = stats.get("games_without_artwork", [])
+                        if not missing_games:
+                            st.warning("No games need artwork updates. All games already have artwork!")
+                            st.stop()
+                        
+                        st.info(f"🚀 Starting bulk artwork update for {len(missing_games)} games...")
+            except Exception:
+                st.error("Could not check which games need artwork updates")
+                st.stop()
+            
+            # Process games one by one to show current game being processed
+            progress_bar = st.progress(0)
+            current_game_status = st.empty()
+            
+            successful_updates = []
+            failed_updates = []
+            
+            for i, game in enumerate(missing_games):
+                # Update current game display
+                current_game_status.info(f"🎮 **Processing:** {game.get('title', 'Unknown')} (ID: {game.get('id', 'N/A')}) • {i+1}/{len(missing_games)}")
+                
+                # Update progress bar
+                progress = (i + 1) / len(missing_games)
+                progress_bar.progress(progress)
+                
+                # Process this individual game
+                try:
+                    game_id = game.get('id')
+                    if game_id:
+                        result = update_game_artwork(game_id)
+                        if result and "error" not in result:
+                            successful_updates.append(game)
+                        else:
+                            failed_updates.append(game)
+                    else:
+                        failed_updates.append(game)
+                        
+                    # Small delay to make progress visible
+                    time.sleep(0.1)
+                        
+                except Exception as e:
+                    failed_updates.append(game)
+                    continue
+            
+            # Clear current game status and show final results
+            current_game_status.empty()
+            
+            # Show completion stats
+            st.success(f"✅ Bulk artwork update completed!")
+            
+            # Show detailed results
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Games Processed", len(missing_games))
+            with col2:
+                st.metric("Successful Updates", len(successful_updates))
+            with col3:
+                st.metric("Errors", len(failed_updates))
+            
+            # Store results in session state to display outside expander
+            st.session_state["editor_bulk_artwork_results"] = {
+                "successful_updates": successful_updates,
+                "failed_updates": failed_updates
+            }
+            st.session_state["refresh_artwork_stats"] = True
+            
+            # Auto-refresh to show updated artwork
+            st.rerun()
 
     # The manual upload is now integrated above under the "Manual upload" checkbox.
 
@@ -2683,6 +3850,61 @@ def main():
             file_name="games_export.csv",
             mime="text/csv"
         )
+
+    # -------------------------
+    # Display Editor Bulk Results (outside of expanders to avoid nesting)
+    # -------------------------
+    # Display bulk price results
+    if "editor_bulk_price_results" in st.session_state:
+        results = st.session_state["editor_bulk_price_results"]
+        successful_updates = results.get("successful_updates", [])
+        failed_updates = results.get("failed_updates", [])
+        
+        st.markdown("---")
+        st.subheader("💰 Editor Bulk Price Update Results")
+        
+        # Show list of updated games
+        if successful_updates:
+            with st.expander(f"✅ Successfully updated ({len(successful_updates)})", expanded=False):
+                for game in successful_updates:
+                    st.write(f"✅ **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+        
+        # Show list of failed games
+        if failed_updates:
+            with st.expander(f"❌ Failed updates ({len(failed_updates)})", expanded=False):
+                for game in failed_updates:
+                    st.write(f"❌ **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+        
+        # Clear results after displaying
+        if st.button("Clear Results", key="clear_editor_bulk_price_results"):
+            del st.session_state["editor_bulk_price_results"]
+            st.rerun()
+
+    # Display bulk artwork results
+    if "editor_bulk_artwork_results" in st.session_state:
+        results = st.session_state["editor_bulk_artwork_results"]
+        successful_updates = results.get("successful_updates", [])
+        failed_updates = results.get("failed_updates", [])
+        
+        st.markdown("---")
+        st.subheader("🎨 Editor Bulk Artwork Update Results")
+        
+        # Show list of updated games
+        if successful_updates:
+            with st.expander(f"✅ Successfully updated ({len(successful_updates)})", expanded=False):
+                for game in successful_updates:
+                    st.write(f"✅ **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+        
+        # Show list of failed games
+        if failed_updates:
+            with st.expander(f"❌ Failed updates ({len(failed_updates)})", expanded=False):
+                for game in failed_updates:
+                    st.write(f"❌ **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
+        
+        # Clear results after displaying
+        if st.button("Clear Results", key="clear_editor_bulk_artwork_results"):
+            del st.session_state["editor_bulk_artwork_results"]
+            st.rerun()
 
     # -------------------------
     # Display Filtered Games with Inline Bulk Delete
