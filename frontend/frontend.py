@@ -871,6 +871,8 @@ def game_detail_page():
     
     # Surface any pending notifications
     show_flash()
+    # Precompute current game id for sidebar controls
+    current_game_id = str(game.get("id", ""))
     
     # -------------------------
     # Game Detail Sidebar: Same as Library for Consistency
@@ -901,261 +903,7 @@ def game_detail_page():
             """
             components.html(iframe_html, height=450)
 
-    st.sidebar.markdown("---")  # Add separator
     
-    # -------------------------
-    # Library Sidebar: Update Game Price Section
-    # -------------------------
-    update_price_expander = st.sidebar.expander("Update Game Price")
-    with update_price_expander:
-        st.markdown("**Update price using current price source configuration**")
-        
-        # Get current price source for display
-        current_price_source = get_price_source()
-        st.info(f"Current price source: **{current_price_source}**")
-        
-        update_price_game_id = st.text_input("Game ID to Update Price", key="gallery_update_price_game_id")
-        confirm_update_price = st.checkbox("I confirm that I want to update this game's price", key="gallery_update_price_confirm")
-        
-        if st.button("Update Price", key="gallery_update_price_button") and confirm_update_price:
-            if update_price_game_id:
-                with st.spinner(f"Updating price using {current_price_source}..."):
-                    result = update_game_price(update_price_game_id)
-                    if result:
-                        st.success(f"✅ Price updated successfully!")
-                        st.write(f"**Game:** {result['game_title']}")
-                        st.write(f"**Old Price:** £{result['old_price']:.2f}" if result['old_price'] else "**Old Price:** Not set")
-                        st.write(f"**New Price:** £{result['new_price']:.2f}" if result['new_price'] else "**New Price:** Not found")
-                        st.write(f"**Source:** {result['price_source']}")
-                        
-                        # Refresh the library view if needed
-                        st.rerun()
-                    else:
-                        st.error("Failed to update game price. Please check the Game ID and try again.")
-            else:
-                st.warning("Please enter a Game ID.")
-
-    # -------------------------
-    # Library Sidebar: Update Game Artwork Section
-    # -------------------------
-    update_artwork_expander = st.sidebar.expander("Update Game Artwork")
-    with update_artwork_expander:
-        st.markdown("**Update artwork using SteamGridDB API**")
-        st.info("Fetches high-resolution grid covers, heroes, logos, and icons")
-        
-        update_artwork_game_id = st.text_input("Game ID to Update Artwork", key="gallery_update_artwork_game_id")
-        mode = st.selectbox(
-            "Artwork update mode",
-            options=["Automatic (SteamGridDB)", "Manual upload"],
-            index=0,
-            key="gallery_artwork_update_mode",
-        )
-
-        if mode == "Automatic (SteamGridDB)":
-            confirm_update_artwork = st.checkbox(
-                "I confirm that I want to update this game's artwork",
-                key="gallery_update_artwork_confirm",
-            )
-            if st.button("Update Artwork", key="gallery_update_artwork_button") and confirm_update_artwork:
-                if update_artwork_game_id:
-                    with st.spinner("Fetching artwork from SteamGridDB..."):
-                        result = update_game_artwork(update_artwork_game_id)
-                        if result and "error" not in result:
-                            st.success("✅ Artwork updated successfully!")
-                            st.write(f"**Game:** {result['game_title']}")
-                            st.write(f"**Game ID:** {result['game_id']}")
-                            # Refresh the library view to show updated artwork
-                            st.rerun()
-                        elif result and result.get("error") == "api_key_missing":
-                            st.error("❌ SteamGridDB API key not configured")
-                            st.info("To use this feature:")
-                            st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
-                            st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
-                            st.write("3. Restart the backend service")
-                        elif result and result.get("error") == "no_artwork_found":
-                            st.warning("⚠️ No artwork found for this game")
-                            st.write(f"**Game:** {result['details']['game_title']}")
-                            st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
-                        else:
-                            st.error("Failed to update game artwork. Please check the Game ID and try again.")
-        else:
-            st.markdown("**Manually upload artwork** (grid/hero/logo/icon)")
-            artwork_type = st.selectbox(
-                "Artwork type",
-                options=["grid", "hero", "logo", "icon"],
-                index=0,
-                key="gallery_manual_art_type",
-                help="Select which artwork slot to fill",
-            )
-            upload_file = st.file_uploader(
-                "Choose an image file (png/jpg/jpeg/webp)",
-                type=["png", "jpg", "jpeg", "webp"],
-                key="gallery_manual_art_file",
-            )
-            if st.button("Upload Artwork", key="gallery_manual_art_upload"):
-                if not update_artwork_game_id:
-                    st.error("Please enter a Game ID")
-                elif not upload_file:
-                    st.error("Please choose an image file to upload")
-                else:
-                    with st.spinner("Uploading artwork..."):
-                        files = {"file": (upload_file.name, upload_file.getvalue(), upload_file.type or "application/octet-stream")}
-                        data = {"artwork_type": artwork_type}
-                        resp = requests.post(
-                            f"{BACKEND_URL}/upload_game_artwork/{update_artwork_game_id}",
-                            files=files,
-                            data=data,
-                            timeout=30,
-                        )
-                        if resp.status_code == 200:
-                            rj = resp.json()
-                            st.success("✅ Artwork uploaded successfully!")
-                            st.write(f"**Game ID:** {rj.get('game_id')}")
-                            st.write(f"**Type:** {rj.get('artwork_type')}")
-                            if rj.get("url"):
-                                st.image(f"{BACKEND_URL}{rj['url']}", caption="Preview")
-                            st.rerun()  # Refresh to show updated artwork
-                        else:
-                            try:
-                                st.error(resp.json())
-                            except Exception:
-                                st.error(f"Upload failed: HTTP {resp.status_code}")
-
-    st.sidebar.markdown("---")  # Add separator
-    
-    # -------------------------
-    # Detail Page Sidebar: Update Game Price Section
-    # -------------------------
-    update_price_expander = st.sidebar.expander("Update Game Price")
-    with update_price_expander:
-        st.markdown("**Update price using current price source configuration**")
-        
-        # Get current price source for display
-        current_price_source = get_price_source()
-        st.info(f"Current price source: **{current_price_source}**")
-        
-        # Pre-fill with current game ID
-        current_game_id = str(game.get("id", ""))
-        update_price_game_id = st.text_input("Game ID to Update Price", value=current_game_id, key="detail_update_price_game_id")
-        confirm_update_price = st.checkbox("I confirm that I want to update this game's price", key="detail_update_price_confirm")
-        
-        if st.button("Update Price", key="detail_update_price_button") and confirm_update_price:
-            if update_price_game_id:
-                with st.spinner(f"Updating price using {current_price_source}..."):
-                    result = update_game_price(update_price_game_id)
-                    if result:
-                        old_price = f"£{result['old_price']:.2f}" if result.get('old_price') else "Not set"
-                        new_price = f"£{result['new_price']:.2f}" if result.get('new_price') else "Not found"
-                        set_flash(f"Price updated: {result.get('game_title','Game')} {old_price} → {new_price} via {result.get('price_source','')}", "success")
-                        
-                        # Refresh the current game data to show updated price
-                        try:
-                            fresh = fetch_game_by_id(update_price_game_id)
-                            if isinstance(fresh, dict) and fresh:
-                                st.session_state["selected_game_detail"] = fresh
-                        except Exception:
-                            pass
-                        st.rerun()
-                    else:
-                        st.error("Failed to update game price. Please check the Game ID and try again.")
-            else:
-                st.warning("Please enter a Game ID.")
-
-    # -------------------------
-    # Detail Page Sidebar: Update Game Artwork Section
-    # -------------------------
-    update_artwork_expander = st.sidebar.expander("Update Game Artwork")
-    with update_artwork_expander:
-        st.markdown("**Update artwork using SteamGridDB API**")
-        st.info("Fetches high-resolution grid covers, heroes, logos, and icons")
-        
-        # Pre-fill with current game ID
-        update_artwork_game_id = st.text_input("Game ID to Update Artwork", value=current_game_id, key="detail_update_artwork_game_id")
-        mode = st.selectbox(
-            "Artwork update mode",
-            options=["Automatic (SteamGridDB)", "Manual upload"],
-            index=0,
-            key="detail_artwork_update_mode",
-        )
-
-        if mode == "Automatic (SteamGridDB)":
-            confirm_update_artwork = st.checkbox(
-                "I confirm that I want to update this game's artwork",
-                key="detail_update_artwork_confirm",
-            )
-            if st.button("Update Artwork", key="detail_update_artwork_button") and confirm_update_artwork:
-                if update_artwork_game_id:
-                    with st.spinner("Fetching artwork from SteamGridDB..."):
-                        result = update_game_artwork(update_artwork_game_id)
-                        if result and "error" not in result:
-                            set_flash(f"Artwork updated for Game ID {result.get('game_id', update_artwork_game_id)} • {result.get('game_title','')}", "success")
-                            # Refresh the current game data to show updated artwork
-                            try:
-                                fresh = fetch_game_by_id(update_artwork_game_id)
-                                if isinstance(fresh, dict) and fresh:
-                                    st.session_state["selected_game_detail"] = fresh
-                            except Exception:
-                                pass
-                            st.rerun()
-                        elif result and result.get("error") == "api_key_missing":
-                            st.error("❌ SteamGridDB API key not configured")
-                            st.info("To use this feature:")
-                            st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
-                            st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
-                            st.write("3. Restart the backend service")
-                        elif result and result.get("error") == "no_artwork_found":
-                            st.warning("⚠️ No artwork found for this game")
-                            st.write(f"**Game:** {result['details']['game_title']}")
-                            st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
-                        else:
-                            st.error("Failed to update game artwork. Please check the Game ID and try again.")
-        else:
-            st.markdown("**Manually upload artwork** (grid/hero/logo/icon)")
-            artwork_type = st.selectbox(
-                "Artwork type",
-                options=["grid", "hero", "logo", "icon"],
-                index=0,
-                key="detail_manual_art_type",
-                help="Select which artwork slot to fill",
-            )
-            upload_file = st.file_uploader(
-                "Choose an image file (png/jpg/jpeg/webp)",
-                type=["png", "jpg", "jpeg", "webp"],
-                key="detail_manual_art_file",
-            )
-            if st.button("Upload Artwork", key="detail_manual_art_upload"):
-                if not update_artwork_game_id:
-                    st.error("Please enter a Game ID")
-                elif not upload_file:
-                    st.error("Please choose an image file to upload")
-                else:
-                    with st.spinner("Uploading artwork..."):
-                        files = {"file": (upload_file.name, upload_file.getvalue(), upload_file.type or "application/octet-stream")}
-                        data = {"artwork_type": artwork_type}
-                        resp = requests.post(
-                            f"{BACKEND_URL}/upload_game_artwork/{update_artwork_game_id}",
-                            files=files,
-                            data=data,
-                            timeout=30,
-                        )
-                        if resp.status_code == 200:
-                            rj = resp.json()
-                            set_flash(f"Artwork uploaded successfully • Game ID {rj.get('game_id')} • Type {rj.get('artwork_type')}", "success")
-                            # Refresh the current game data to show updated artwork
-                            try:
-                                fresh = fetch_game_by_id(update_artwork_game_id)
-                                if isinstance(fresh, dict) and fresh:
-                                    st.session_state["selected_game_detail"] = fresh
-                            except Exception:
-                                pass
-                            st.rerun()
-                        else:
-                            try:
-                                st.error(resp.json())
-                            except Exception:
-                                st.error(f"Upload failed: HTTP {resp.status_code}")
-
-    st.sidebar.markdown("---")  # Add separator
     
     # Load filter options for the gallery filters
     filter_options = fetch_gallery_filters()
@@ -1307,6 +1055,128 @@ def game_detail_page():
                 del st.session_state[key]
         st.rerun()
     
+    st.sidebar.markdown("---")
+    
+    # -------------------------
+    # Update Sections (moved to bottom like Library)
+    # -------------------------
+    update_price_expander = st.sidebar.expander("Update Game Price")
+    with update_price_expander:
+        st.markdown("**Update price using current price source configuration**")
+        
+        current_price_source = get_price_source()
+        st.info(f"Current price source: **{current_price_source}**")
+        
+        update_price_game_id = st.text_input("Game ID to Update Price", value=current_game_id, key="detail_update_price_game_id")
+        confirm_update_price = st.checkbox("I confirm that I want to update this game's price", key="detail_update_price_confirm")
+        
+        if st.button("Update Price", key="detail_update_price_button") and confirm_update_price:
+            if update_price_game_id:
+                with st.spinner(f"Updating price using {current_price_source}..."):
+                    result = update_game_price(update_price_game_id)
+                    if result:
+                        old_price = f"£{result['old_price']:.2f}" if result.get('old_price') else "Not set"
+                        new_price = f"£{result['new_price']:.2f}" if result.get('new_price') else "Not found"
+                        set_flash(f"Price updated: {result.get('game_title','Game')} {old_price} → {new_price} via {result.get('price_source','')}", "success")
+                        try:
+                            fresh = fetch_game_by_id(update_price_game_id)
+                            if isinstance(fresh, dict) and fresh:
+                                st.session_state["selected_game_detail"] = fresh
+                        except Exception:
+                            pass
+                        st.rerun()
+                    else:
+                        st.error("Failed to update game price. Please check the Game ID and try again.")
+            else:
+                st.warning("Please enter a Game ID.")
+    
+    update_artwork_expander = st.sidebar.expander("Update Game Artwork")
+    with update_artwork_expander:
+        st.markdown("**Update artwork using SteamGridDB API**")
+        st.info("Fetches high-resolution grid covers, heroes, logos, and icons")
+        
+        update_artwork_game_id = st.text_input("Game ID to Update Artwork", value=current_game_id, key="detail_update_artwork_game_id")
+        mode = st.selectbox(
+            "Artwork update mode",
+            options=["Automatic (SteamGridDB)", "Manual upload"],
+            index=0,
+            key="detail_artwork_update_mode",
+        )
+    
+        if mode == "Automatic (SteamGridDB)":
+            confirm_update_artwork = st.checkbox(
+                "I confirm that I want to update this game's artwork",
+                key="detail_update_artwork_confirm",
+            )
+            if st.button("Update Artwork", key="detail_update_artwork_button") and confirm_update_artwork:
+                if update_artwork_game_id:
+                    with st.spinner("Fetching artwork from SteamGridDB..."):
+                        result = update_game_artwork(update_artwork_game_id)
+                        if result and "error" not in result:
+                            set_flash(f"Artwork updated for Game ID {result.get('game_id', update_artwork_game_id)} • {result.get('game_title','')}", "success")
+                            try:
+                                fresh = fetch_game_by_id(update_artwork_game_id)
+                                if isinstance(fresh, dict) and fresh:
+                                    st.session_state["selected_game_detail"] = fresh
+                            except Exception:
+                                pass
+                            st.rerun()
+                        elif result and result.get("error") == "api_key_missing":
+                            st.error("❌ SteamGridDB API key not configured")
+                            st.info("To use this feature:")
+                            st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
+                            st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
+                            st.write("3. Restart the backend service")
+                        elif result and result.get("error") == "no_artwork_found":
+                            st.warning("⚠️ No artwork found for this game")
+                            st.write(f"**Game:** {result['details']['game_title']}")
+                            st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
+                        else:
+                            st.error("Failed to update game artwork. Please check the Game ID and try again.")
+        else:
+            st.markdown("**Manually upload artwork** (grid/hero/logo/icon)")
+            artwork_type = st.selectbox(
+                "Artwork type",
+                options=["grid", "hero", "logo", "icon"],
+                index=0,
+                key="detail_manual_art_type",
+                help="Select which artwork slot to fill",
+            )
+            upload_file = st.file_uploader(
+                "Choose an image file (png/jpg/jpeg/webp)",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="detail_manual_art_file",
+            )
+            if st.button("Upload Artwork", key="detail_manual_art_upload"):
+                if not update_artwork_game_id:
+                    st.error("Please enter a Game ID")
+                elif not upload_file:
+                    st.error("Please choose an image file to upload")
+                else:
+                    with st.spinner("Uploading artwork..."):
+                        files = {"file": (upload_file.name, upload_file.getvalue(), upload_file.type or "application/octet-stream")}
+                        data = {"artwork_type": artwork_type}
+                        resp = requests.post(
+                            f"{BACKEND_URL}/upload_game_artwork/{update_artwork_game_id}",
+                            files=files,
+                            data=data,
+                            timeout=30,
+                        )
+                        if resp.status_code == 200:
+                            rj = resp.json()
+                            set_flash(f"Artwork uploaded successfully • Game ID {rj.get('game_id')} • Type {rj.get('artwork_type')}", "success")
+                            try:
+                                fresh = fetch_game_by_id(update_artwork_game_id)
+                                if isinstance(fresh, dict) and fresh:
+                                    st.session_state["selected_game_detail"] = fresh
+                            except Exception:
+                                pass
+                            st.rerun()
+                        else:
+                            try:
+                                st.error(resp.json())
+                            except Exception:
+                                st.error(f"Upload failed: HTTP {resp.status_code}")
     # -------------------------
     # HERO BANNER AT TOP
     # -------------------------
@@ -1812,8 +1682,6 @@ def gallery_page():
             </div>
             """
             components.html(iframe_html, height=450)
-
-    st.sidebar.markdown("---")  # Add separator
     
     # Load filter options for the gallery filters
     filter_options = fetch_gallery_filters()
@@ -2841,9 +2709,9 @@ def main():
             </div>
             """
             components.html(iframe_html, height=450)
-
-    # -------------------------
-    # Global Price Source Selector
+      
+     # -------------------------
+     # Global Price Source Selector
     # -------------------------
     st.sidebar.markdown("### Price Scraping")
     
