@@ -874,6 +874,54 @@ def game_detail_page():
     # Precompute current game id for sidebar controls
     current_game_id = str(game.get("id", ""))
     
+    # If any detail filter changed, navigate back to library with filters
+    if st.session_state.get("__detail_apply_filters_now__", False):
+        try:
+            filters = {}
+            ts = st.session_state.get("detail_gallery_title_search")
+            if ts:
+                filters["search"] = ts
+            sp = st.session_state.get("detail_gallery_platform_filter")
+            if sp and sp != "All":
+                filters["platform"] = sp
+            sg = st.session_state.get("detail_gallery_genre_filter")
+            if sg and sg != "All":
+                filters["genre"] = sg
+            sr = st.session_state.get("detail_gallery_region_filter")
+            if sr and sr != "All":
+                filters["region"] = sr
+            yr = st.session_state.get("detail_gallery_year_range")
+            if isinstance(yr, tuple) and len(yr) == 2:
+                filters["year_min"] = yr[0]
+                filters["year_max"] = yr[1]
+            pr = st.session_state.get("detail_gallery_price_range")
+            if isinstance(pr, tuple) and len(pr) == 2:
+                try:
+                    filters["price_min"] = float(pr[0])
+                    filters["price_max"] = float(pr[1])
+                except Exception:
+                    pass
+            per_page = st.session_state.get("detail_gallery_per_page_select") or 20
+            grid_cols = st.session_state.get("detail_gallery_grid_cols") or 4
+            st.session_state["gallery_filters"] = filters
+            st.session_state["gallery_per_page"] = per_page
+            st.session_state["gallery_page"] = 1
+            st.session_state["gallery_grid_cols"] = grid_cols
+            if ts: st.session_state["gallery_title_search"] = ts
+            if sp and sp != "All": st.session_state["gallery_platform_filter"] = sp
+            if sg and sg != "All": st.session_state["gallery_genre_filter"] = sg
+            if sr and sr != "All": st.session_state["gallery_region_filter"] = sr
+            if isinstance(yr, tuple) and len(yr) == 2:
+                st.session_state["gallery_year_range"] = yr
+        finally:
+            st.session_state["__detail_apply_filters_now__"] = False
+        st.session_state["page"] = "gallery"
+        st.rerun()
+    
+    # Callback to trigger library navigation on any detail filter change
+    def _detail_trigger_nav():
+        st.session_state["__detail_apply_filters_now__"] = True
+    
     # -------------------------
     # Game Detail Sidebar: Same as Library for Consistency
     # -------------------------
@@ -912,30 +960,33 @@ def game_detail_page():
     st.sidebar.markdown("### Library Filters")
     
     # Search by title
-    title_search = st.sidebar.text_input("Search titles", key="detail_gallery_title_search", on_change=lambda: st.session_state.update({"gallery_page": 1}))
+    title_search = st.sidebar.text_input("Search titles", key="detail_gallery_title_search", on_change=_detail_trigger_nav)
     
     # Platform filter
     available_platforms = filter_options.get("platforms", [])
     selected_platform = st.sidebar.selectbox(
-        "Platform", 
+        "Platform",
         ["All"] + available_platforms,
-        key="detail_gallery_platform_filter"
+        key="detail_gallery_platform_filter",
+        on_change=_detail_trigger_nav
     )
     
     # Genre filter
     available_genres = filter_options.get("genres", [])
     selected_genre = st.sidebar.selectbox(
-        "Genre", 
+        "Genre",
         ["All"] + available_genres,
-        key="detail_gallery_genre_filter"
+        key="detail_gallery_genre_filter",
+        on_change=_detail_trigger_nav
     )
     
     # Region filter
     available_regions = filter_options.get("regions", ["PAL", "NTSC", "JP"])
     selected_region = st.sidebar.selectbox(
-        "Region", 
+        "Region",
         ["All"] + available_regions,
-        key="detail_gallery_region_filter"
+        key="detail_gallery_region_filter",
+        on_change=_detail_trigger_nav
     )
     
     # Release year range
@@ -947,7 +998,8 @@ def game_detail_page():
             min_value=min_year,
             max_value=max_year,
             value=(min_year, max_year),
-            key="detail_gallery_year_range"
+            key="detail_gallery_year_range",
+            on_change=_detail_trigger_nav
         )
     else:
         year_range = None
@@ -973,7 +1025,8 @@ def game_detail_page():
                     value=(float(min_price), float(max_price)),
                     step=0.50,
                     format="£%.2f",
-                    key="detail_gallery_price_range"
+                    key="detail_gallery_price_range",
+                    on_change=_detail_trigger_nav
                 )
             else:
                 st.sidebar.info(f"Only price available: £{min_price:.2f}")
@@ -989,7 +1042,8 @@ def game_detail_page():
         "Games per page",
         [12, 20, 40, 60],
         index=1,  # Default to 20
-        key="detail_gallery_per_page_select"
+        key="detail_gallery_per_page_select",
+        on_change=_detail_trigger_nav
     )
     
     # Grid columns selector
@@ -998,7 +1052,8 @@ def game_detail_page():
         "Grid columns",
         [3, 4, 5, 6],
         index=[3, 4, 5, 6].index(default_detail_grid_cols) if default_detail_grid_cols in [3, 4, 5, 6] else 1,
-        key="detail_gallery_grid_cols"
+        key="detail_gallery_grid_cols",
+        on_change=_detail_trigger_nav
     )
     
     # Apply filters button - when clicked, go to library with these filters
@@ -1611,39 +1666,6 @@ def gallery_page():
     except Exception:
         pass
 
-    # Backup controls
-    with st.expander("Database Backups", expanded=False):
-        cols = st.columns([1, 2])
-        with cols[0]:
-            if st.button("Create Backup", type="primary"):
-                try:
-                    r = requests.post(f"{BACKEND_URL}/api/backup_db")
-                    if r.status_code == 200 and r.json().get("success"):
-                        info = r.json()
-                        st.success(f"Backup created: {info.get('backup_file')}")
-                        if info.get("download_url"):
-                            st.link_button("Download", f"{BACKEND_URL}{info['download_url']}")
-                    else:
-                        st.error("Failed to create backup")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-        with cols[1]:
-            if st.button("Refresh Backup List"):
-                st.session_state["refresh_backups"] = True
-            try:
-                lr = requests.get(f"{BACKEND_URL}/api/backups")
-                if lr.status_code == 200 and lr.json().get("success"):
-                    for f in lr.json().get("backups", []):
-                        line = f"{f.get('name')} ({int(f.get('size_bytes', 0))} bytes)"
-                        if f.get("download_url"):
-                            st.markdown(f"- [{line}]({BACKEND_URL}{f['download_url']})")
-                        else:
-                            st.markdown(f"- {line}")
-                else:
-                    st.info("No backups found.")
-            except Exception as e:
-                st.error(f"Error: {e}")
-    
     # Initialize gallery session state
     if "gallery_page" not in st.session_state:
         st.session_state["gallery_page"] = 1
@@ -2348,8 +2370,15 @@ def gallery_page():
     total_pages = pagination.get("total_pages", 1)
     
     # Display results summary
-    col_summary, col_stats = st.columns([2, 1])
+    col_summary, col_stats = st.columns([3, 1])
     with col_summary:
+        if games:
+            # Calculate total value of filtered games
+            total_value = sum(
+                game.get("average_price", 0) or 0 
+                for game in games
+            )
+            
         if filters:
             active_filters = []
             if title_search:
@@ -2364,17 +2393,16 @@ def gallery_page():
                 active_filters.append(f"Years: {year_range[0]}-{year_range[1]}")
             
             st.markdown(f"**Found {total_games} games** matching: {' | '.join(active_filters)}")
+            if games:
+                st.markdown(f"### Page Value: £{total_value:.2f}")
         else:
             st.markdown(f"**Showing all {total_games} games** in your collection")
+            if games:
+                st.markdown(f"### Page Value: £{total_value:.2f}")
     
     with col_stats:
-        if games:
-            # Calculate total value of filtered games
-            total_value = sum(
-                game.get("average_price", 0) or 0 
-                for game in games
-            )
-            st.metric("Page Value", f"£{total_value:.2f}")
+        # This column can be used for other stats or left empty
+        pass
     
     # Display games in grid layout
     if games:
@@ -2709,9 +2737,68 @@ def main():
             </div>
             """
             components.html(iframe_html, height=450)
-      
-     # -------------------------
-     # Global Price Source Selector
+    st.sidebar.markdown("---")  # Add separator
+
+    # Database Backups (Editor)
+    with st.sidebar.expander("Database Backups", expanded=False):
+        if st.button("Create Backup", key="editor_create_backup", type="primary", use_container_width=True):
+            try:
+                r = requests.post(f"{BACKEND_URL}/api/backup_db")
+                if r.status_code == 200 and r.json().get("success"):
+                    info = r.json()
+                    st.success(f"Backup created: {info.get('backup_file')}")
+                    if info.get("download_url"):
+                        st.link_button("Download", f"{BACKEND_URL}{info['download_url']}", use_container_width=True)
+                else:
+                    st.error("Failed to create backup")
+            except Exception as e:
+                st.error(f"Error: {e}")
+        
+        # Show existing backups
+        st.markdown("**Available Backups:**")
+        try:
+            lr = requests.get(f"{BACKEND_URL}/api/backups")
+            if lr.status_code == 200 and lr.json().get("success"):
+                backups = lr.json().get("backups", [])
+                if backups:
+                    for f in backups[:5]:  # Show only last 5 backups
+                        name = f.get('name', 'Unknown')
+                        size_bytes = int(f.get('size_bytes', 0))
+                        
+                        # Format file size more compactly
+                        if size_bytes > 1024 * 1024:  # > 1MB
+                            size_str = f"{size_bytes / (1024 * 1024):.1f}MB"
+                        elif size_bytes > 1024:  # > 1KB
+                            size_str = f"{size_bytes / 1024:.1f}KB"
+                        else:
+                            size_str = f"{size_bytes}B"
+                        
+                        # Truncate long filenames for better display
+                        display_name = name[:25] + "..." if len(name) > 28 else name
+                        
+                        if f.get("download_url"):
+                            st.markdown(f"📥 [{display_name}]({BACKEND_URL}{f['download_url']})")
+                            st.caption(f"Size: {size_str}")
+                        else:
+                            st.markdown(f"📄 {display_name}")
+                            st.caption(f"Size: {size_str}")
+                        
+                        if f != backups[min(4, len(backups)-1)]:  # Add spacing except for last item
+                            st.markdown("")
+                            
+                    if len(backups) > 5:
+                        st.caption(f"...and {len(backups) - 5} more backups")
+                else:
+                    st.info("No backups found.")
+            else:
+                st.warning("Could not load backup list.")
+        except Exception as e:
+            st.error(f"Error loading backups: {e}")
+    
+    st.sidebar.markdown("---")  # Add separator
+
+    # -------------------------
+    # Global Price Source Selector
     # -------------------------
     st.sidebar.markdown("### Price Scraping")
     
