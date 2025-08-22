@@ -3029,7 +3029,6 @@ def check_high_res_artwork_status():
             FROM games
             WHERE id != -1 AND (high_res_cover_url IS NULL OR high_res_cover_url = '')
             ORDER BY title
-            LIMIT 10
             """
         )
         

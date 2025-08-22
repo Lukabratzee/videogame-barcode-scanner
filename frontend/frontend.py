@@ -2793,7 +2793,6 @@ def main():
         except Exception as e:
             st.error(f"Error loading backups: {e}")
     
-    st.sidebar.markdown("---")  # Add separator
 
     # -------------------------
     # Global Price Source Selector
