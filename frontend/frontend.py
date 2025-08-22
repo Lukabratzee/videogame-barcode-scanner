@@ -2209,10 +2209,8 @@ def gallery_page():
                         
                         # Show expandable list of games to be processed
                         with st.expander(f"View games missing artwork ({len(missing_games)})", expanded=False):
-                            for i, game in enumerate(missing_games[:20]):  # Show first 20
+                            for i, game in enumerate(missing_games):
                                 st.write(f"• **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
-                            if len(missing_games) > 20:
-                                st.caption(f"... and {len(missing_games) - 20} more games")
                     else:
                         st.success("✅ All games already have artwork!")
                         st.info("No games need artwork updates at this time.")
@@ -3566,10 +3564,8 @@ def main():
                         
                         # Show expandable list of games to be processed
                         with st.expander(f"View games missing artwork ({len(missing_games)})", expanded=False):
-                            for i, game in enumerate(missing_games[:20]):  # Show first 20
+                            for i, game in enumerate(missing_games):
                                 st.write(f"• **{game.get('title', 'Unknown')}** (ID: {game.get('id', 'N/A')})")
-                            if len(missing_games) > 20:
-                                st.caption(f"... and {len(missing_games) - 20} more games")
                     else:
                         st.success("✅ All games already have artwork!")
                         st.info("No games need artwork updates at this time.")
