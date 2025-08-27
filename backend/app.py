@@ -523,10 +523,11 @@ def set_price_source(price_source):
     
     config = load_config()
     config["price_source"] = price_source
-    
+    config["default_price_source"] = price_source  # Keep them in sync
+
     # Log the current config before saving
     logging.info(f"Current config before saving: {config}")
-    
+
     save_config(config)
     
     # Verify the save was successful by reading it back
@@ -534,10 +535,10 @@ def set_price_source(price_source):
         with open(CONFIG_FILE, 'r') as f:
             saved_config = json.load(f)
             logging.info(f"Config file after saving: {saved_config}")
-            if saved_config.get("price_source") == price_source:
+            if saved_config.get("price_source") == price_source and saved_config.get("default_price_source") == price_source:
                 logging.info(f"✅ Price source '{price_source}' saved successfully to {CONFIG_FILE}")
             else:
-                logging.error(f"❌ Price source verification failed. Expected: {price_source}, Got: {saved_config.get('price_source')}")
+                logging.error(f"❌ Price source verification failed. Expected: {price_source}, Got price_source: {saved_config.get('price_source')}, default_price_source: {saved_config.get('default_price_source')}")
                 return False
     except Exception as e:
         logging.error(f"❌ Failed to verify saved config: {e}")
@@ -950,12 +951,8 @@ def send_discord_notification(message, webhook_url=None):
         config = load_notification_config()
         webhook_url = webhook_url or config['discord_webhook_url']
 
-        print(f"🔍 DEBUG_DISCORD: Discord webhook URL: {webhook_url[:50]}...")
-        print(f"📝 DEBUG_DISCORD: Message length: {len(message)} characters")
-        print(f"📝 DEBUG_DISCORD: Message preview: {message[:100]}...")
-
         if not webhook_url:
-            print("❌ DEBUG_DISCORD: No Discord webhook URL configured")
+            print("❌ No Discord webhook URL configured")
             return False
 
         payload = {
@@ -963,29 +960,23 @@ def send_discord_notification(message, webhook_url=None):
             'username': 'Game Price Tracker'
         }
 
-        print(f"📤 DEBUG_DISCORD: About to send HTTP request to Discord...")
         response = requests.post(webhook_url, json=payload, timeout=10)
-        print(f"📊 DEBUG_DISCORD: Discord HTTP response status: {response.status_code}")
-        print(f"📊 DEBUG_DISCORD: Discord HTTP response headers: {dict(response.headers)}")
-        print(f"📊 DEBUG_DISCORD: Discord HTTP response text: '{response.text}'")
 
         if response.status_code == 204:
-            print("✅ DEBUG_DISCORD: Discord notification sent successfully")
+            print("✅ Discord notification sent successfully")
             return True
         else:
-            print(f"❌ DEBUG_DISCORD: Discord API error: {response.status_code} - {response.text}")
+            print(f"❌ Discord API error: {response.status_code} - {response.text}")
             return False
 
     except requests.exceptions.Timeout:
-        print("❌ DEBUG_DISCORD: Discord notification timed out")
+        print("❌ Discord notification timed out")
         return False
     except requests.exceptions.RequestException as e:
-        print(f"❌ DEBUG_DISCORD: Discord network error: {e}")
+        print(f"❌ Discord network error: {e}")
         return False
     except Exception as e:
-        print(f"❌ DEBUG_DISCORD: Failed to send Discord notification: {e}")
-        import traceback
-        print(f"📋 DEBUG_DISCORD: Full traceback: {traceback.format_exc()}")
+        print(f"❌ Failed to send Discord notification: {e}")
         return False
 
 def send_slack_notification(message, webhook_url=None):
@@ -1013,18 +1004,13 @@ def send_slack_notification(message, webhook_url=None):
 
 def send_price_alert(game_title, old_price, new_price, source, change_type):
     """Send price alert through Discord"""
-    print(f"📢 DEBUG_ALERT: send_price_alert called: {game_title}, £{old_price:.2f} -> £{new_price:.2f}, type: {change_type}")
-
     config = load_notification_config()
-    print(f"📢 DEBUG_ALERT: Config loaded, discord_webhook_url exists: {bool(config.get('discord_webhook_url'))}")
 
     # Calculate percentage change
     if old_price > 0:
         change_percent = ((new_price - old_price) / old_price) * 100
     else:
         change_percent = 0
-
-    print(f"📊 DEBUG_ALERT: Price change: {change_percent:+.1f}%")
 
     # Create alert message (no emojis)
     if change_type == 'drop':
@@ -1041,16 +1027,12 @@ Change: {change_percent:+.1f}%
 Source: {source}
 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
 
-    print(f"📝 DEBUG_ALERT: Generated message:\n{message}")
-
     # Send through Discord only
     if config['discord_webhook_url']:
-        print(f"🔗 DEBUG_ALERT: Discord webhook configured, sending...")
         result = send_discord_notification(message, config['discord_webhook_url'])
-        print(f"📤 DEBUG_ALERT: Discord send result: {result}")
         return result
     else:
-        print("❌ DEBUG_ALERT: No Discord webhook URL configured")
+        print("❌ No Discord webhook URL configured")
         return False
 
 def get_game_alert_settings(game_id):
@@ -1074,7 +1056,7 @@ def get_game_alert_settings(game_id):
             enabled, price_source, price_region, drop_thresh, increase_thresh, price_thresh, value_thresh = result
             return {
                 'enabled': bool(enabled),
-                'price_source': price_source or config['default_price_source'],
+                'price_source': price_source or get_price_source(),  # Use global price_source as fallback
                 'price_region': price_region or 'PAL',
                 'price_drop_threshold': drop_thresh if drop_thresh is not None else config['price_drop_threshold'],
                 'price_increase_threshold': increase_thresh if increase_thresh is not None else config['price_increase_threshold'],
@@ -1085,7 +1067,7 @@ def get_game_alert_settings(game_id):
             # Return global defaults if no per-game settings
             return {
                 'enabled': False,
-                'price_source': config['default_price_source'],
+                'price_source': get_price_source(),  # Use global price_source as fallback
                 'price_region': 'PAL',
                 'price_drop_threshold': config['price_drop_threshold'],
                 'price_increase_threshold': config['price_increase_threshold'],
@@ -1098,7 +1080,7 @@ def get_game_alert_settings(game_id):
         config = load_notification_config()
         return {
             'enabled': False,
-            'price_source': config['default_price_source'],
+            'price_source': get_price_source(),  # Use global price_source as fallback
             'price_region': 'PAL',
             'price_drop_threshold': config['price_drop_threshold'],
             'price_increase_threshold': config['price_increase_threshold'],
@@ -1109,22 +1091,17 @@ def get_game_alert_settings(game_id):
 def check_price_change_and_alert(game_id, new_price, source):
     """Check if price change warrants an alert and send notifications"""
     try:
-        print(f"🔍 DEBUG_CHECK: Checking price change for game {game_id}: £{new_price} from {source}")
-
         # Get game-specific settings
         game_settings = get_game_alert_settings(game_id)
-        print(f"⚙️ DEBUG_CHECK: Game settings: enabled={game_settings['enabled']}, thresholds: {game_settings['price_drop_threshold']}% drop, {game_settings['price_increase_threshold']}% increase, £{game_settings['alert_value_threshold']} min change")
 
         # Skip if alerts disabled for this game
         if not game_settings['enabled']:
-            print("🚫 DEBUG_CHECK: Alerts disabled for this game")
             return
 
-        # Get the most recent price from history
+        # Get the last TWO prices from history to compare properly
         conn = sqlite3.connect(database_path)
         cursor = conn.cursor()
 
-        # Get the last TWO prices from history to compare properly
         cursor.execute("""
             SELECT price FROM price_history
             WHERE game_id = ?
@@ -1133,18 +1110,15 @@ def check_price_change_and_alert(game_id, new_price, source):
         """, (game_id,))
 
         results = cursor.fetchall()
-        print(f"🔍 DEBUG_CHECK: Price history query results: {results}")
 
         if results and len(results) >= 1:
             # Use the oldest price from the last two entries (skip the most recent if it's the same as new_price)
             if len(results) >= 2 and results[0][0] == new_price:
                 # Most recent history entry is the same as new price, use the second most recent
                 old_price = results[1][0]
-                print(f"🔍 DEBUG_CHECK: Using second most recent price (most recent matches new price): £{old_price}")
             else:
                 # Use the most recent history entry
                 old_price = results[0][0]
-                print(f"🔍 DEBUG_CHECK: Using most recent price from history: £{old_price}")
 
             # Get game title for the alert
             cursor.execute("SELECT title FROM games WHERE id = ?", (game_id,))
@@ -1158,42 +1132,26 @@ def check_price_change_and_alert(game_id, new_price, source):
                 change_percent = ((new_price - old_price) / old_price) * 100
                 change_value = abs(new_price - old_price)
 
-                print(f"🔍 DEBUG_CHECK: Change calculation: old=£{old_price}, new=£{new_price}, percent={change_percent:+.1f}%, value=£{change_value:.2f}")
-                print(f"🔍 DEBUG_CHECK: Thresholds: price_threshold=£{game_settings['alert_price_threshold']}, value_threshold=£{game_settings['alert_value_threshold']}")
-
                 # Check minimum price threshold
                 if new_price < game_settings['alert_price_threshold']:
-                    print(f"🚫 DEBUG_CHECK: Price £{new_price} below minimum threshold £{game_settings['alert_price_threshold']}, skipping alert")
                     return  # Price too low to alert
 
                 # Check minimum value change threshold
                 if change_value < game_settings['alert_value_threshold']:
-                    print(f"🚫 DEBUG_CHECK: Change value £{change_value} below minimum threshold £{game_settings['alert_value_threshold']}, skipping alert")
                     return  # Change too small to alert
-
-                print(f"🔍 DEBUG_CHECK: Thresholds passed, checking alert type...")
 
                 # Price drop alert
                 if change_percent <= -game_settings['price_drop_threshold']:
-                    print(f"📢 DEBUG_CHECK: Price drop detected ({change_percent:+.1f}% <= -{game_settings['price_drop_threshold']}%), sending alert...")
                     send_price_alert(game_title, old_price, new_price, source, 'drop')
 
                 # Price increase alert
                 elif change_percent >= game_settings['price_increase_threshold']:
-                    print(f"📢 DEBUG_CHECK: Price increase detected ({change_percent:+.1f}% >= {game_settings['price_increase_threshold']}%), sending alert...")
                     send_price_alert(game_title, old_price, new_price, source, 'increase')
-                else:
-                    print(f"ℹ️ DEBUG_CHECK: Price change {change_percent:+.1f}% does not meet alert thresholds")
-            else:
-                print(f"🚫 DEBUG_CHECK: Old price is zero, skipping change calculation")
         else:
             conn.close()
-            print(f"🚫 DEBUG_CHECK: No price history found for game {game_id}")
 
     except Exception as e:
-        print(f"❌ DEBUG_CHECK: Error checking price change: {e}")
-        import traceback
-        print(f"📋 DEBUG_CHECK: Full traceback: {traceback.format_exc()}")
+        print(f"❌ Error checking price change: {e}")
 
 # -------------------------
 # Health Check Endpoint

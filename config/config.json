@@ -1,5 +1,5 @@
 {
-  "price_source": "PriceCharting",
+  "price_source": "CeX",
   "default_region": "PAL",
   "steamgriddb_api_key": "7044ce127dff80c8363904d3f94df52c",
   "igdb_client_id": "nal5c75b0hwuvmsgs1cdowvi81tg5y",

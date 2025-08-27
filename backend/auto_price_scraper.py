@@ -69,7 +69,7 @@ def get_games_to_scrape():
             AND g.average_price IS NOT NULL
             AND g.average_price > 0
         """, (
-            config.get('default_price_source', 'PriceCharting'),
+            config.get('price_source', 'PriceCharting'),  # Use global price_source as fallback
             config.get('price_drop_threshold', 10.0),
             config.get('price_increase_threshold', 20.0),
             config.get('alert_price_threshold', 0.0),
@@ -181,11 +181,6 @@ def run_auto_scraping():
             change_percent = ((new_price - current_price) / current_price) * 100
             change_value = abs(new_price - current_price)
 
-            print(f"🔍 DEBUG_AUTO: Threshold check for {game['title']}:")
-            print(f"🔍 DEBUG_AUTO: Current price: £{current_price}, New price: £{new_price}")
-            print(f"🔍 DEBUG_AUTO: Change: {change_percent:+.1f}%, £{change_value:.2f}")
-            print(f"🔍 DEBUG_AUTO: Game thresholds: drop={game['drop_threshold']}%, increase={game['increase_threshold']}%, price_min=£{game['price_threshold']}, value_min=£{game['value_threshold']}")
-
             # Check thresholds
             significant_change = (
                 (change_percent <= -game['drop_threshold']) or
@@ -196,9 +191,6 @@ def run_auto_scraping():
                 new_price >= game['price_threshold'] and
                 change_value >= game['value_threshold']
             )
-
-            print(f"🔍 DEBUG_AUTO: Significant change: {significant_change} (drop: {change_percent <= -game['drop_threshold']}, increase: {change_percent >= game['increase_threshold']})")
-            print(f"🔍 DEBUG_AUTO: Meets requirements: {meets_min_requirements} (price >= threshold: {new_price >= game['price_threshold']}, change >= threshold: {change_value >= game['value_threshold']})")
 
             if significant_change and meets_min_requirements:
                 # Send Discord notification for significant price change BEFORE updating price
