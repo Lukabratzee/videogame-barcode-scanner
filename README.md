@@ -155,5 +155,6 @@ Notes:
 - High‑res artwork: `HIGH_RES_ARTWORK_GUIDE.md`
 - YouTube trailers: `YOUTUBE_TRAILER_INTEGRATION.md`
 - Gallery API notes: `GALLERY_PHASE1_DOCS.md`
+- Price alerts: `PRICE_ALERTS_GUIDE.md`
 
 

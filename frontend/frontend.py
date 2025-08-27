@@ -52,8 +52,8 @@ BACKEND_BROWSER_BASE_URL = os.getenv(
 print(f"Browser will load assets from {BACKEND_BROWSER_BASE_URL}")
 
 # iCloud shortcut link (replace with actual link as needed)
-ICLOUD_LINK = "https://www.icloud.com/shortcuts/024bf54a6f584cc78c3ed394bcda8e84"
-ICLOUD_LINK_ALT = "https://www.icloud.com/shortcuts/bea9f60437194f0fad2f89b87c9d1fff"
+ICLOUD_LINK = "https://www.icloud.com/shortcuts/a67170e357b6406888d380fdcf6a1047"
+ICLOUD_LINK_ALT = "https://www.icloud.com/shortcuts/3fbfcb4542c948bdb4171dfd0b89e309"
 
 # -------------------------
 # Backend API Helper Functions
@@ -453,6 +453,72 @@ def fetch_price_history(game_id):
             return {"success": False, "price_history": [], "error": "Failed to fetch price history"}
     except Exception as e:
         return {"success": False, "price_history": [], "error": str(e)}
+
+def fetch_notification_config():
+    """Fetch current notification configuration"""
+    try:
+        response = requests.get(f"{BACKEND_URL}/api/notifications/config")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "config": {}, "error": "Failed to fetch notification config"}
+    except Exception as e:
+        return {"success": False, "config": {}, "error": str(e)}
+
+def update_notification_config(config_data):
+    """Update notification configuration"""
+    try:
+        response = requests.post(f"{BACKEND_URL}/api/notifications/config", json=config_data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "error": "Failed to update notification config"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def test_notifications(test_data):
+    """Send test notification"""
+    try:
+        response = requests.post(f"{BACKEND_URL}/api/notifications/test", json=test_data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "error": "Failed to send test notification"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def get_game_alert_settings(game_id):
+    """Get alert settings for a specific game"""
+    try:
+        response = requests.get(f"{BACKEND_URL}/api/games/{game_id}/alert-settings")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "settings": {}, "error": "Failed to fetch game alert settings"}
+    except Exception as e:
+        return {"success": False, "settings": {}, "error": str(e)}
+
+def update_game_alert_settings(game_id, settings_data):
+    """Update alert settings for a specific game"""
+    try:
+        response = requests.post(f"{BACKEND_URL}/api/games/{game_id}/alert-settings", json=settings_data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "error": "Failed to update game alert settings"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def delete_game_alert_settings(game_id):
+    """Reset alert settings for a specific game"""
+    try:
+        response = requests.delete(f"{BACKEND_URL}/api/games/{game_id}/alert-settings")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "error": "Failed to reset game alert settings"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 def delete_price_history_entry(entry_id: int):
     """Delete a price history entry by ID"""
@@ -901,8 +967,8 @@ def game_detail_page():
                     filters["price_max"] = float(pr[1])
                 except Exception:
                     pass
-            per_page = st.session_state.get("detail_gallery_per_page_select") or 20
-            grid_cols = st.session_state.get("detail_gallery_grid_cols") or 4
+            per_page = 20
+            grid_cols = 4
             st.session_state["gallery_filters"] = filters
             st.session_state["gallery_per_page"] = per_page
             st.session_state["gallery_page"] = 1
@@ -1035,26 +1101,138 @@ def game_detail_page():
             detail_price_range = None
     except Exception as e:
         detail_price_range = None
-    
-    # Gallery view options
-    st.sidebar.markdown("### Display Options")
-    per_page = st.sidebar.selectbox(
-        "Games per page",
-        [12, 20, 40, 60],
-        index=1,  # Default to 20
-        key="detail_gallery_per_page_select",
-        on_change=_detail_trigger_nav
-    )
-    
-    # Grid columns selector
-    default_detail_grid_cols = st.session_state.get("detail_gallery_grid_cols", 4)  # Get existing value or default to 4
-    grid_cols = st.sidebar.selectbox(
-        "Grid columns",
-        [3, 4, 5, 6],
-        index=[3, 4, 5, 6].index(default_detail_grid_cols) if default_detail_grid_cols in [3, 4, 5, 6] else 1,
-        key="detail_gallery_grid_cols",
-        on_change=_detail_trigger_nav
-    )
+
+    # Per-Game Alert Settings (only show if we have a selected game)
+    if st.session_state.get("selected_game_detail"):
+        game_id = st.session_state.get("selected_game_detail", {}).get("id")
+
+        if game_id:
+            st.sidebar.markdown("### Alert Settings")
+
+            # Fetch current game alert settings
+            game_settings_response = get_game_alert_settings(game_id)
+            game_settings = game_settings_response.get("settings", {})
+
+            # Fetch global config for defaults
+            global_config_response = fetch_notification_config()
+            global_config = global_config_response.get("config", {}) if global_config_response.get("success") else {}
+
+            # Enable/Disable alerts for this game
+            alerts_enabled = st.sidebar.checkbox(
+                "Enable Price Alerts",
+                value=game_settings.get("enabled", False),
+                key=f"alerts_enabled_{game_id}",
+                help="Enable/disable price alerts for this specific game"
+            )
+
+            # Initialize variables with current settings, falling back to global defaults
+            price_source = game_settings.get("price_source", global_config.get("default_price_source", "PriceCharting"))
+            price_region = game_settings.get("price_region", global_config.get("default_alert_price_region", "PAL")) if price_source == "PriceCharting" else None
+            drop_threshold = int(game_settings.get("price_drop_threshold", global_config.get("price_drop_threshold", 10)))
+            increase_threshold = int(game_settings.get("price_increase_threshold", global_config.get("price_increase_threshold", 20)))
+            price_threshold = int(game_settings.get("alert_price_threshold", global_config.get("alert_price_threshold", 0.0)))
+            value_threshold = int(game_settings.get("alert_value_threshold", global_config.get("alert_value_threshold", 100.0)))
+
+            # Only show additional settings if alerts are enabled
+            if alerts_enabled:
+                # Price source selection
+                price_sources = ["PriceCharting", "eBay", "Amazon", "CeX"]
+                current_source = price_source
+                if current_source not in price_sources:
+                    current_source = "PriceCharting"
+
+                price_source = st.sidebar.selectbox(
+                    "Price Source",
+                    price_sources,
+                    index=price_sources.index(current_source),
+                    key=f"price_source_{game_id}",
+                    help="Price source to use for this game (overrides global default)"
+                )
+
+                # Region selection for PriceCharting
+                if price_source == "PriceCharting":
+                    region_options = ["PAL", "NTSC", "JP"]
+                    current_region = price_region or "PAL"
+                    if current_region not in region_options:
+                        current_region = "PAL"
+
+                    price_region = st.sidebar.selectbox(
+                        "PriceCharting Region",
+                        region_options,
+                        index=region_options.index(current_region),
+                        key=f"price_region_{game_id}",
+                        help="Region for PriceCharting prices"
+                    )
+                else:
+                    price_region = None
+
+                # Custom thresholds
+                st.sidebar.markdown("**Custom Thresholds**")
+
+                col1, col2 = st.sidebar.columns(2)
+
+                with col1:
+                    drop_threshold = st.sidebar.number_input(
+                        "Drop Alert %",
+                        min_value=1, max_value=50,
+                        value=drop_threshold,
+                        key=f"drop_threshold_{game_id}",
+                        help="Alert when price drops by this %"
+                    )
+
+                with col2:
+                    increase_threshold = st.sidebar.number_input(
+                        "Increase Alert %",
+                        min_value=5, max_value=100,
+                        value=increase_threshold,
+                        key=f"increase_threshold_{game_id}",
+                        help="Alert when price increases by this %"
+                    )
+
+                # Value thresholds
+                col3, col4 = st.sidebar.columns(2)
+
+                with col3:
+                    price_threshold = st.sidebar.number_input(
+                        "Min Price (£)",
+                        min_value=0, max_value=1000, step=1,
+                        value=price_threshold,
+                        key=f"price_threshold_{game_id}",
+                        help="Only alert if game price is above this amount"
+                    )
+
+                with col4:
+                    value_threshold = st.sidebar.number_input(
+                        "Min Change (£)",
+                        min_value=0, max_value=500, step=1,
+                        value=value_threshold,
+                        key=f"value_threshold_{game_id}",
+                        help="Only alert if price change is above this amount"
+                    )
+
+            # Save button (always available)
+            if st.sidebar.button("Save Settings", key=f"save_alerts_{game_id}", type="primary"):
+                settings_data = {
+                    "enabled": alerts_enabled,
+                    "price_source": price_source,
+                    "price_region": price_region if price_source == "PriceCharting" else None,
+                    "price_drop_threshold": drop_threshold,
+                    "price_increase_threshold": increase_threshold,
+                    "alert_price_threshold": price_threshold,
+                    "alert_value_threshold": value_threshold
+                }
+
+                response = update_game_alert_settings(game_id, settings_data)
+                if response.get("success"):
+                    st.sidebar.success("Settings saved!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.sidebar.error(f"Failed to save settings: {response.get('error', 'Unknown error')}")
+
+    # Display options (fixed at defaults: 20 games per page, 4 columns)
+    per_page = 20
+    grid_cols = 4
     
     # Apply filters button - when clicked, go to library with these filters
     if st.sidebar.button("Apply Filters & Go to Library", key="detail_apply_filters", type="primary"):
@@ -1634,6 +1812,143 @@ def game_detail_page():
         st.link_button("Argos", argos_url, use_container_width=True)
 
 # -------------------------
+# Notifications Page Function
+# -------------------------
+def notifications_page():
+    """Price alert notification management page"""
+    st.title("Price Alerts")
+    st.markdown("Manage price alert notifications for your game collection")
+
+    # Fetch current configuration
+    config_response = fetch_notification_config()
+
+    if not config_response.get("success", False):
+        st.error(f"Failed to load notification config: {config_response.get('error', 'Unknown error')}")
+        return
+
+    config = config_response.get("config", {})
+
+    # Current status
+    st.header("Current Status")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        discord_status = "Configured" if config.get("discord_webhook_configured") and config.get("discord_webhook_url") else "Not Configured"
+        st.metric("Discord Webhook", discord_status)
+
+    with col2:
+        auto_status = "Enabled" if config.get("auto_scraping_enabled") else "Disabled"
+        st.metric("Auto Scraping", auto_status)
+
+    # Configuration Section
+    st.header("Configuration")
+
+    with st.form("notification_config"):
+        st.subheader("Discord Webhook")
+        discord_webhook = st.text_input("Discord Webhook URL",
+                                       value="",  # Don't show existing webhook for security
+                                       type="password",
+                                       help="Discord webhook URL for notifications")
+
+        st.subheader("Global Alert Thresholds")
+        price_drop_threshold = st.slider("Price Drop Alert Threshold (%)",
+                                        min_value=1, max_value=50,
+                                        value=int(config.get("price_drop_threshold", 10)),
+                                        help="Send alert when price drops by this percentage")
+
+        price_increase_threshold = st.slider("Price Increase Alert Threshold (%)",
+                                           min_value=5, max_value=100,
+                                           value=int(config.get("price_increase_threshold", 20)),
+                                           help="Send alert when price increases by this percentage")
+
+        st.subheader("Global Price & Value Thresholds")
+        alert_price_threshold = st.number_input("Minimum Price for Alerts (£)",
+                                              min_value=0.0, max_value=1000.0, step=1.0,
+                                              value=config.get("alert_price_threshold", 0.0),
+                                              help="Only alert for games above this price")
+
+        alert_value_threshold = st.number_input("Minimum Value Change for Alerts (£)",
+                                              min_value=0.0, max_value=500.0, step=1.0,
+                                              value=config.get("alert_value_threshold", 100.0),
+                                              help="Only alert if price change is above this amount")
+
+        st.subheader("Default Price Source")
+        default_price_source = st.selectbox("Default Price Source",
+                                           ["PriceCharting", "eBay", "Amazon", "CeX"],
+                                           index=["PriceCharting", "eBay", "Amazon", "CeX"].index(config.get("default_price_source", "PriceCharting")))
+
+        # Region selection for PriceCharting - always define the variable
+        if default_price_source == "PriceCharting":
+            default_alert_price_region = st.selectbox("Default PriceCharting Region",
+                                                     ["PAL", "NTSC", "JP"],
+                                                     index=["PAL", "NTSC", "JP"].index(config.get("default_alert_price_region", "PAL")),
+                                                     help="Default region for PriceCharting alert prices")
+        else:
+            # Define with default value when not PriceCharting, but don't show the widget
+            default_alert_price_region = config.get("default_alert_price_region", "PAL")
+
+        st.subheader("Automatic Price Scraping")
+        auto_scraping_enabled = st.checkbox("Enable Automatic Price Scraping",
+                                          value=config.get("auto_scraping_enabled", False),
+                                          help="Automatically scrape prices on a schedule")
+
+        auto_scraping_frequency = st.selectbox("Scraping Frequency",
+                                             ["day", "week", "month"],
+                                             index=["day", "week", "month"].index(config.get("auto_scraping_frequency", "week")),
+                                             help="How often to automatically scrape prices")
+
+        if st.form_submit_button("Save Configuration", type="primary"):
+            update_data = {
+                "price_drop_threshold": price_drop_threshold,
+                "price_increase_threshold": price_increase_threshold,
+                "alert_price_threshold": alert_price_threshold,
+                "alert_value_threshold": alert_value_threshold,
+                "default_price_source": default_price_source,
+                "auto_scraping_enabled": auto_scraping_enabled,
+                "auto_scraping_frequency": auto_scraping_frequency
+            }
+
+            # Always include the region (it will be preserved even when not PriceCharting)
+            update_data["default_alert_price_region"] = default_alert_price_region
+
+            if discord_webhook:
+                update_data["discord_webhook_url"] = discord_webhook
+            response = update_notification_config(update_data)
+            if response.get("success"):
+                st.success("Configuration saved successfully!")
+                st.rerun()  # Refresh to show updated status
+            else:
+                st.error(f"Failed to save configuration: {response.get('error', 'Unknown error')}")
+
+    # Test Notifications Section
+    st.header("Test Notifications")
+
+    with st.form("test_notification"):
+        st.markdown("Send a test notification to verify your configuration works:")
+
+        test_game = st.text_input("Game Title", value="Test Game", help="Name of the game for the test alert")
+        test_old_price = st.number_input("Old Price (£)", value=50.0, min_value=0.01, step=0.01)
+        test_new_price = st.number_input("New Price (£)", value=35.0, min_value=0.01, step=0.01)
+        test_source = st.selectbox("Price Source", ["eBay", "Amazon", "CeX", "PriceCharting"])
+
+        if st.form_submit_button("Send Test Notification", type="secondary"):
+            test_data = {
+                "game_title": test_game,
+                "old_price": test_old_price,
+                "new_price": test_new_price,
+                "source": test_source
+            }
+
+            response = test_notifications(test_data)
+            if response.get("success"):
+                st.success("Test notification sent successfully!")
+            else:
+                st.error(f"Failed to send test notification: {response.get('error', 'No notification channels configured')}")
+
+
+
+# -------------------------
 # Gallery Page Function
 # -------------------------
 def gallery_page():
@@ -1787,23 +2102,9 @@ def gallery_page():
     except Exception as e:
         price_range = None
     
-    # Library view options
-    st.sidebar.markdown("### Display Options")
-    per_page = st.sidebar.selectbox(
-        "Games per page",
-        [12, 20, 40, 60],
-        index=1,  # Default to 20
-        key="gallery_per_page_select"
-    )
-    
-    # Grid columns selector
-    default_grid_cols = st.session_state.get("gallery_grid_cols", 4)  # Get existing value or default to 4
-    grid_cols = st.sidebar.selectbox(
-        "Grid columns",
-        [3, 4, 5, 6],
-        index=[3, 4, 5, 6].index(default_grid_cols) if default_grid_cols in [3, 4, 5, 6] else 1,
-        key="gallery_grid_cols"
-    )
+    # Display options (fixed at defaults: 20 games per page, 4 columns)
+    per_page = 20
+    grid_cols = 4
     
     # Clear filters button
     if st.sidebar.button("Clear All Filters", key="gallery_clear_filters"):
@@ -2653,12 +2954,14 @@ def main():
     # -------------------------
     # Sidebar: Navigation Buttons
     # -------------------------
-    col_home, col_gallery = st.sidebar.columns(2)
-    
+    col_home, col_gallery, col_notifications = st.sidebar.columns(3)
+
     with col_home:
         home_clicked = st.button("Editor", type="primary", use_container_width=True)
     with col_gallery:
         gallery_clicked = st.button("Library", type="secondary", use_container_width=True)
+    with col_notifications:
+        notifications_clicked = st.button("Alerts", type="secondary", use_container_width=True)
     
     if gallery_clicked:
         # Check if we have stored gallery state to restore
@@ -2666,7 +2969,11 @@ def main():
             restore_gallery_state()
         st.session_state["page"] = "gallery"
         st.rerun()
-    
+
+    if notifications_clicked:
+        st.session_state["page"] = "notifications"
+        st.rerun()
+
     if home_clicked:
         # Switch to home page and preserve the price source selection
         st.session_state["page"] = "home"
@@ -2705,6 +3012,9 @@ def main():
     elif st.session_state.get("page") == "game_detail":
         game_detail_page()
         return  # Exit main function to show only game detail page
+    elif st.session_state.get("page") == "notifications":
+        notifications_page()
+        return  # Exit main function to show only notifications page
     
     # Otherwise, show the home page content below...
 
@@ -4001,8 +4311,8 @@ def main():
     # -------------------------
     # Rest of the UI (Barcode scanning, local searches, etc.)
     # -------------------------
-    st.markdown(f"[Install 'Scan Video Games' Shortcut]({ICLOUD_LINK})")
-    st.markdown(f"[Install 'Scan Video Games' Shortcut Alternate]({ICLOUD_LINK_ALT})")
+    st.markdown(f"[Install 'Scan Video Games Localhost' Shortcut]({ICLOUD_LINK})")
+    st.markdown(f"[Install 'Scan Video Games' Docker Shortcut ]({ICLOUD_LINK_ALT})")
 
     st.markdown("## IGDB: Search Game by Name")
     game_name = st.text_input("Enter Game Name", key="game_name_input")

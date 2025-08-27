@@ -12,6 +12,9 @@ import shutil
 from datetime import datetime
 import io
 import unicodedata
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Import YouTube trailer fetcher function
 try:
@@ -725,6 +728,240 @@ def fuzzy_match_title(search_title, igdb_results):
 # Generate a random ID for the game
 def generate_random_id():
     return random.randint(1000, 9999)
+
+# -------------------------
+# Price Alert Notification System
+# -------------------------
+
+def load_notification_config():
+    """Load notification configuration from config file"""
+    config = load_config()
+    return {
+        'discord_webhook_url': config.get('discord_webhook_url', ''),
+        'price_drop_threshold': config.get('price_drop_threshold', 10.0),  # Percentage
+        'price_increase_threshold': config.get('price_increase_threshold', 20.0),  # Percentage
+        'default_price_source': config.get('default_price_source', 'PriceCharting'),
+        'auto_scraping_enabled': config.get('auto_scraping_enabled', False),
+        'auto_scraping_frequency': config.get('auto_scraping_frequency', 'week'),  # day, week, month
+        'alert_price_threshold': config.get('alert_price_threshold', 0.0),  # Minimum price for alerts
+        'alert_value_threshold': config.get('alert_value_threshold', 100.0)  # Minimum value change for alerts
+    }
+
+def send_email_notification(subject, message, recipient_email):
+    """Send email notification using SMTP"""
+    try:
+        config = load_notification_config()
+
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = config['email_username']
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+
+        msg.attach(MIMEText(message, 'plain'))
+
+        # Create SMTP connection
+        server = smtplib.SMTP(config['email_smtp_server'], config['email_smtp_port'])
+        server.starttls()
+        server.login(config['email_username'], config['email_password'])
+        text = msg.as_string()
+        server.sendmail(config['email_username'], recipient_email, text)
+        server.quit()
+
+        print(f"✅ Email sent to {recipient_email}")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to send email: {e}")
+        return False
+
+def send_discord_notification(message, webhook_url=None):
+    """Send notification to Discord webhook"""
+    try:
+        config = load_notification_config()
+        webhook_url = webhook_url or config['discord_webhook_url']
+
+        if not webhook_url:
+            return False
+
+        payload = {
+            'content': message,
+            'username': 'Game Price Tracker'
+        }
+
+        response = requests.post(webhook_url, json=payload)
+        response.raise_for_status()
+
+        print("✅ Discord notification sent")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to send Discord notification: {e}")
+        return False
+
+def send_slack_notification(message, webhook_url=None):
+    """Send notification to Slack webhook"""
+    try:
+        config = load_notification_config()
+        webhook_url = webhook_url or config['slack_webhook_url']
+
+        if not webhook_url:
+            return False
+
+        payload = {
+            'text': message,
+            'username': 'Game Price Tracker'
+        }
+
+        response = requests.post(webhook_url, json=payload)
+        response.raise_for_status()
+
+        print("✅ Slack notification sent")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to send Slack notification: {e}")
+        return False
+
+def send_price_alert(game_title, old_price, new_price, source, change_type):
+    """Send price alert through Discord"""
+    config = load_notification_config()
+
+    # Calculate percentage change
+    if old_price > 0:
+        change_percent = ((new_price - old_price) / old_price) * 100
+    else:
+        change_percent = 0
+
+    # Create alert message (no emojis)
+    if change_type == 'drop':
+        alert_type = 'PRICE DROP ALERT'
+    else:
+        alert_type = 'PRICE INCREASE ALERT'
+
+    message = f"""**{alert_type}**
+
+**{game_title}**
+Old Price: £{old_price:.2f}
+New Price: £{new_price:.2f}
+Change: {change_percent:+.1f}%
+Source: {source}
+Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+
+    # Send through Discord only
+    if config['discord_webhook_url']:
+        return send_discord_notification(message, config['discord_webhook_url'])
+
+    return False
+
+def get_game_alert_settings(game_id):
+    """Get alert settings for a specific game (with global fallbacks)"""
+    try:
+        config = load_notification_config()
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT enabled, price_source, price_region, price_drop_threshold, price_increase_threshold,
+                   alert_price_threshold, alert_value_threshold
+            FROM game_alert_settings
+            WHERE game_id = ?
+        """, (game_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            enabled, price_source, price_region, drop_thresh, increase_thresh, price_thresh, value_thresh = result
+            return {
+                'enabled': bool(enabled),
+                'price_source': price_source or config['default_price_source'],
+                'price_region': price_region or 'PAL',
+                'price_drop_threshold': drop_thresh if drop_thresh is not None else config['price_drop_threshold'],
+                'price_increase_threshold': increase_thresh if increase_thresh is not None else config['price_increase_threshold'],
+                'alert_price_threshold': price_thresh if price_thresh is not None else config['alert_price_threshold'],
+                'alert_value_threshold': value_thresh if value_thresh is not None else config['alert_value_threshold']
+            }
+        else:
+            # Return global defaults if no per-game settings
+            return {
+                'enabled': False,
+                'price_source': config['default_price_source'],
+                'price_region': 'PAL',
+                'price_drop_threshold': config['price_drop_threshold'],
+                'price_increase_threshold': config['price_increase_threshold'],
+                'alert_price_threshold': config['alert_price_threshold'],
+                'alert_value_threshold': config['alert_value_threshold']
+            }
+
+    except Exception as e:
+        print(f"❌ Error getting game alert settings: {e}")
+        config = load_notification_config()
+        return {
+            'enabled': False,
+            'price_source': config['default_price_source'],
+            'price_region': 'PAL',
+            'price_drop_threshold': config['price_drop_threshold'],
+            'price_increase_threshold': config['price_increase_threshold'],
+            'alert_price_threshold': config['alert_price_threshold'],
+            'alert_value_threshold': config['alert_value_threshold']
+        }
+
+def check_price_change_and_alert(game_id, new_price, source):
+    """Check if price change warrants an alert and send notifications"""
+    try:
+        # Get game-specific settings
+        game_settings = get_game_alert_settings(game_id)
+
+        # Skip if alerts disabled for this game
+        if not game_settings['enabled']:
+            return
+
+        # Get the most recent price from history
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT price FROM price_history
+            WHERE game_id = ?
+            ORDER BY date_recorded DESC
+            LIMIT 1
+        """, (game_id,))
+
+        result = cursor.fetchone()
+
+        if result:
+            old_price = result[0]
+
+            # Get game title for the alert
+            cursor.execute("SELECT title FROM games WHERE id = ?", (game_id,))
+            game_result = cursor.fetchone()
+            game_title = game_result[0] if game_result else f"Game {game_id}"
+
+            conn.close()
+
+            # Check if change meets threshold
+            if old_price > 0:
+                change_percent = ((new_price - old_price) / old_price) * 100
+                change_value = abs(new_price - old_price)
+
+                # Check minimum price threshold
+                if new_price < game_settings['alert_price_threshold']:
+                    return  # Price too low to alert
+
+                # Check minimum value change threshold
+                if change_value < game_settings['alert_value_threshold']:
+                    return  # Change too small to alert
+
+                # Price drop alert
+                if change_percent <= -game_settings['price_drop_threshold']:
+                    send_price_alert(game_title, old_price, new_price, source, 'drop')
+
+                # Price increase alert
+                elif change_percent >= game_settings['price_increase_threshold']:
+                    send_price_alert(game_title, old_price, new_price, source, 'increase')
+        else:
+            conn.close()
+
+    except Exception as e:
+        print(f"❌ Error checking price change: {e}")
 
 # -------------------------
 # Health Check Endpoint
@@ -1933,9 +2170,12 @@ def update_game_price(game_id):
         
         logging.debug(f"Updating price for game ID {game_id}: '{search_query}'")
         
-        # Get the current price source configuration
-        price_source = get_price_source()
-        logging.debug(f"Using price source: {price_source}")
+        # Get per-game price source and region or fall back to global defaults
+        game_settings = get_game_alert_settings(game_id)
+        price_source = game_settings.get('price_source') or get_price_source()
+        price_region = game_settings.get('price_region') or 'PAL'
+        logging.debug(f"Using price source for game {game_id}: {price_source} (per-game: {game_settings.get('price_source')}, global: {get_price_source()})")
+        logging.debug(f"Using price region for game {game_id}: {price_region} (per-game: {game_settings.get('price_region')}, default: PAL)")
         
         # Perform price scraping based on current configuration
         new_price = None
@@ -1945,11 +2185,9 @@ def update_game_price(game_id):
         elif price_source == "CeX":
             new_price = scrape_cex_price(search_query)
         elif price_source == "PriceCharting":
-            # Get region from request or current default region setting
-            region = request.json.get("region") if request.json else None
-            if not region:
-                region = get_default_region()
-            logging.debug(f"Using region for price update: {region}")
+            # Use per-game region setting or fall back to global default
+            region = price_region
+            logging.debug(f"Using region for price update: {region} (from per-game settings)")
             
             pricecharting_data = scrape_pricecharting_price(search_query, None, region)
             # Get condition preference from request or default to CiB preference
@@ -1994,6 +2232,10 @@ def update_game_price(game_id):
                 (game_id, new_price, used_source, current_date, 'GBP')
             )
             conn.commit()
+
+            # Check for price alerts
+            check_price_change_and_alert(game_id, new_price, used_source)
+
             conn.close()
         else:
             # No price found; preserve existing price. Do not write history.
@@ -2866,13 +3108,16 @@ def add_price_history_entry():
             INSERT INTO price_history (game_id, price, price_source, date_recorded, currency)
             VALUES (?, ?, ?, ?, ?)
         """, (game_id, price, price_source, current_date, 'GBP'))
-        
+
         # Update the game's current average_price as well
         cursor.execute("""
             UPDATE games SET average_price = ? WHERE id = ?
         """, (price, game_id))
-        
+
         conn.commit()
+
+        # Check for price alerts
+        check_price_change_and_alert(game_id, price, price_source)
         conn.close()
         
         return jsonify({
@@ -2888,6 +3133,164 @@ def add_price_history_entry():
             'success': False,
             'error': str(e)
         }), 500
+
+# -------------------------
+# Notification Management API
+# -------------------------
+
+@app.route('/api/notifications/config', methods=['GET'])
+def get_notification_config():
+    """Get current notification configuration"""
+    try:
+        config = load_notification_config()
+        safe_config = {
+            'discord_webhook_configured': bool(config.get('discord_webhook_url')),
+            'price_drop_threshold': config.get('price_drop_threshold', 10.0),
+            'price_increase_threshold': config.get('price_increase_threshold', 20.0),
+            'default_price_source': config.get('default_price_source', 'PriceCharting'),
+            'auto_scraping_enabled': config.get('auto_scraping_enabled', False),
+            'auto_scraping_frequency': config.get('auto_scraping_frequency', 'week'),
+            'alert_price_threshold': config.get('alert_price_threshold', 0.0),
+            'alert_value_threshold': config.get('alert_value_threshold', 100.0)
+        }
+        return jsonify({'success': True, 'config': safe_config})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/notifications/config', methods=['POST'])
+def update_notification_config():
+    """Update notification configuration"""
+    try:
+        data = request.get_json()
+        config = load_config()
+
+        # Update notification settings
+        if 'discord_webhook_url' in data:
+            config['discord_webhook_url'] = data['discord_webhook_url']
+        if 'price_drop_threshold' in data:
+            config['price_drop_threshold'] = data['price_drop_threshold']
+        if 'price_increase_threshold' in data:
+            config['price_increase_threshold'] = data['price_increase_threshold']
+        if 'default_price_source' in data:
+            config['default_price_source'] = data['default_price_source']
+        if 'auto_scraping_enabled' in data:
+            config['auto_scraping_enabled'] = data['auto_scraping_enabled']
+        if 'auto_scraping_frequency' in data:
+            config['auto_scraping_frequency'] = data['auto_scraping_frequency']
+        if 'alert_price_threshold' in data:
+            config['alert_price_threshold'] = data['alert_price_threshold']
+        if 'alert_value_threshold' in data:
+            config['alert_value_threshold'] = data['alert_value_threshold']
+        if 'default_alert_price_region' in data:
+            config['default_alert_price_region'] = data['default_alert_price_region']
+
+        save_config(config)
+        return jsonify({'success': True, 'message': 'Notification configuration updated'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/notifications/test', methods=['POST'])
+def test_notifications():
+    """Send a test notification through all configured channels"""
+    try:
+        data = request.get_json()
+        test_game_title = data.get('game_title', 'Test Game')
+        test_old_price = data.get('old_price', 50.0)
+        test_new_price = data.get('new_price', 35.0)
+        test_source = data.get('source', 'Test Source')
+
+        success = send_price_alert(test_game_title, test_old_price, test_new_price, test_source, 'drop')
+
+        if success:
+            return jsonify({'success': True, 'message': 'Test notification sent successfully'})
+        else:
+            return jsonify({'success': False, 'message': 'No notification channels configured or all failed'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# -------------------------
+# Per-Game Alert Settings API
+# -------------------------
+
+@app.route('/api/games/<int:game_id>/alert-settings', methods=['GET'])
+def get_game_alert_settings_endpoint(game_id):
+    """Get alert settings for a specific game"""
+    try:
+        settings = get_game_alert_settings(game_id)
+        return jsonify({'success': True, 'settings': settings})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/games/<int:game_id>/alert-settings', methods=['POST'])
+def update_game_alert_settings(game_id):
+    """Update alert settings for a specific game"""
+    try:
+        data = request.get_json()
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+
+        # Check if settings already exist
+        cursor.execute("SELECT id FROM game_alert_settings WHERE game_id = ?", (game_id,))
+        existing = cursor.fetchone()
+
+        if existing:
+            # Update existing settings
+            cursor.execute("""
+                UPDATE game_alert_settings
+                SET enabled = ?, price_source = ?, price_region = ?, price_drop_threshold = ?,
+                    price_increase_threshold = ?, alert_price_threshold = ?,
+                    alert_value_threshold = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE game_id = ?
+            """, (
+                data.get('enabled', False),
+                data.get('price_source'),
+                data.get('price_region'),
+                data.get('price_drop_threshold'),
+                data.get('price_increase_threshold'),
+                data.get('alert_price_threshold'),
+                data.get('alert_value_threshold'),
+                game_id
+            ))
+        else:
+            # Insert new settings
+            cursor.execute("""
+                INSERT INTO game_alert_settings
+                (game_id, enabled, price_source, price_region, price_drop_threshold, price_increase_threshold,
+                 alert_price_threshold, alert_value_threshold)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                game_id,
+                data.get('enabled', False),
+                data.get('price_source'),
+                data.get('price_region'),
+                data.get('price_drop_threshold'),
+                data.get('price_increase_threshold'),
+                data.get('alert_price_threshold'),
+                data.get('alert_value_threshold')
+            ))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Game alert settings updated'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Failed to update game alert settings: {str(e)}'}), 500
+
+@app.route('/api/games/<int:game_id>/alert-settings', methods=['DELETE'])
+def delete_game_alert_settings(game_id):
+    """Reset alert settings for a specific game (use global defaults)"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM game_alert_settings WHERE game_id = ?", (game_id,))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Game alert settings reset to global defaults'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 def fetch_artwork_for_game(game_id):
     """Helper function to fetch high-resolution artwork for a single game"""
