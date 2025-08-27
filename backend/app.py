@@ -1019,6 +1019,35 @@ def send_discord_notification(message, webhook_url=None):
         print(f"❌ Failed to send Discord notification: {e}")
         return False
 
+def send_discord_embed_notification(embed_payload, webhook_url=None):
+    """Send rich embed notification to Discord webhook"""
+    try:
+        config = load_notification_config()
+        webhook_url = webhook_url or config['discord_webhook_url']
+
+        if not webhook_url:
+            print("❌ No Discord webhook URL configured")
+            return False
+
+        response = requests.post(webhook_url, json=embed_payload, timeout=10)
+
+        if response.status_code == 204:
+            print("✅ Discord embed notification sent successfully")
+            return True
+        else:
+            print(f"❌ Discord API error: {response.status_code} - {response.text}")
+            return False
+
+    except requests.exceptions.Timeout:
+        print("❌ Discord embed notification timed out")
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Discord network error: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Failed to send Discord embed notification: {e}")
+        return False
+
 def send_slack_notification(message, webhook_url=None):
     """Send notification to Slack webhook"""
     try:
@@ -1042,8 +1071,8 @@ def send_slack_notification(message, webhook_url=None):
         print(f"❌ Failed to send Slack notification: {e}")
         return False
 
-def send_price_alert(game_title, old_price, new_price, source, change_type):
-    """Send price alert through Discord"""
+def send_price_alert(game_id, game_title, old_price, new_price, source, change_type):
+    """Send price alert through Discord with rich embed formatting and cover image"""
     config = load_notification_config()
 
     # Calculate percentage change
@@ -1052,28 +1081,126 @@ def send_price_alert(game_title, old_price, new_price, source, change_type):
     else:
         change_percent = 0
 
-    # Create alert message (no emojis)
+    # Get cover image URL and platform
+    cover_image_url = get_game_cover_image(game_id)
+    platform = get_game_platform(game_id)
+
+    # Determine embed color and title based on change type
     if change_type == 'drop':
-        alert_type = 'PRICE DROP ALERT'
+        embed_color = 65280  # Green for price drops
+        alert_title = "💰 Price Drop Alert!"
     else:
-        alert_type = 'PRICE INCREASE ALERT'
+        embed_color = 16711680  # Red for price increases
+        alert_title = "📈 Price Increase Alert!"
 
-    message = f"""**{alert_type}**
+    # Create Discord embed with cover image
+    embed = {
+        "title": alert_title,
+        "color": embed_color,
+        "fields": [
+            {
+                "name": "Game",
+                "value": f"**{game_title}**\n*{platform}*" if platform else f"**{game_title}**",
+                "inline": False
+            },
+            {
+                "name": "Price Change",
+                "value": f"**£{old_price:.2f}** → **£{new_price:.2f}**\n**{change_percent:+.1f}%**",
+                "inline": True
+            },
+            {
+                "name": "Source",
+                "value": f"**{source}**",
+                "inline": True
+            },
+            {
+                "name": "Date",
+                "value": datetime.now().strftime('%Y-%m-%d'),
+                "inline": False
+            }
+        ],
+        "footer": {
+            "text": "Video Game Catalogue Price Alert"
+        },
+        "timestamp": datetime.now().isoformat()
+    }
 
-**{game_title}**
-Old Price: £{old_price:.2f}
-New Price: £{new_price:.2f}
-Change: {change_percent:+.1f}%
-Source: {source}
-Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+    # Add thumbnail (cover image) if available
+    if cover_image_url:
+        embed["thumbnail"] = {"url": cover_image_url}
+        print(f"✅ Added cover image to embed: {cover_image_url}")
+    else:
+        print(f"❌ No cover image found for game {game_id}")
+
+    # Create the webhook payload
+    payload = {
+        "embeds": [embed],
+        "username": "Game Price Tracker"
+    }
 
     # Send through Discord only
     if config['discord_webhook_url']:
-        result = send_discord_notification(message, config['discord_webhook_url'])
+        result = send_discord_embed_notification(payload, config['discord_webhook_url'])
         return result
     else:
         print("❌ No Discord webhook URL configured")
         return False
+
+def get_game_cover_image(game_id):
+    """Get the cover image URL for a game"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+
+        # Try high-res cover first, then hero image as fallback
+        cursor.execute("""
+            SELECT high_res_cover_url, hero_image_url
+            FROM games
+            WHERE id = ?
+        """, (game_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result and result[0]:  # high_res_cover_url
+            return result[0]
+        elif result and result[1]:  # hero_image_url
+            return result[1]
+        else:
+            return None
+
+    except Exception as e:
+        print(f"Error getting cover image for game {game_id}: {e}")
+        return None
+
+def get_game_platform(game_id):
+    """Get the platform for a game"""
+    try:
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT platforms
+            FROM games
+            WHERE id = ?
+        """, (game_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result and result[0]:
+            # Extract first platform from the platforms string
+            platforms = result[0]
+            if ',' in platforms:
+                return platforms.split(',')[0].strip()
+            else:
+                return platforms.strip()
+        else:
+            return None
+
+    except Exception as e:
+        print(f"Error getting platform for game {game_id}: {e}")
+        return None
 
 def get_game_alert_settings(game_id):
     """Get alert settings for a specific game (with global fallbacks)"""
@@ -1182,11 +1309,11 @@ def check_price_change_and_alert(game_id, new_price, source):
 
                 # Price drop alert
                 if change_percent <= -game_settings['price_drop_threshold']:
-                    send_price_alert(game_title, old_price, new_price, source, 'drop')
+                    send_price_alert(game_id, game_title, old_price, new_price, source, 'drop')
 
                 # Price increase alert
                 elif change_percent >= game_settings['price_increase_threshold']:
-                    send_price_alert(game_title, old_price, new_price, source, 'increase')
+                    send_price_alert(game_id, game_title, old_price, new_price, source, 'increase')
         else:
             conn.close()
 
@@ -3430,7 +3557,7 @@ def test_notifications():
         test_new_price = data.get('new_price', 35.0)
         test_source = data.get('source', 'Test Source')
 
-        success = send_price_alert(test_game_title, test_old_price, test_new_price, test_source, 'drop')
+        success = send_price_alert(-1, test_game_title, test_old_price, test_new_price, test_source, 'drop')
 
         if success:
             return jsonify({'success': True, 'message': 'Test notification sent successfully'})

@@ -2030,7 +2030,7 @@ def notifications_page():
                     st.info("Next Run: Not scheduled")
 
             # Manual trigger button
-            if st.button("Scraper Now", type="secondary",
+            if st.button("Test Scraper", type="secondary",
                        help="Manually trigger the automatic price scraper for testing"):
                 with st.spinner("Running auto scraper..."):
                     trigger_response = trigger_manual_scraping()

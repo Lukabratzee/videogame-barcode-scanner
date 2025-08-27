@@ -12,5 +12,5 @@
   "alert_price_threshold": 0.0,
   "alert_value_threshold": 10.0,
   "default_alert_price_region": "PAL",
-  "automatic_price_source": "Amazon"
+  "automatic_price_source": "PriceCharting"
 }
