@@ -219,17 +219,19 @@ def load_config():
         "igdb_client_id": "",
         "igdb_client_secret": ""
     }
-    
+
     # Debug logging
     logging.info(f"Loading config from: {CONFIG_FILE}")
     logging.info(f"Config file absolute path: {os.path.abspath(CONFIG_FILE)}")
     logging.info(f"Docker environment: {os.getenv('DOCKER_ENV') or os.path.exists('/.dockerenv')}")
-    
+
     # Ensure config directory exists
     config_dir = os.path.dirname(CONFIG_FILE)
     logging.info(f"Config directory: {config_dir}")
     logging.info(f"Config directory absolute path: {os.path.abspath(config_dir)}")
-    
+
+
+
     if not os.path.exists(config_dir):
         try:
             os.makedirs(config_dir, exist_ok=True)
@@ -741,6 +743,7 @@ def load_notification_config():
         'price_drop_threshold': config.get('price_drop_threshold', 10.0),  # Percentage
         'price_increase_threshold': config.get('price_increase_threshold', 20.0),  # Percentage
         'default_price_source': config.get('default_price_source', 'PriceCharting'),
+        'default_alert_price_region': config.get('default_alert_price_region', 'PAL'),  # Default region for alert prices
         'auto_scraping_enabled': config.get('auto_scraping_enabled', False),
         'auto_scraping_frequency': config.get('auto_scraping_frequency', 'week'),  # day, week, month
         'alert_price_threshold': config.get('alert_price_threshold', 0.0),  # Minimum price for alerts
@@ -3148,6 +3151,7 @@ def get_notification_config():
             'price_drop_threshold': config.get('price_drop_threshold', 10.0),
             'price_increase_threshold': config.get('price_increase_threshold', 20.0),
             'default_price_source': config.get('default_price_source', 'PriceCharting'),
+            'default_alert_price_region': config.get('default_alert_price_region', 'PAL'),
             'auto_scraping_enabled': config.get('auto_scraping_enabled', False),
             'auto_scraping_frequency': config.get('auto_scraping_frequency', 'week'),
             'alert_price_threshold': config.get('alert_price_threshold', 0.0),

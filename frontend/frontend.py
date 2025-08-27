@@ -1880,9 +1880,12 @@ def notifications_page():
 
         # Region selection for PriceCharting - always define the variable
         if default_price_source == "PriceCharting":
+            region_from_config = config.get("default_alert_price_region", "PAL")
+            region_index = ["PAL", "NTSC", "JP"].index(region_from_config) if region_from_config in ["PAL", "NTSC", "JP"] else 0
+
             default_alert_price_region = st.selectbox("Default PriceCharting Region",
                                                      ["PAL", "NTSC", "JP"],
-                                                     index=["PAL", "NTSC", "JP"].index(config.get("default_alert_price_region", "PAL")),
+                                                     index=region_index,
                                                      help="Default region for PriceCharting alert prices")
         else:
             # Define with default value when not PriceCharting, but don't show the widget
@@ -1914,6 +1917,7 @@ def notifications_page():
 
             if discord_webhook:
                 update_data["discord_webhook_url"] = discord_webhook
+
             response = update_notification_config(update_data)
             if response.get("success"):
                 st.success("Configuration saved successfully!")
