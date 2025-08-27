@@ -487,6 +487,50 @@ def test_notifications(test_data):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+def fetch_scheduler_status():
+    """Fetch scheduler status"""
+    try:
+        response = requests.get(f"{BACKEND_URL}/api/scheduler/status")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "status": {}, "error": "Failed to fetch scheduler status"}
+    except Exception as e:
+        return {"success": False, "status": {}, "error": str(e)}
+
+def trigger_manual_scraping():
+    """Manually trigger the auto scraper"""
+    try:
+        response = requests.post(f"{BACKEND_URL}/api/scheduler/trigger")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "message": "Failed to trigger auto scraper"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+def start_scheduler():
+    """Start the scheduler"""
+    try:
+        response = requests.post(f"{BACKEND_URL}/api/scheduler/start")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "message": "Failed to start scheduler"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+def stop_scheduler():
+    """Stop the scheduler"""
+    try:
+        response = requests.post(f"{BACKEND_URL}/api/scheduler/stop")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "message": "Failed to stop scheduler"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
 def get_game_alert_settings(game_id):
     """Get alert settings for a specific game"""
     try:
@@ -1950,6 +1994,97 @@ def notifications_page():
             else:
                 st.error(f"Failed to send test notification: {response.get('error', 'No notification channels configured')}")
 
+    # Scheduler Status and Controls (Outside of forms)
+    st.header("Automatic Price Scraper")
+
+    # Get scheduler status
+    try:
+        scheduler_response = fetch_scheduler_status()
+        if scheduler_response.get("success"):
+            scheduler_status = scheduler_response.get("status", {})
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if scheduler_status.get("started"):
+                    st.success("🟢 Scheduler Running")
+                else:
+                    st.error("🔴 Scheduler Stopped")
+
+            with col2:
+                if scheduler_status.get("enabled"):
+                    st.info(f"📅 Frequency: {scheduler_status.get('frequency', 'unknown').title()}")
+                else:
+                    st.warning("🚫 Auto Scraping Disabled")
+
+            with col3:
+                jobs = scheduler_status.get("jobs", [])
+                if jobs:
+                    next_run = jobs[0].get("next_run_time")
+                    if next_run:
+                        st.info(f"⏰ Next Run: {next_run[:19]} UTC")
+                    else:
+                        st.info("⏰ Next Run: Scheduled")
+                else:
+                    st.info("⏰ Next Run: Not scheduled")
+
+            # Manual trigger button
+            if st.button("🔧 Test Auto Scraper Now", type="secondary",
+                       help="Manually trigger the automatic price scraper for testing"):
+                with st.spinner("Running auto scraper..."):
+                    trigger_response = trigger_manual_scraping()
+                    if trigger_response.get("success"):
+                        st.success("✅ Auto scraper completed successfully!")
+                        st.rerun()  # Refresh the page to show updated prices
+                    else:
+                        st.error(f"❌ Failed: {trigger_response.get('message', 'Unknown error')}")
+
+            # Scheduler control buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("▶️ Start Scheduler", disabled=scheduler_status.get("started")):
+                    start_response = start_scheduler()
+                    if start_response.get("success"):
+                        st.success("✅ Scheduler started!")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed: {start_response.get('message', 'Unknown error')}")
+
+            with col2:
+                if st.button("⏹️ Stop Scheduler", disabled=not scheduler_status.get("started")):
+                    stop_response = stop_scheduler()
+                    if stop_response.get("success"):
+                        st.success("✅ Scheduler stopped!")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed: {stop_response.get('message', 'Unknown error')}")
+
+        else:
+            st.error("❌ Failed to get scheduler status")
+    except Exception as e:
+        st.error(f"❌ Error connecting to scheduler API: {e}")
+
+    # Information about scheduling
+    with st.expander("ℹ️ About Automatic Scheduling", expanded=False):
+        st.markdown("""
+        **When does the scheduler run?**
+
+        - **Daily**: Every day at 9:00 AM UTC
+        - **Weekly**: Every Monday at 9:00 AM UTC
+        - **Monthly**: 1st of each month at 9:00 AM UTC
+
+        **What happens during auto scraping?**
+        1. Checks all games with alerts enabled
+        2. Scrapes prices from configured sources
+        3. Updates prices in database
+        4. Sends Discord alerts for significant changes
+        5. Records price history
+
+        **Testing the scheduler:**
+        - Use the "🔧 Test Auto Scraper Now" button above
+        - Check the terminal/console for detailed logs
+        - Monitor Discord for alert notifications
+        """)
 
 
 # -------------------------

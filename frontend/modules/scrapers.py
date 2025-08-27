@@ -41,10 +41,10 @@ def get_best_pricecharting_price(pricing_data: Optional[Dict]) -> Optional[float
     """Return a representative price from PriceCharting (loose -> CIB -> new)."""
     if not pricing_data or not isinstance(pricing_data, dict):
         return None
-    if pricing_data.get("loose_price") is not None:
-        return pricing_data["loose_price"]
     if pricing_data.get("cib_price") is not None:
         return pricing_data["cib_price"]
+    if pricing_data.get("loose_price") is not None:
+        return pricing_data["loose_price"]
     if pricing_data.get("new_price") is not None:
         return pricing_data["new_price"]
     return None
@@ -131,21 +131,21 @@ def _apply_region_to_game_url(game_url: str, region: Optional[str]) -> str:
 def scrape_pricecharting_price(game_title: str, platform: Optional[str] = None, region: Optional[str] = None) -> Optional[Dict]:
     """
     LATEST VERSION - 2025-07-31 - Added platform aliases for better PriceCharting compatibility
-    
+
     Scrapes PriceCharting.com for video game pricing data.
-    
+
     Args:
         game_title (str): The name of the game to search for
         platform (str, optional): The platform/console name (e.g., "Nintendo 64", "PlayStation")
         region (str, optional): The region for pricing ("US", "PAL", "Japan"). Defaults to "US"
-    
+
     Returns:
         Dict containing pricing data with keys: loose_price, cib_price, new_price (all optional)
         Returns None if no pricing data found
     """
     if not game_title.strip():
         return None
-    
+
     driver = None
     try:
         driver = get_chrome_driver()
@@ -632,20 +632,24 @@ def get_chrome_driver():
         
         # Method 1: Try webdriver-manager for automatic version matching
         try:
+            print("🌐 Trying webdriver-manager (visible browser)...")
             options = Options()
             options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage") 
+            options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--disable-gpu")
             options.add_argument("--disable-extensions")
             options.add_argument("--disable-plugins")
             options.add_argument("--disable-images")
+            # Make sure browser is visible - DON'T add headless!
             options.add_argument("--window-size=1920,1080")
-            
+
             # Use webdriver-manager for version matching
             service = ChromeService(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=options)
+            print("✅ Browser opened successfully with webdriver-manager")
             return driver
         except Exception as e:
+            print(f"❌ webdriver-manager failed: {e}")
             pass
         
         # Method 2: Try undetected-chromedriver with fresh options

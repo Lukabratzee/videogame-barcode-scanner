@@ -8,3 +8,4 @@ setuptools==72.1.0
 fuzzywuzzy==0.18.0
 rapidfuzz==3.9.3
 python-dotenv==1.0.0
+APScheduler==3.10.4

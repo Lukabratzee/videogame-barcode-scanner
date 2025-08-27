@@ -16,6 +16,11 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+# APScheduler imports for automatic price scraping
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.jobstores.memory import MemoryJobStore
+
 # Import YouTube trailer fetcher function
 try:
     from fetch_youtube_trailers import get_youtube_video_id
@@ -125,6 +130,20 @@ app = Flask(__name__)
 # IGDB credentials default from environment (used as final fallback)
 IGDB_CLIENT_ID = os.getenv("IGDB_CLIENT_ID", "")
 IGDB_CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET", "")
+
+# Initialize APScheduler for automatic price scraping
+scheduler = BackgroundScheduler(
+    jobstores={'default': MemoryJobStore()},
+    job_defaults={
+        'coalesce': True,
+        'max_instances': 1,
+        'misfire_grace_time': 30
+    },
+    timezone='UTC'
+)
+
+# Global variable to track scheduler status
+scheduler_started = False
 
 # Specify the exact path to the ChromeDriver binary
 # driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path - NOT USED IN DOCKER
@@ -317,6 +336,154 @@ def save_config(config):
             except Exception as fallback_error:
                 logging.error(f"Failed to save config to fallback location: {fallback_error}")
         raise  # Re-raise the exception so the calling function knows it failed
+
+# ===============================
+# SCHEDULER FUNCTIONS
+# ===============================
+
+def start_auto_scraper_scheduler():
+    """Start the automatic price scraper scheduler"""
+    global scheduler_started
+
+    if scheduler_started:
+        logging.info("Scheduler already started")
+        return True
+
+    try:
+        config = load_config()
+        logging.info(f"Scheduler start attempt - config: {config}")
+
+        if not config.get('auto_scraping_enabled', False):
+            logging.info("Auto scraping disabled in config")
+            return False
+
+        frequency = config.get('auto_scraping_frequency', 'week')
+
+        # Clear any existing jobs
+        scheduler.remove_all_jobs()
+
+        # Schedule based on frequency
+        if frequency == 'day':
+            # Run daily at 9 AM
+            scheduler.add_job(
+                func=run_scheduled_scraping,
+                trigger=CronTrigger(hour=9, minute=0),
+                id='daily_scraping',
+                name='Daily Price Scraping',
+                replace_existing=True
+            )
+            logging.info("✅ Scheduled daily scraping at 9:00 AM UTC")
+
+        elif frequency == 'week':
+            # Run weekly on Monday at 9 AM
+            scheduler.add_job(
+                func=run_scheduled_scraping,
+                trigger=CronTrigger(day_of_week='mon', hour=9, minute=0),
+                id='weekly_scraping',
+                name='Weekly Price Scraping',
+                replace_existing=True
+            )
+            logging.info("✅ Scheduled weekly scraping on Monday at 9:00 AM UTC")
+
+        elif frequency == 'month':
+            # Run monthly on the 1st at 9 AM
+            scheduler.add_job(
+                func=run_scheduled_scraping,
+                trigger=CronTrigger(day=1, hour=9, minute=0),
+                id='monthly_scraping',
+                name='Monthly Price Scraping',
+                replace_existing=True
+            )
+            logging.info("✅ Scheduled monthly scraping on 1st at 9:00 AM UTC")
+
+        # Start the scheduler
+        logging.info(f"Starting scheduler with frequency: {frequency}")
+        scheduler.start()
+        scheduler_started = True
+        logging.info("✅ Auto scraper scheduler started successfully")
+
+        return True
+
+    except Exception as e:
+        logging.error(f"❌ Failed to start scheduler: {e}")
+        logging.error(f"❌ Exception type: {type(e).__name__}")
+        import traceback
+        logging.error(f"❌ Traceback: {traceback.format_exc()}")
+        return False
+
+def stop_auto_scraper_scheduler():
+    """Stop the automatic price scraper scheduler"""
+    global scheduler_started
+
+    if not scheduler_started:
+        logging.info("Scheduler already stopped")
+        return True
+
+    try:
+        scheduler.shutdown(wait=True)
+        scheduler_started = False
+        logging.info("✅ Auto scraper scheduler stopped successfully")
+        return True
+    except Exception as e:
+        logging.error(f"❌ Failed to stop scheduler: {e}")
+        return False
+
+def run_scheduled_scraping():
+    """Run the scheduled price scraping (called by APScheduler)"""
+    try:
+        logging.info("🚀 Starting scheduled price scraping...")
+
+        # Import the auto scraper functionality
+        from auto_price_scraper import run_auto_scraping
+
+        # Run the scraping
+        run_auto_scraping()
+
+        logging.info("✅ Scheduled price scraping completed")
+
+    except Exception as e:
+        logging.error(f"❌ Scheduled scraping failed: {e}")
+
+def get_scheduler_status():
+    """Get the current status of the scheduler"""
+    global scheduler_started
+
+    config = load_config()
+    jobs = []
+
+    if scheduler_started:
+        for job in scheduler.get_jobs():
+            jobs.append({
+                'id': job.id,
+                'name': job.name,
+                'next_run_time': str(job.next_run_time) if job.next_run_time else None,
+                'trigger': str(job.trigger)
+            })
+
+    return {
+        'started': scheduler_started,
+        'enabled': config.get('auto_scraping_enabled', False),
+        'frequency': config.get('auto_scraping_frequency', 'week'),
+        'jobs': jobs
+    }
+
+def trigger_manual_scraping():
+    """Manually trigger the auto scraper for testing"""
+    try:
+        logging.info("🔧 Manually triggering auto scraper...")
+
+        # Import the auto scraper functionality
+        from auto_price_scraper import run_auto_scraping
+
+        # Run the scraping
+        run_auto_scraping()
+
+        logging.info("✅ Manual scraping completed successfully")
+        return True
+
+    except Exception as e:
+        logging.error(f"❌ Manual scraping failed: {e}")
+        return False
 
 def get_price_source():
     """Get current price source preference"""
@@ -783,7 +950,12 @@ def send_discord_notification(message, webhook_url=None):
         config = load_notification_config()
         webhook_url = webhook_url or config['discord_webhook_url']
 
+        print(f"🔍 DEBUG_DISCORD: Discord webhook URL: {webhook_url[:50]}...")
+        print(f"📝 DEBUG_DISCORD: Message length: {len(message)} characters")
+        print(f"📝 DEBUG_DISCORD: Message preview: {message[:100]}...")
+
         if not webhook_url:
+            print("❌ DEBUG_DISCORD: No Discord webhook URL configured")
             return False
 
         payload = {
@@ -791,13 +963,29 @@ def send_discord_notification(message, webhook_url=None):
             'username': 'Game Price Tracker'
         }
 
-        response = requests.post(webhook_url, json=payload)
-        response.raise_for_status()
+        print(f"📤 DEBUG_DISCORD: About to send HTTP request to Discord...")
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        print(f"📊 DEBUG_DISCORD: Discord HTTP response status: {response.status_code}")
+        print(f"📊 DEBUG_DISCORD: Discord HTTP response headers: {dict(response.headers)}")
+        print(f"📊 DEBUG_DISCORD: Discord HTTP response text: '{response.text}'")
 
-        print("✅ Discord notification sent")
-        return True
+        if response.status_code == 204:
+            print("✅ DEBUG_DISCORD: Discord notification sent successfully")
+            return True
+        else:
+            print(f"❌ DEBUG_DISCORD: Discord API error: {response.status_code} - {response.text}")
+            return False
+
+    except requests.exceptions.Timeout:
+        print("❌ DEBUG_DISCORD: Discord notification timed out")
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"❌ DEBUG_DISCORD: Discord network error: {e}")
+        return False
     except Exception as e:
-        print(f"❌ Failed to send Discord notification: {e}")
+        print(f"❌ DEBUG_DISCORD: Failed to send Discord notification: {e}")
+        import traceback
+        print(f"📋 DEBUG_DISCORD: Full traceback: {traceback.format_exc()}")
         return False
 
 def send_slack_notification(message, webhook_url=None):
@@ -825,13 +1013,18 @@ def send_slack_notification(message, webhook_url=None):
 
 def send_price_alert(game_title, old_price, new_price, source, change_type):
     """Send price alert through Discord"""
+    print(f"📢 DEBUG_ALERT: send_price_alert called: {game_title}, £{old_price:.2f} -> £{new_price:.2f}, type: {change_type}")
+
     config = load_notification_config()
+    print(f"📢 DEBUG_ALERT: Config loaded, discord_webhook_url exists: {bool(config.get('discord_webhook_url'))}")
 
     # Calculate percentage change
     if old_price > 0:
         change_percent = ((new_price - old_price) / old_price) * 100
     else:
         change_percent = 0
+
+    print(f"📊 DEBUG_ALERT: Price change: {change_percent:+.1f}%")
 
     # Create alert message (no emojis)
     if change_type == 'drop':
@@ -848,11 +1041,17 @@ Change: {change_percent:+.1f}%
 Source: {source}
 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
 
+    print(f"📝 DEBUG_ALERT: Generated message:\n{message}")
+
     # Send through Discord only
     if config['discord_webhook_url']:
-        return send_discord_notification(message, config['discord_webhook_url'])
-
-    return False
+        print(f"🔗 DEBUG_ALERT: Discord webhook configured, sending...")
+        result = send_discord_notification(message, config['discord_webhook_url'])
+        print(f"📤 DEBUG_ALERT: Discord send result: {result}")
+        return result
+    else:
+        print("❌ DEBUG_ALERT: No Discord webhook URL configured")
+        return False
 
 def get_game_alert_settings(game_id):
     """Get alert settings for a specific game (with global fallbacks)"""
@@ -910,28 +1109,42 @@ def get_game_alert_settings(game_id):
 def check_price_change_and_alert(game_id, new_price, source):
     """Check if price change warrants an alert and send notifications"""
     try:
+        print(f"🔍 DEBUG_CHECK: Checking price change for game {game_id}: £{new_price} from {source}")
+
         # Get game-specific settings
         game_settings = get_game_alert_settings(game_id)
+        print(f"⚙️ DEBUG_CHECK: Game settings: enabled={game_settings['enabled']}, thresholds: {game_settings['price_drop_threshold']}% drop, {game_settings['price_increase_threshold']}% increase, £{game_settings['alert_value_threshold']} min change")
 
         # Skip if alerts disabled for this game
         if not game_settings['enabled']:
+            print("🚫 DEBUG_CHECK: Alerts disabled for this game")
             return
 
         # Get the most recent price from history
         conn = sqlite3.connect(database_path)
         cursor = conn.cursor()
 
+        # Get the last TWO prices from history to compare properly
         cursor.execute("""
             SELECT price FROM price_history
             WHERE game_id = ?
             ORDER BY date_recorded DESC
-            LIMIT 1
+            LIMIT 2
         """, (game_id,))
 
-        result = cursor.fetchone()
+        results = cursor.fetchall()
+        print(f"🔍 DEBUG_CHECK: Price history query results: {results}")
 
-        if result:
-            old_price = result[0]
+        if results and len(results) >= 1:
+            # Use the oldest price from the last two entries (skip the most recent if it's the same as new_price)
+            if len(results) >= 2 and results[0][0] == new_price:
+                # Most recent history entry is the same as new price, use the second most recent
+                old_price = results[1][0]
+                print(f"🔍 DEBUG_CHECK: Using second most recent price (most recent matches new price): £{old_price}")
+            else:
+                # Use the most recent history entry
+                old_price = results[0][0]
+                print(f"🔍 DEBUG_CHECK: Using most recent price from history: £{old_price}")
 
             # Get game title for the alert
             cursor.execute("SELECT title FROM games WHERE id = ?", (game_id,))
@@ -945,26 +1158,42 @@ def check_price_change_and_alert(game_id, new_price, source):
                 change_percent = ((new_price - old_price) / old_price) * 100
                 change_value = abs(new_price - old_price)
 
+                print(f"🔍 DEBUG_CHECK: Change calculation: old=£{old_price}, new=£{new_price}, percent={change_percent:+.1f}%, value=£{change_value:.2f}")
+                print(f"🔍 DEBUG_CHECK: Thresholds: price_threshold=£{game_settings['alert_price_threshold']}, value_threshold=£{game_settings['alert_value_threshold']}")
+
                 # Check minimum price threshold
                 if new_price < game_settings['alert_price_threshold']:
+                    print(f"🚫 DEBUG_CHECK: Price £{new_price} below minimum threshold £{game_settings['alert_price_threshold']}, skipping alert")
                     return  # Price too low to alert
 
                 # Check minimum value change threshold
                 if change_value < game_settings['alert_value_threshold']:
+                    print(f"🚫 DEBUG_CHECK: Change value £{change_value} below minimum threshold £{game_settings['alert_value_threshold']}, skipping alert")
                     return  # Change too small to alert
+
+                print(f"🔍 DEBUG_CHECK: Thresholds passed, checking alert type...")
 
                 # Price drop alert
                 if change_percent <= -game_settings['price_drop_threshold']:
+                    print(f"📢 DEBUG_CHECK: Price drop detected ({change_percent:+.1f}% <= -{game_settings['price_drop_threshold']}%), sending alert...")
                     send_price_alert(game_title, old_price, new_price, source, 'drop')
 
                 # Price increase alert
                 elif change_percent >= game_settings['price_increase_threshold']:
+                    print(f"📢 DEBUG_CHECK: Price increase detected ({change_percent:+.1f}% >= {game_settings['price_increase_threshold']}%), sending alert...")
                     send_price_alert(game_title, old_price, new_price, source, 'increase')
+                else:
+                    print(f"ℹ️ DEBUG_CHECK: Price change {change_percent:+.1f}% does not meet alert thresholds")
+            else:
+                print(f"🚫 DEBUG_CHECK: Old price is zero, skipping change calculation")
         else:
             conn.close()
+            print(f"🚫 DEBUG_CHECK: No price history found for game {game_id}")
 
     except Exception as e:
-        print(f"❌ Error checking price change: {e}")
+        print(f"❌ DEBUG_CHECK: Error checking price change: {e}")
+        import traceback
+        print(f"📋 DEBUG_CHECK: Full traceback: {traceback.format_exc()}")
 
 # -------------------------
 # Health Check Endpoint
@@ -3213,6 +3442,55 @@ def test_notifications():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # -------------------------
+# Scheduler API Endpoints
+# -------------------------
+
+@app.route('/api/scheduler/status', methods=['GET'])
+def get_scheduler_status_endpoint():
+    """Get the current status of the auto scraper scheduler"""
+    try:
+        status = get_scheduler_status()
+        return jsonify({'success': True, 'status': status})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/scheduler/start', methods=['POST'])
+def start_scheduler_endpoint():
+    """Start the auto scraper scheduler"""
+    try:
+        success = start_auto_scraper_scheduler()
+        if success:
+            return jsonify({'success': True, 'message': 'Scheduler started successfully'})
+        else:
+            return jsonify({'success': False, 'message': 'Failed to start scheduler - check server logs for details'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/scheduler/stop', methods=['POST'])
+def stop_scheduler_endpoint():
+    """Stop the auto scraper scheduler"""
+    try:
+        success = stop_auto_scraper_scheduler()
+        if success:
+            return jsonify({'success': True, 'message': 'Scheduler stopped successfully'})
+        else:
+            return jsonify({'success': False, 'message': 'Failed to stop scheduler'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/scheduler/trigger', methods=['POST'])
+def trigger_scheduler_endpoint():
+    """Manually trigger the auto scraper for testing"""
+    try:
+        success = trigger_manual_scraping()
+        if success:
+            return jsonify({'success': True, 'message': 'Auto scraper triggered successfully'})
+        else:
+            return jsonify({'success': False, 'message': 'Failed to trigger auto scraper'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# -------------------------
 # Per-Game Alert Settings API
 # -------------------------
 
@@ -3565,5 +3843,9 @@ if __name__ == "__main__":
         else:
             print("✅ SteamGridDB API key configured")
     
+    # Initialize auto scraper scheduler
+    print("⏰ Initializing auto scraper scheduler...")
+    scheduler_started = start_auto_scraper_scheduler()
+
     print("🚀 Starting Flask application...")
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)

@@ -17,16 +17,18 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def resolve_db_path() -> str:
-    """Resolve database path at runtime"""
-    if 'DATABASE_PATH' in os.environ and os.environ['DATABASE_PATH'].strip():
-        path = os.environ['DATABASE_PATH'].strip()
-        if not os.path.isabs(path):
-            base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-            path = os.path.join(base, path)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        return path
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_dir, 'games.db')
+    """Resolve database path at runtime - same logic as backend app.py"""
+    # Get the project root directory (one level up from backend)
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Get database path from environment or use default
+    database_path = os.getenv("DATABASE_PATH", "data/games.db").strip()
+
+    # If the path is not absolute, then join with BASE_DIR (project root)
+    if not os.path.isabs(database_path):
+        database_path = os.path.join(BASE_DIR, database_path)
+
+    return database_path
 
 def load_config():
     """Load configuration from config file"""
@@ -55,7 +57,6 @@ def get_games_to_scrape():
         cursor.execute("""
             SELECT
                 g.id, g.title, g.average_price,
-                COALESCE(ags.enabled, 1) as alerts_enabled,
                 COALESCE(ags.price_source, ?) as price_source,
                 COALESCE(ags.price_region, 'PAL') as price_region,
                 COALESCE(ags.price_drop_threshold, ?) as drop_threshold,
@@ -64,7 +65,7 @@ def get_games_to_scrape():
                 COALESCE(ags.alert_value_threshold, ?) as value_threshold
             FROM games g
             LEFT JOIN game_alert_settings ags ON g.id = ags.game_id
-            WHERE COALESCE(ags.enabled, 1) = 1
+            WHERE ags.enabled = 1
             AND g.average_price IS NOT NULL
             AND g.average_price > 0
         """, (
@@ -108,12 +109,16 @@ def scrape_game_price(game_title, price_source, price_region='PAL'):
             scrape_cex_price
         )
 
-        print(f"🔍 Scraping {game_title} from {price_source} (region: {price_region})...")
-
         if price_source == "PriceCharting":
             result = scrape_pricecharting_price(game_title, None, price_region)
-            if result and 'loose_price' in result:
-                return result['loose_price']
+            if result:
+                # For auto-scraping, always prioritize CiB (Complete in Box) price
+                if 'cib_price' in result and result['cib_price'] is not None:
+                    return result['cib_price']
+                elif 'loose_price' in result and result['loose_price'] is not None:
+                    return result['loose_price']
+                elif 'new_price' in result and result['new_price'] is not None:
+                    return result['new_price']
         elif price_source == "eBay":
             results = scrape_ebay_prices(game_title)
             if results:
@@ -129,41 +134,10 @@ def scrape_game_price(game_title, price_source, price_region='PAL'):
                 return result['price']
 
         return None
-
     except Exception as e:
         print(f"❌ Error scraping price for {game_title}: {e}")
         return None
 
-def update_game_price(game_id, new_price, source):
-    """Update game price in database"""
-    try:
-        db_path = resolve_db_path()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-
-        # Update the game's average_price
-        cursor.execute("""
-            UPDATE games
-            SET average_price = ?
-            WHERE id = ?
-        """, (new_price, game_id))
-
-        # Record in price history
-        current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        cursor.execute("""
-            INSERT INTO price_history (game_id, price, price_source, date_recorded, currency)
-            VALUES (?, ?, ?, ?, ?)
-        """, (game_id, new_price, source, current_date, 'GBP'))
-
-        conn.commit()
-        conn.close()
-
-        print(f"✅ Updated price for game {game_id}: £{new_price} from {source}")
-        return True
-
-    except Exception as e:
-        print(f"❌ Error updating price for game {game_id}: {e}")
-        return False
 
 def run_auto_scraping():
     """Main function to run automatic price scraping"""
@@ -187,7 +161,13 @@ def run_auto_scraping():
 
     for game in games:
         # Scrape the price
-        new_price = scrape_game_price(game['title'], game['price_source'], game['price_region'])
+        try:
+            print(f"🔍 Scraping {game['title']} from {game['price_source']} (region: {game['price_region']})...")
+            new_price = scrape_game_price(game['title'], game['price_source'], game['price_region'])
+            print(f"📊 scrape_game_price returned: {new_price}")
+        except Exception as e:
+            print(f"❌ Exception scraping {game['title']}: {e}")
+            new_price = None
 
         if new_price is None:
             print(f"⚠️  No price found for {game['title']}")
@@ -201,6 +181,11 @@ def run_auto_scraping():
             change_percent = ((new_price - current_price) / current_price) * 100
             change_value = abs(new_price - current_price)
 
+            print(f"🔍 DEBUG_AUTO: Threshold check for {game['title']}:")
+            print(f"🔍 DEBUG_AUTO: Current price: £{current_price}, New price: £{new_price}")
+            print(f"🔍 DEBUG_AUTO: Change: {change_percent:+.1f}%, £{change_value:.2f}")
+            print(f"🔍 DEBUG_AUTO: Game thresholds: drop={game['drop_threshold']}%, increase={game['increase_threshold']}%, price_min=£{game['price_threshold']}, value_min=£{game['value_threshold']}")
+
             # Check thresholds
             significant_change = (
                 (change_percent <= -game['drop_threshold']) or
@@ -212,26 +197,98 @@ def run_auto_scraping():
                 change_value >= game['value_threshold']
             )
 
+            print(f"🔍 DEBUG_AUTO: Significant change: {significant_change} (drop: {change_percent <= -game['drop_threshold']}, increase: {change_percent >= game['increase_threshold']})")
+            print(f"🔍 DEBUG_AUTO: Meets requirements: {meets_min_requirements} (price >= threshold: {new_price >= game['price_threshold']}, change >= threshold: {change_value >= game['value_threshold']})")
+
             if significant_change and meets_min_requirements:
-                # Update the price
-                if update_game_price(game['id'], new_price, game['price_source']):
+                # Send Discord notification for significant price change BEFORE updating price
+                # We need to temporarily update the price_history to simulate the change for notification
+                try:
+                    # First, add the new price to history so check_price_change_and_alert can see the "change"
+                    db_path = resolve_db_path()
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    cursor.execute("""
+                        INSERT INTO price_history (game_id, price, price_source, date_recorded, currency)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (game['id'], new_price, game['price_source'], current_date, 'GBP'))
+                    conn.commit()
+                    conn.close()
+
+                    # Now send the notification
+                    from app import check_price_change_and_alert
+                    check_price_change_and_alert(game['id'], new_price, game['price_source'])
+                    print(f"📢 Discord notification sent for {game['title']}")
+
+                except Exception as e:
+                    print(f"❌ Failed to send Discord notification: {e}")
+
+                # Update the game's average_price (don't add to history again since we already did)
+                try:
+                    db_path = resolve_db_path()
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        UPDATE games
+                        SET average_price = ?
+                        WHERE id = ?
+                    """, (new_price, game['id']))
+                    conn.commit()
+                    conn.close()
+
                     updated_count += 1
                     print(f"📈 Updated {game['title']}: £{current_price:.2f} → £{new_price:.2f} ({change_percent:+.1f}%)")
-                else:
-                    print(f"❌ Failed to update {game['title']}")
+                except Exception as e:
+                    print(f"❌ Failed to update {game['title']}: {e}")
             else:
                 print(f"ℹ️  Price change for {game['title']} below threshold")
         else:
             # No current price, update anyway
-            if update_game_price(game['id'], new_price, game['price_source']):
+            # Send Discord notification for new price BEFORE updating if it meets minimum requirements
+            if new_price >= game['price_threshold']:
+                try:
+                    # For new prices, we need to add to history first so check_price_change_and_alert can work
+                    db_path = resolve_db_path()
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    cursor.execute("""
+                        INSERT INTO price_history (game_id, price, price_source, date_recorded, currency)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (game['id'], new_price, game['price_source'], current_date, 'GBP'))
+                    conn.commit()
+                    conn.close()
+
+                    from app import check_price_change_and_alert
+                    check_price_change_and_alert(game['id'], new_price, game['price_source'])
+                    print(f"📢 Discord notification sent for new price: {game['title']}")
+                except Exception as e:
+                    print(f"❌ Failed to send Discord notification for new price: {e}")
+
+            # Update the game's average_price (don't add to history again since we already did)
+            try:
+                db_path = resolve_db_path()
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE games
+                    SET average_price = ?
+                    WHERE id = ?
+                """, (new_price, game['id']))
+                conn.commit()
+                conn.close()
+
                 updated_count += 1
                 print(f"📈 Set initial price for {game['title']}: £{new_price:.2f}")
+            except Exception as e:
+                print(f"❌ Failed to set initial price for {game['title']}: {e}")
 
         # Small delay to be respectful to price sources
         time.sleep(2)
 
-    print("
-✅ Auto scraping complete!"    print(f"🔍 Scraped: {scraped_count} games")
+    print("\n✅ Auto scraping complete!")
+    print(f"🔍 Scraped: {scraped_count} games")
     print(f"📈 Updated: {updated_count} games")
 
 def main():

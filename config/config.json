@@ -4,13 +4,13 @@
   "steamgriddb_api_key": "7044ce127dff80c8363904d3f94df52c",
   "igdb_client_id": "nal5c75b0hwuvmsgs1cdowvi81tg5y",
   "igdb_client_secret": "lgea285xk7qsm4lhh9tio54bw3pek7",
-  "discord_webhook_url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+  "discord_webhook_url": "https://discord.com/api/webhooks/1410187243435331737/JEuflZ0Gb51LoTRTwtkrns1CD8B8yMPCMX21PxBZPpydfxVzcmqT-3IDnFCdkOxPvhOa",
   "price_drop_threshold": 10,
   "price_increase_threshold": 20,
   "default_price_source": "PriceCharting",
-  "auto_scraping_enabled": false,
+  "auto_scraping_enabled": true,
   "auto_scraping_frequency": "week",
   "alert_price_threshold": 0.0,
-  "alert_value_threshold": 100.0,
-  "default_alert_price_region": "NTSC"
+  "alert_value_threshold": 10.0,
+  "default_alert_price_region": "PAL"
 }
