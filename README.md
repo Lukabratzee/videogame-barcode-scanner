@@ -9,6 +9,9 @@ Self-hosted web app to catalogue your video game collection with a simple web UI
 - High‑resolution artwork from SteamGridDB; manual artwork upload supported
 - YouTube trailer links stored and shown in game detail views
 - CSV export of your collection
+- **NEW**: Independent price source settings for manual vs automatic operations
+- **NEW**: Platform-aware price scraping for more accurate results
+- **NEW**: Discord price alerts with customizable thresholds
 
 ## Quick start
 
@@ -68,17 +71,19 @@ Edit `config/config.json` and provide your own keys:
 ```json
 {
   "price_source": "PriceCharting",
-  "steamgriddb_api_key": "YOUR_STEAMGRIDDB_API_KEY", 
+  "automatic_price_source": "PriceCharting",
+  "steamgriddb_api_key": "YOUR_STEAMGRIDDB_API_KEY",
   "igdb_client_id": "YOUR_TWITCH_IGDB_CLIENT_ID",
   "igdb_client_secret": "YOUR_TWITCH_IGDB_CLIENT_SECRET"
 }
 ```
 
-- `price_source`: one of `eBay`, `Amazon`, `CeX`, `PriceCharting`.
-- `steamgriddb_api_key`: optional, enables fetching high‑resolution artwork.
-- `igdb_client_id` / `igdb_client_secret`: required for IGDB search.
+- `price_source`: Price source for Editor/Library operations (`eBay`, `Amazon`, `CeX`, `PriceCharting`)
+- `automatic_price_source`: Price source for background auto-scraping (independent of manual operations)
+- `steamgriddb_api_key`: optional, enables fetching high‑resolution artwork
+- `igdb_client_id` / `igdb_client_secret`: required for IGDB search
 
-The app persists your choices back into this file, so you can also change sources from the UI.
+The app persists your choices back into this file, so you can also change sources from the UI. The two price sources are completely independent - you can use different providers for manual vs automatic operations.
 
 ## Example docker-compose (Portainer/Compose)
 
@@ -149,6 +154,23 @@ Notes:
   - Example: `http://192.168.1.111:5002`
 
  
+
+## New Features
+
+### Independent Price Sources
+You can now set different price sources for manual operations vs automatic background scraping:
+- **Manual Operations** (Editor/Library): Use your preferred high-quality source
+- **Automatic Scraping**: Use a faster/cheaper source for bulk operations
+
+### Platform-Aware Price Scraping
+- Automatic price scraping now includes platform information in search queries
+- More accurate price results by searching "Game Title + Platform"
+- Eliminates confusion between different platform versions
+
+### Enhanced Discord Alerts
+- Price change notifications sent to Discord
+- Customizable thresholds for price drops and increases
+- Per-game alert settings with global fallbacks
 
 ## Further reading
 

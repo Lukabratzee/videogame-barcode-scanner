@@ -16,6 +16,9 @@ import json
 # Add the backend directory to the path so we can import our modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Import the get_automatic_price_source function
+from app import get_automatic_price_source
+
 def resolve_db_path() -> str:
     """Resolve database path at runtime - same logic as backend app.py"""
     # Get the project root directory (one level up from backend)
@@ -56,8 +59,8 @@ def get_games_to_scrape():
         # Get all games with their alert settings
         cursor.execute("""
             SELECT
-                g.id, g.title, g.average_price,
-                COALESCE(ags.price_source, ?) as price_source,
+                g.id, g.title, g.platforms, g.average_price,
+                ? as price_source,  -- Always use global price_source
                 COALESCE(ags.price_region, 'PAL') as price_region,
                 COALESCE(ags.price_drop_threshold, ?) as drop_threshold,
                 COALESCE(ags.price_increase_threshold, ?) as increase_threshold,
@@ -69,7 +72,7 @@ def get_games_to_scrape():
             AND g.average_price IS NOT NULL
             AND g.average_price > 0
         """, (
-            config.get('price_source', 'PriceCharting'),  # Use global price_source as fallback
+            get_automatic_price_source(),  # Use automatic scraping source
             config.get('price_drop_threshold', 10.0),
             config.get('price_increase_threshold', 20.0),
             config.get('alert_price_threshold', 0.0),
@@ -78,16 +81,22 @@ def get_games_to_scrape():
 
         games = []
         for row in cursor.fetchall():
+            # Extract the first platform from the platforms string (e.g., "PlayStation 4, Nintendo Switch" -> "PlayStation 4")
+            platforms = row[2] or ""
+            first_platform = platforms.split(",")[0].strip() if platforms else None
+
             game = {
                 'id': row[0],
                 'title': row[1],
-                'current_price': row[2],
-                'price_source': row[3],
-                'price_region': row[4],
-                'drop_threshold': row[5],
-                'increase_threshold': row[6],
-                'price_threshold': row[7],
-                'value_threshold': row[8]
+                'platforms': platforms,
+                'first_platform': first_platform,
+                'current_price': row[3],
+                'price_source': row[4],
+                'price_region': row[5],
+                'drop_threshold': row[6],
+                'increase_threshold': row[7],
+                'price_threshold': row[8],
+                'value_threshold': row[9]
             }
             games.append(game)
 
@@ -98,9 +107,16 @@ def get_games_to_scrape():
         print(f"❌ Error getting games to scrape: {e}")
         return []
 
-def scrape_game_price(game_title, price_source, price_region='PAL'):
+def scrape_game_price(game_title, platform, price_source, price_region='PAL'):
     """Scrape price for a specific game using the specified source and region"""
     try:
+        # Build the search query with game title and platform (same as manual updates)
+        search_query = game_title.strip()
+        if platform:
+            search_query += f" {platform}"
+
+        print(f"🔍 Searching for: '{search_query}' on {price_source}")
+
         # Import scrapers
         from modules.scrapers import (
             scrape_pricecharting_price,
@@ -110,7 +126,7 @@ def scrape_game_price(game_title, price_source, price_region='PAL'):
         )
 
         if price_source == "PriceCharting":
-            result = scrape_pricecharting_price(game_title, None, price_region)
+            result = scrape_pricecharting_price(search_query, platform, price_region)
             if result:
                 # For auto-scraping, always prioritize CiB (Complete in Box) price
                 if 'cib_price' in result and result['cib_price'] is not None:
@@ -120,16 +136,16 @@ def scrape_game_price(game_title, price_source, price_region='PAL'):
                 elif 'new_price' in result and result['new_price'] is not None:
                     return result['new_price']
         elif price_source == "eBay":
-            results = scrape_ebay_prices(game_title)
+            results = scrape_ebay_prices(search_query)
             if results:
                 # Return the lowest price found
                 return min([r['price'] for r in results if 'price' in r])
         elif price_source == "Amazon":
-            result = scrape_amazon_price(game_title)
+            result = scrape_amazon_price(search_query)
             if result and 'price' in result:
                 return result['price']
         elif price_source == "CeX":
-            result = scrape_cex_price(game_title)
+            result = scrape_cex_price(search_query)
             if result and 'price' in result:
                 return result['price']
 
@@ -162,8 +178,8 @@ def run_auto_scraping():
     for game in games:
         # Scrape the price
         try:
-            print(f"🔍 Scraping {game['title']} from {game['price_source']} (region: {game['price_region']})...")
-            new_price = scrape_game_price(game['title'], game['price_source'], game['price_region'])
+            print(f"🔍 Scraping {game['title']} ({game['first_platform']}) from {game['price_source']} (region: {game['price_region']})...")
+            new_price = scrape_game_price(game['title'], game['first_platform'], game['price_source'], game['price_region'])
             print(f"📊 scrape_game_price returned: {new_price}")
         except Exception as e:
             print(f"❌ Exception scraping {game['title']}: {e}")

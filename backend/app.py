@@ -486,9 +486,49 @@ def trigger_manual_scraping():
         return False
 
 def get_price_source():
-    """Get current price source preference"""
+    """Get global price source preference (for Editor/Library operations)"""
     config = load_config()
     return config.get("price_source", "PriceCharting")
+
+def get_automatic_price_source():
+    """Get automatic price scraping source setting (for background scheduler)"""
+    config = load_config()
+    return config.get("automatic_price_source", "PriceCharting")
+
+def set_automatic_price_source(price_source):
+    """Set automatic price scraping source preference (independent of global price source)"""
+    if price_source not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
+        logging.warning(f"Invalid automatic price source attempted: {price_source}")
+        return False
+
+    logging.info(f"Setting automatic price source to: {price_source}")
+    logging.info(f"Config file path: {CONFIG_FILE}")
+    logging.info(f"Config file absolute path: {os.path.abspath(CONFIG_FILE)}")
+
+    config = load_config()
+    config["automatic_price_source"] = price_source
+    # NOTE: Not touching price_source - they are now independent
+
+    # Log the current config before saving
+    logging.info(f"Current config before saving: {config}")
+
+    save_config(config)
+
+    # Verify the save was successful by reading it back
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            saved_config = json.load(f)
+            logging.info(f"Config file after saving: {saved_config}")
+            if saved_config.get("automatic_price_source") == price_source:
+                logging.info(f"✅ Automatic price source '{price_source}' saved successfully to {CONFIG_FILE}")
+            else:
+                logging.error(f"❌ Automatic price source verification failed. Expected: {price_source}, Got: {saved_config.get('automatic_price_source')}")
+                return False
+    except Exception as e:
+        logging.error(f"❌ Failed to verify saved config: {e}")
+        return False
+
+    return True
 
 def get_default_region():
     """Get current default region preference"""
@@ -523,22 +563,22 @@ def set_price_source(price_source):
     
     config = load_config()
     config["price_source"] = price_source
-    config["default_price_source"] = price_source  # Keep them in sync
+    # NOTE: No longer syncing with automatic_price_source - they are now independent
 
     # Log the current config before saving
     logging.info(f"Current config before saving: {config}")
 
     save_config(config)
-    
+
     # Verify the save was successful by reading it back
     try:
         with open(CONFIG_FILE, 'r') as f:
             saved_config = json.load(f)
             logging.info(f"Config file after saving: {saved_config}")
-            if saved_config.get("price_source") == price_source and saved_config.get("default_price_source") == price_source:
-                logging.info(f"✅ Price source '{price_source}' saved successfully to {CONFIG_FILE}")
+            if saved_config.get("price_source") == price_source:
+                logging.info(f"✅ Global price source '{price_source}' saved successfully to {CONFIG_FILE}")
             else:
-                logging.error(f"❌ Price source verification failed. Expected: {price_source}, Got price_source: {saved_config.get('price_source')}, default_price_source: {saved_config.get('default_price_source')}")
+                logging.error(f"❌ Global price source verification failed. Expected: {price_source}, Got: {saved_config.get('price_source')}")
                 return False
     except Exception as e:
         logging.error(f"❌ Failed to verify saved config: {e}")
@@ -910,7 +950,7 @@ def load_notification_config():
         'discord_webhook_url': config.get('discord_webhook_url', ''),
         'price_drop_threshold': config.get('price_drop_threshold', 10.0),  # Percentage
         'price_increase_threshold': config.get('price_increase_threshold', 20.0),  # Percentage
-        'default_price_source': config.get('default_price_source', 'PriceCharting'),
+        'automatic_price_source': config.get('automatic_price_source', 'PriceCharting'),  # For auto scraping only
         'default_alert_price_region': config.get('default_alert_price_region', 'PAL'),  # Default region for alert prices
         'auto_scraping_enabled': config.get('auto_scraping_enabled', False),
         'auto_scraping_frequency': config.get('auto_scraping_frequency', 'week'),  # day, week, month
@@ -1056,7 +1096,7 @@ def get_game_alert_settings(game_id):
             enabled, price_source, price_region, drop_thresh, increase_thresh, price_thresh, value_thresh = result
             return {
                 'enabled': bool(enabled),
-                'price_source': price_source or get_price_source(),  # Use global price_source as fallback
+                'price_source': get_price_source(),  # Always use global price_source
                 'price_region': price_region or 'PAL',
                 'price_drop_threshold': drop_thresh if drop_thresh is not None else config['price_drop_threshold'],
                 'price_increase_threshold': increase_thresh if increase_thresh is not None else config['price_increase_threshold'],
@@ -1067,7 +1107,7 @@ def get_game_alert_settings(game_id):
             # Return global defaults if no per-game settings
             return {
                 'enabled': False,
-                'price_source': get_price_source(),  # Use global price_source as fallback
+                'price_source': get_price_source(),  # Always use global price_source
                 'price_region': 'PAL',
                 'price_drop_threshold': config['price_drop_threshold'],
                 'price_increase_threshold': config['price_increase_threshold'],
@@ -1080,7 +1120,7 @@ def get_game_alert_settings(game_id):
         config = load_notification_config()
         return {
             'enabled': False,
-            'price_source': get_price_source(),  # Use global price_source as fallback
+            'price_source': get_price_source(),  # Always use global price_source
             'price_region': 'PAL',
             'price_drop_threshold': config['price_drop_threshold'],
             'price_increase_threshold': config['price_increase_threshold'],
@@ -3337,7 +3377,7 @@ def get_notification_config():
             'discord_webhook_configured': bool(config.get('discord_webhook_url')),
             'price_drop_threshold': config.get('price_drop_threshold', 10.0),
             'price_increase_threshold': config.get('price_increase_threshold', 20.0),
-            'default_price_source': config.get('default_price_source', 'PriceCharting'),
+            'automatic_price_source': config.get('automatic_price_source', 'PriceCharting'),
             'default_alert_price_region': config.get('default_alert_price_region', 'PAL'),
             'auto_scraping_enabled': config.get('auto_scraping_enabled', False),
             'auto_scraping_frequency': config.get('auto_scraping_frequency', 'week'),
@@ -3362,8 +3402,8 @@ def update_notification_config():
             config['price_drop_threshold'] = data['price_drop_threshold']
         if 'price_increase_threshold' in data:
             config['price_increase_threshold'] = data['price_increase_threshold']
-        if 'default_price_source' in data:
-            config['default_price_source'] = data['default_price_source']
+        if 'automatic_price_source' in data:
+            config['automatic_price_source'] = data['automatic_price_source']
         if 'auto_scraping_enabled' in data:
             config['auto_scraping_enabled'] = data['auto_scraping_enabled']
         if 'auto_scraping_frequency' in data:

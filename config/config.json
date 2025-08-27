@@ -7,10 +7,10 @@
   "discord_webhook_url": "https://discord.com/api/webhooks/1410187243435331737/JEuflZ0Gb51LoTRTwtkrns1CD8B8yMPCMX21PxBZPpydfxVzcmqT-3IDnFCdkOxPvhOa",
   "price_drop_threshold": 10,
   "price_increase_threshold": 20,
-  "default_price_source": "PriceCharting",
   "auto_scraping_enabled": true,
   "auto_scraping_frequency": "week",
   "alert_price_threshold": 0.0,
   "alert_value_threshold": 10.0,
-  "default_alert_price_region": "PAL"
+  "default_alert_price_region": "PAL",
+  "automatic_price_source": "Amazon"
 }
