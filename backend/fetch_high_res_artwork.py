@@ -268,16 +268,26 @@ class HighResArtworkFetcher:
     def search_and_fetch_artwork(self, game_id, title, platforms):
         """Search for a game and fetch all artwork types"""
         print(f"\n[{game_id}] Processing: {title} ({platforms})")
-        
+
         # Create search query with title and first platform
         platform = platforms.split(',')[0].strip() if platforms else ""
         search_query = f"{title} {platform}".strip()
-        
+
         # Search for the game
         search_results = self.client.search_game(search_query)
-        
+
+        # If no results found with platform, try without platform
+        if not search_results and platform:
+            print(f"⚠️  No results found for '{search_query}', trying without platform...")
+            search_query = title.strip()
+            search_results = self.client.search_game(search_query)
+            if search_results:
+                print(f"✅ Found results for '{search_query}' (without platform)")
+            else:
+                print(f"❌ No results found for '{search_query}' (tried with and without platform)")
+
         if not search_results:
-            print(f"❌ No results found for '{search_query}'")
+            print(f"❌ No results found for '{title}'")
             return False
         
         # Use the first (best) match
