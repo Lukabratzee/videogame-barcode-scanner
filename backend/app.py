@@ -530,6 +530,24 @@ def set_automatic_price_source(price_source):
 
     return True
 
+def normalize_region(region):
+    """Normalize region values to standard codes: PAL, NTSC, JP"""
+    if not region:
+        return "PAL"
+
+    region_upper = region.upper().strip()
+
+    # Map various region formats to standard codes
+    if region_upper in {"JAPAN", "JP", "JPN"}:
+        return "JP"
+    elif region_upper in {"NTSC", "US", "USA", "UNITED STATES", "NORTH AMERICA", "NA"}:
+        return "NTSC"
+    elif region_upper in {"PAL", "EU", "EUROPE", "EUROPEAN"}:
+        return "PAL"
+    else:
+        # Default to PAL for unknown regions
+        return "PAL"
+
 def get_default_region():
     """Get current default region preference"""
     config = load_config()
@@ -1571,6 +1589,8 @@ class GameScan:
             region = data.get("region")
             if not region:
                 region = get_default_region()
+            # Normalize the region
+            region = normalize_region(region)
             logging.debug(f"Using region for price scraping: {region}")
             
             # Perform price scraping using the selected source
@@ -1927,8 +1947,8 @@ def save_game_to_db(game_data):
         platform_str = ""
         if game_data["platforms"]:
             platform_str = game_data["platforms"][0]
-        # Default region to PAL if not provided
-        region = (game_data.get("region") or "PAL").strip().upper()
+        # Default region to PAL if not provided, then normalize
+        region = normalize_region(game_data.get("region") or "PAL")
         
         cursor.execute(
             "SELECT COUNT(*) FROM games WHERE TRIM(title) = ? AND platforms LIKE ? AND UPPER(IFNULL(region, 'PAL')) = ?",
@@ -2270,8 +2290,8 @@ def update_game(game_id):
         cursor = conn.cursor()
 
         # Update game data, including average_price and youtube_trailer_url
-        # Default region handling
-        region = (data.get("region") or "PAL").strip().upper()
+        # Default region handling and normalize
+        region = normalize_region(data.get("region") or "PAL")
 
         cursor.execute("""
             UPDATE games
@@ -3276,14 +3296,20 @@ def get_gallery_filters():
                         genres.append(genre)
         genres.sort()
         
-        # Get unique regions
+        # Get unique regions and normalize them
         cursor.execute("""
             SELECT DISTINCT IFNULL(region, 'PAL') as region
-            FROM games 
+            FROM games
         """)
         region_rows = cursor.fetchall()
-        regions = sorted(list(set([row[0] for row in region_rows if row[0]])))
-        
+        # Normalize all regions and remove duplicates
+        normalized_regions = set()
+        for row in region_rows:
+            if row[0]:
+                normalized_regions.add(normalize_region(row[0]))
+
+        regions = sorted(list(normalized_regions))
+
         # Ensure standard regions are available
         if 'PAL' not in regions:
             regions.append('PAL')
