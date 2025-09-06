@@ -1794,10 +1794,13 @@ def get_games():
 
     if sort == "alphabetical":
         query += " ORDER BY title ASC"
+    elif sort == "title_desc":
+        query += " ORDER BY title DESC"
     elif sort == "highest":
-        query += " ORDER BY average_price DESC"
-        #Handles NULLS by placing them at the end
-        query += " NULLS LAST"
+        # Place NULLs last by sorting on IS NULL first
+        query += " ORDER BY (average_price IS NULL), average_price DESC"
+    elif sort == "lowest":
+        query += " ORDER BY (average_price IS NULL), average_price ASC"
     elif sort == "recent":
         # Most recently added first
         query += " ORDER BY datetime(COALESCE(date_added, '1970-01-01')) DESC"

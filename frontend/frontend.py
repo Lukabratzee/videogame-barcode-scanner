@@ -417,7 +417,7 @@ def store_gallery_state():
         "gallery_per_page", "gallery_platform_filter", 
         "gallery_genre_filter", "gallery_search_filter", "gallery_year_range",
         "gallery_region_filter", "gallery_completion_filter", "gallery_sort_order",
-        "gallery_price_range"
+        "gallery_sort_order_label", "gallery_price_range"
     ]
     
     for key in safe_keys:
@@ -440,7 +440,7 @@ def restore_gallery_state():
             "gallery_per_page", "gallery_platform_filter", 
             "gallery_genre_filter", "gallery_search_filter", "gallery_year_range",
             "gallery_region_filter", "gallery_completion_filter", "gallery_sort_order",
-            "gallery_price_range"
+            "gallery_sort_order_label", "gallery_price_range"
         ]
         
         for key, value in stored_state.items():
@@ -787,6 +787,9 @@ def display_game_item(game):
                     average_price = "N/A"
             else:
                 average_price = "N/A"
+            # Added date (date only)
+            added_raw = game.get("date_added") or "-"
+            added_date = added_raw.split(" ")[0] if isinstance(added_raw, str) else "-"
             # Display game details using HTML formatting with proper escaping
             st.markdown(
                 f"""
@@ -803,6 +806,7 @@ def display_game_item(game):
                         <div><strong>Release Date:</strong> {html.escape(str(game.get('release_date', 'N/A')))}</div>
                         <div><strong>Region:</strong> {html.escape(str(backend_to_frontend_region(game.get('region') or 'PAL')))}</div>
                         <div><strong>Average Price:</strong> {html.escape(str(average_price))}</div>
+                        <div><strong>Added:</strong> {html.escape(str(added_date))}</div>
                     </div>
                 </div>
                 """,
@@ -2119,20 +2123,25 @@ def gallery_page():
         filters["year_max"] = year_range[1]
     # No price filter applied in Library
 
-    # Sorting options (Library)
-    prev_sort_recent = st.session_state.get("gallery_sort_recent")
-    prev_sort_highest = st.session_state.get("gallery_sort_highest")
-    sort_recent_library = st.sidebar.checkbox("Sort by Recently Added", key="gallery_sort_recent")
-    sort_highest_library = st.sidebar.checkbox("Sort by Highest Value", key="gallery_sort_highest")
-    # If sort toggles changed, reset to first page so newest items are visible
-    if (prev_sort_recent is not None and prev_sort_recent != sort_recent_library) or \
-       (prev_sort_highest is not None and prev_sort_highest != sort_highest_library):
+    # Sorting options (Library) — dropdown with common choices
+    sort_label_to_query = {
+        "Recently Added": "added_desc",
+        "Highest Value": "price_desc",
+        "Lowest Value": "price_asc",
+        "A → Z": "title_asc",
+        "Z → A": "title_desc",
+    }
+    current_sort_label = st.session_state.get("gallery_sort_order_label", "A → Z")
+    selected_sort_label = st.sidebar.selectbox(
+        "Sort By",
+        list(sort_label_to_query.keys()),
+        index=list(sort_label_to_query.keys()).index(current_sort_label) if current_sort_label in sort_label_to_query else 0,
+        key="gallery_sort_order_label",
+    )
+    # If changed, reset to first page
+    if selected_sort_label != current_sort_label:
         st.session_state["gallery_page"] = 1
-    # Precedence: recently added > highest value
-    if sort_recent_library:
-        filters["sort"] = "added_desc"
-    elif sort_highest_library:
-        filters["sort"] = "price_desc"
+    filters["sort"] = sort_label_to_query.get(selected_sort_label, "title_asc")
     
     # Update session state
     st.session_state["gallery_filters"] = filters
@@ -2724,18 +2733,27 @@ def gallery_page():
             with col_info:
                 st.markdown(f"**Page {st.session_state['gallery_page']} of {total_pages}**")
                 
-                # Page jump selector
+                # Page jump selector: allow jumping to any page
                 page_options = list(range(1, total_pages + 1))
-                if len(page_options) <= 10:  # Only show if reasonable number of pages
+                if total_pages <= 50:
                     selected_page = st.selectbox(
                         "Jump to page:",
                         page_options,
-                        index=st.session_state["gallery_page"] - 1,
+                        index=max(0, min(len(page_options) - 1, st.session_state["gallery_page"] - 1)),
                         key="gallery_page_jump"
                     )
-                    if selected_page != st.session_state["gallery_page"]:
-                        st.session_state["gallery_page"] = selected_page
-                        st.rerun()
+                else:
+                    selected_page = st.number_input(
+                        "Go to page:",
+                        min_value=1,
+                        max_value=total_pages,
+                        value=st.session_state["gallery_page"],
+                        step=1,
+                        key="gallery_page_jump_input"
+                    )
+                if selected_page != st.session_state["gallery_page"]:
+                    st.session_state["gallery_page"] = int(selected_page)
+                    st.rerun()
             
             with col_next:
                 if st.session_state["gallery_page"] < total_pages:
@@ -2789,6 +2807,9 @@ def display_gallery_tile(column, game):
         year = game.get("release_year")
         price_text = f"£{price:.2f}" if price and price != 0 else "No price"
         year_text = f" • {year}" if year else ""
+        # Added date (date only)
+        added_raw = game.get("date_added") or "-"
+        added_date = added_raw.split(" ")[0] if isinstance(added_raw, str) else "-"
         
         # Create the tile with enhanced styling
         with st.container():
@@ -2894,6 +2915,9 @@ def display_gallery_tile(column, game):
                     </div>
                     <div style="margin-top: 8px; font-weight: bold; color: #333; font-size: 12px;">
                         {html.escape(str(price_text))}{html.escape(str(year_text))}
+                    </div>
+                    <div style="margin-top: 4px; color: #777; font-size: 11px;">
+                        Added: {html.escape(str(added_date))}
                     </div>
                 </div>
             </div>
@@ -4028,10 +4052,21 @@ def main():
         except Exception:
             selected_price_range = None
 
-        # Sorting options
-        sort_alphabetical = st.checkbox("Sort Alphabetically", key="filter_sort_alphabetical")
-        sort_highest_value = st.checkbox("Sort by Highest Value", key="filter_sort_highest_value")
-        sort_recent_added = st.checkbox("Sort by Recently Added", key="filter_sort_recent_added")
+        # Sorting options (Editor) — dropdown similar to Library
+        editor_sort_map = {
+            "Recently Added": "recent",
+            "Highest Value": "highest",
+            "Lowest Value": "lowest",
+            "A → Z": "alphabetical",
+            "Z → A": "title_desc",
+        }
+        current_editor_sort = st.session_state.get("editor_sort_order_label", "A → Z")
+        selected_editor_sort = st.selectbox(
+            "Sort By",
+            list(editor_sort_map.keys()),
+            index=list(editor_sort_map.keys()).index(current_editor_sort) if current_editor_sort in editor_sort_map else 0,
+            key="editor_sort_order_label"
+        )
 
         filters = {}
         if selected_publisher:
@@ -4052,13 +4087,8 @@ def main():
             except Exception:
                 pass
 
-        # Decide which sort to apply. Precedence: recent > highest > alphabetical
-        if sort_recent_added:
-            filters["sort"] = "recent"
-        elif sort_highest_value:
-            filters["sort"] = "highest"
-        elif sort_alphabetical:
-            filters["sort"] = "alphabetical"
+        # Apply selected sort
+        filters["sort"] = editor_sort_map.get(selected_editor_sort, "alphabetical")
 
         # Add pagination controls to Advanced Filters
         st.markdown("### Display Options")
