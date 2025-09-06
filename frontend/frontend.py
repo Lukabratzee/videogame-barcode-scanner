@@ -266,6 +266,18 @@ def fetch_top_games():
         print(f"Error fetching top games: {e}")
         return []
 
+def fetch_recent_games():
+    try:
+        response = requests.get(f"{BACKEND_URL}/recent_games")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Error fetching recent games: {response.status_code}")
+            return []
+    except Exception as e:
+        print(f"Error fetching recent games: {e}")
+        return []
+
 def fetch_game_by_id(game_id):
     response = requests.get(f"{BACKEND_URL}/game/{game_id}")
     if response.status_code == 200:
@@ -486,50 +498,6 @@ def test_notifications(test_data):
             return {"success": False, "error": "Failed to send test notification"}
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-def fetch_scheduler_status():
-    """Fetch scheduler status"""
-    try:
-        response = requests.get(f"{BACKEND_URL}/api/scheduler/status")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {"success": False, "status": {}, "error": "Failed to fetch scheduler status"}
-    except Exception as e:
-        return {"success": False, "status": {}, "error": str(e)}
-
-def trigger_manual_scraping():
-    """Manually trigger the auto scraper"""
-    try:
-        response = requests.post(f"{BACKEND_URL}/api/scheduler/trigger")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {"success": False, "message": "Failed to trigger auto scraper"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-def start_scheduler():
-    """Start the scheduler"""
-    try:
-        response = requests.post(f"{BACKEND_URL}/api/scheduler/start")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {"success": False, "message": "Failed to start scheduler"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-def stop_scheduler():
-    """Stop the scheduler"""
-    try:
-        response = requests.post(f"{BACKEND_URL}/api/scheduler/stop")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {"success": False, "message": "Failed to stop scheduler"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
 
 def get_game_alert_settings(game_id):
     """Get alert settings for a specific game"""
@@ -878,7 +846,7 @@ def display_game_item(game):
                         with st.spinner(f"Updating price using {current_price_source}..."):
                             result = update_game_price(game.get("id"))
                             if result:
-                                st.success(f"Price updated!")
+                                st.success(f"✅ Price updated!")
                                 old_price = f"£{result['old_price']:.2f}" if result['old_price'] else "Not set"
                                 new_price = f"£{result['new_price']:.2f}" if result['new_price'] else "Not found"
                                 st.info(f"**{result['game_title']}**: {old_price} → {new_price}")
@@ -1170,7 +1138,7 @@ def game_detail_page():
             )
 
             # Initialize variables with current settings, falling back to global defaults
-            price_source = game_settings.get("price_source", global_config.get("price_source", "PriceCharting"))
+            price_source = game_settings.get("price_source", global_config.get("default_price_source", "PriceCharting"))
             price_region = game_settings.get("price_region", global_config.get("default_alert_price_region", "PAL")) if price_source == "PriceCharting" else None
             drop_threshold = int(game_settings.get("price_drop_threshold", global_config.get("price_drop_threshold", 10)))
             increase_threshold = int(game_settings.get("price_increase_threshold", global_config.get("price_increase_threshold", 20)))
@@ -1399,13 +1367,13 @@ def game_detail_page():
                                 pass
                             st.rerun()
                         elif result and result.get("error") == "api_key_missing":
-                            st.error("SteamGridDB API key not configured")
+                            st.error("❌ SteamGridDB API key not configured")
                             st.info("To use this feature:")
                             st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
                             st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
                             st.write("3. Restart the backend service")
                         elif result and result.get("error") == "no_artwork_found":
-                            st.warning("No artwork found for this game")
+                            st.warning("⚠️ No artwork found for this game")
                             st.write(f"**Game:** {result['details']['game_title']}")
                             st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
                         else:
@@ -1917,14 +1885,13 @@ def notifications_page():
                                               value=config.get("alert_value_threshold", 100.0),
                                               help="Only alert if price change is above this amount")
 
-        st.subheader("Automatic Price Scraping")
-        automatic_price_source = st.selectbox("Automatic Price Source",
-                                             ["PriceCharting", "eBay", "Amazon", "CeX"],
-                                             index=["PriceCharting", "eBay", "Amazon", "CeX"].index(config.get("automatic_price_source", "PriceCharting")),
-                                             help="Price source used by the automatic background scraper")
+        st.subheader("Default Price Source")
+        default_price_source = st.selectbox("Default Price Source",
+                                           ["PriceCharting", "eBay", "Amazon", "CeX"],
+                                           index=["PriceCharting", "eBay", "Amazon", "CeX"].index(config.get("default_price_source", "PriceCharting")))
 
         # Region selection for PriceCharting - always define the variable
-        if automatic_price_source == "PriceCharting":
+        if default_price_source == "PriceCharting":
             region_from_config = config.get("default_alert_price_region", "PAL")
             region_index = ["PAL", "NTSC", "JP"].index(region_from_config) if region_from_config in ["PAL", "NTSC", "JP"] else 0
 
@@ -1952,7 +1919,7 @@ def notifications_page():
                 "price_increase_threshold": price_increase_threshold,
                 "alert_price_threshold": alert_price_threshold,
                 "alert_value_threshold": alert_value_threshold,
-                "automatic_price_source": automatic_price_source,
+                "default_price_source": default_price_source,
                 "auto_scraping_enabled": auto_scraping_enabled,
                 "auto_scraping_frequency": auto_scraping_frequency
             }
@@ -1995,97 +1962,6 @@ def notifications_page():
             else:
                 st.error(f"Failed to send test notification: {response.get('error', 'No notification channels configured')}")
 
-    # Scheduler Status and Controls (Outside of forms)
-    st.header("Automatic Price Scraper")
-
-    # Get scheduler status
-    try:
-        scheduler_response = fetch_scheduler_status()
-        if scheduler_response.get("success"):
-            scheduler_status = scheduler_response.get("status", {})
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                if scheduler_status.get("started"):
-                    st.success("Scheduler Running")
-                else:
-                    st.error("Scheduler Stopped")
-
-            with col2:
-                if scheduler_status.get("enabled"):
-                    st.info(f"Frequency: {scheduler_status.get('frequency', 'unknown').title()}")
-                else:
-                    st.warning("Auto Scraping Disabled")
-
-            with col3:
-                jobs = scheduler_status.get("jobs", [])
-                if jobs:
-                    next_run = jobs[0].get("next_run_time")
-                    if next_run:
-                        st.info(f"Next Run: {next_run[:19]} UTC")
-                    else:
-                        st.info("Next Run: Scheduled")
-                else:
-                    st.info("Next Run: Not scheduled")
-
-            # Manual trigger button
-            if st.button("Test Scraper", type="secondary",
-                       help="Manually trigger the automatic price scraper for testing"):
-                with st.spinner("Running auto scraper..."):
-                    trigger_response = trigger_manual_scraping()
-                    if trigger_response.get("success"):
-                        st.success("Auto scraper completed successfully!")
-                        st.rerun()  # Refresh the page to show updated prices
-                    else:
-                        st.error(f"Failed: {trigger_response.get('message', 'Unknown error')}")
-
-            # Scheduler control buttons
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Start Scheduler", disabled=scheduler_status.get("started")):
-                    start_response = start_scheduler()
-                    if start_response.get("success"):
-                        st.success("Scheduler started!")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed: {start_response.get('message', 'Unknown error')}")
-
-            with col2:
-                if st.button("Stop Scheduler", disabled=not scheduler_status.get("started")):
-                    stop_response = stop_scheduler()
-                    if stop_response.get("success"):
-                        st.success("Scheduler stopped!")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed: {stop_response.get('message', 'Unknown error')}")
-
-        else:
-            st.error("❌ Failed to get scheduler status")
-    except Exception as e:
-        st.error(f"Error connecting to scheduler API: {e}")
-
-    # Information about scheduling
-    with st.expander("ℹ️ About Automatic Scheduling", expanded=False):
-        st.markdown("""
-        **When does the scheduler run?**
-
-        - **Daily**: Every day at 9:00 AM UTC
-        - **Weekly**: Every Monday at 9:00 AM UTC
-        - **Monthly**: 1st of each month at 9:00 AM UTC
-
-        **What happens during auto scraping?**
-        1. Checks all games with alerts enabled
-        2. Scrapes prices from configured sources
-        3. Updates prices in database
-        4. Sends Discord alerts for significant changes
-        5. Records price history
-
-        **Testing the scheduler:**
-        - Use the "🔧 Test Auto Scraper Now" button above
-        - Check the terminal/console for detailed logs
-        - Monitor Discord for alert notifications
-        """)
 
 
 # -------------------------
@@ -2211,36 +2087,7 @@ def gallery_page():
     else:
         year_range = None
     
-    # Price range filter
-    st.sidebar.markdown("### Price Filters")
-    
-    # Get price range from all games for slider bounds
-    try:
-        # Fetch price range from backend or calculate from current games
-        all_games_for_price = fetch_gallery_games(filters={}, per_page=10000)  # Get all games for price range
-        games_with_prices = [g for g in all_games_for_price.get("games", []) if g.get("average_price") is not None and g.get("average_price") > 0]
-        
-        if games_with_prices:
-            prices = [float(g["average_price"]) for g in games_with_prices]
-            min_price, max_price = min(prices), max(prices)
-            
-            if min_price < max_price:
-                price_range = st.sidebar.slider(
-                    "Price Range (£)",
-                    min_value=float(min_price),
-                    max_value=float(max_price),
-                    value=(float(min_price), float(max_price)),
-                    step=0.50,
-                    format="£%.2f",
-                    key="gallery_price_range"
-                )
-            else:
-                st.sidebar.info(f"Only price available: £{min_price:.2f}")
-                price_range = (min_price, max_price)
-        else:
-            price_range = None
-    except Exception as e:
-        price_range = None
+    # Removed price filter UI to simplify Library; all games included regardless of price
     
     # Display options (fixed at defaults: 20 games per page, 4 columns)
     per_page = 20
@@ -2270,13 +2117,22 @@ def gallery_page():
     if year_range and year_range != (min_year, max_year):
         filters["year_min"] = year_range[0]
         filters["year_max"] = year_range[1]
-    if price_range:
-        # Add price filtering - always apply if price_range is set
-        try:
-            filters["price_min"] = price_range[0]
-            filters["price_max"] = price_range[1]
-        except Exception:
-            pass
+    # No price filter applied in Library
+
+    # Sorting options (Library)
+    prev_sort_recent = st.session_state.get("gallery_sort_recent")
+    prev_sort_highest = st.session_state.get("gallery_sort_highest")
+    sort_recent_library = st.sidebar.checkbox("Sort by Recently Added", key="gallery_sort_recent")
+    sort_highest_library = st.sidebar.checkbox("Sort by Highest Value", key="gallery_sort_highest")
+    # If sort toggles changed, reset to first page so newest items are visible
+    if (prev_sort_recent is not None and prev_sort_recent != sort_recent_library) or \
+       (prev_sort_highest is not None and prev_sort_highest != sort_highest_library):
+        st.session_state["gallery_page"] = 1
+    # Precedence: recently added > highest value
+    if sort_recent_library:
+        filters["sort"] = "added_desc"
+    elif sort_highest_library:
+        filters["sort"] = "price_desc"
     
     # Update session state
     st.session_state["gallery_filters"] = filters
@@ -2334,7 +2190,7 @@ def gallery_page():
                         if len(games_without_prices) > 20:
                             st.caption(f"... and {len(games_without_prices) - 20} more games")
                 else:
-                    st.success("All games already have prices!")
+                    st.success("✅ All games already have prices!")
                     st.info("No games need price updates at this time.")
         except Exception:
             st.warning("Could not check price status")
@@ -2357,7 +2213,7 @@ def gallery_page():
                         st.warning("No games need price updates. All games already have prices!")
                         st.stop()
                     
-                    st.info(f"Starting bulk price update for {len(games_without_prices)} games...")
+                    st.info(f"🚀 Starting bulk price update for {len(games_without_prices)} games...")
             except Exception:
                 st.error("Could not check which games need price updates")
                 st.stop()
@@ -2400,7 +2256,7 @@ def gallery_page():
             current_game_status.empty()
             
             # Show completion stats
-            st.success(f"Bulk price update completed!")
+            st.success(f"✅ Bulk price update completed!")
             
             # Show detailed results
             col1, col2, col3 = st.columns(3)
@@ -2423,7 +2279,7 @@ def gallery_page():
         # ---- Bulk: Update ALL Game Prices ----
         st.markdown("---")
         st.markdown("**⚠️ Bulk: Update ALL Game Prices**")
-        st.warning("**WARNING:** This will update prices for ALL games in your database. This operation will take a very long time and may hit rate limits.")
+        st.warning("⚠️ **WARNING:** This will update prices for ALL games in your database. This operation will take a very long time and may hit rate limits.")
         
         # Show total games count
         try:
@@ -2431,17 +2287,17 @@ def gallery_page():
             if resp.status_code == 200:
                 all_games = resp.json()
                 st.info(f"📋 **{len(all_games)} total games** would be processed")
-                st.caption("Estimated time: ~5-10 seconds per game")
+                st.caption("⏱️ Estimated time: ~5-10 seconds per game")
         except Exception:
             st.warning("Could not get total games count")
         
         confirm_bulk_all_prices = st.checkbox(
-            "I understand this will take a very long time and want to update ALL game prices",
+            "⚠️ I understand this will take a very long time and want to update ALL game prices",
             key="gallery_bulk_all_price_confirm",
         )
         
         # Enhanced bulk processing for ALL games
-        if st.button("Update ALL Game Prices", key="gallery_bulk_all_price_button") and confirm_bulk_all_prices:
+        if st.button("⚠️ Update ALL Game Prices", key="gallery_bulk_all_price_button") and confirm_bulk_all_prices:
             # Get all games
             all_games = []
             try:
@@ -2452,7 +2308,7 @@ def gallery_page():
                         st.warning("No games found in database!")
                         st.stop()
                     
-                    st.info(f"Starting bulk price update for ALL {len(all_games)} games...")
+                    st.info(f"🚀 Starting bulk price update for ALL {len(all_games)} games...")
                     st.warning("⏱️ This operation may take several hours. Please be patient and do not close this tab.")
             except Exception:
                 st.error("Could not fetch games from database")
@@ -2496,7 +2352,7 @@ def gallery_page():
             current_game_status.empty()
             
             # Show completion stats
-            st.success(f"Bulk price update for ALL games completed!")
+            st.success(f"✅ Bulk price update for ALL games completed!")
             
             # Show detailed results
             col1, col2, col3 = st.columns(3)
@@ -2531,7 +2387,7 @@ def gallery_page():
             try:
                 game_info = fetch_game_by_id(update_artwork_game_id)
                 if game_info:
-                    st.info(f"**{game_info.get('title', 'Unknown')}** (ID: {update_artwork_game_id})")
+                    st.info(f"🎮 **{game_info.get('title', 'Unknown')}** (ID: {update_artwork_game_id})")
                     # Show current artwork status
                     has_grid = bool(game_info.get('high_res_cover_url'))
                     has_hero = bool(game_info.get('hero_image_url'))
@@ -2539,7 +2395,7 @@ def gallery_page():
                     has_icon = bool(game_info.get('icon_image_url'))
                     
                     artwork_status = []
-                    if has_grid: artwork_status.append("Grid")
+                    if has_grid: artwork_status.append("✅ Grid")
                     else: artwork_status.append("❌ Grid")
                     if has_hero: artwork_status.append("✅ Hero")
                     else: artwork_status.append("❌ Hero")
@@ -2584,13 +2440,13 @@ def gallery_page():
                             st.session_state["refresh_artwork_stats"] = True
                             st.rerun()
                         elif result and result.get("error") == "api_key_missing":
-                            st.error("SteamGridDB API key not configured")
+                            st.error("❌ SteamGridDB API key not configured")
                             st.info("To use this feature:")
                             st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
                             st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
                             st.write("3. Restart the backend service")
                         elif result and result.get("error") == "no_artwork_found":
-                            st.warning("No artwork found for this game")
+                            st.warning("⚠️ No artwork found for this game")
                             st.write(f"**Game:** {result['details']['game_title']}")
                             st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
                         else:
@@ -3677,7 +3533,7 @@ def main():
                         if len(games_without_prices) > 20:
                             st.caption(f"... and {len(games_without_prices) - 20} more games")
                 else:
-                    st.success("All games already have prices!")
+                    st.success("✅ All games already have prices!")
                     st.info("No games need price updates at this time.")
         except Exception:
             st.warning("Could not check price status")
@@ -3700,7 +3556,7 @@ def main():
                         st.warning("No games need price updates. All games already have prices!")
                         st.stop()
                     
-                    st.info(f"Starting bulk price update for {len(games_without_prices)} games...")
+                    st.info(f"🚀 Starting bulk price update for {len(games_without_prices)} games...")
             except Exception:
                 st.error("Could not check which games need price updates")
                 st.stop()
@@ -3743,7 +3599,7 @@ def main():
             current_game_status.empty()
             
             # Show completion stats
-            st.success(f"Bulk price update completed!")
+            st.success(f"✅ Bulk price update completed!")
             
             # Show detailed results
             col1, col2, col3 = st.columns(3)
@@ -3766,7 +3622,7 @@ def main():
         # ---- Bulk: Update ALL Game Prices ----
         st.markdown("---")
         st.markdown("**⚠️ Bulk: Update ALL Game Prices**")
-        st.warning("**WARNING:** This will update prices for ALL games in your database. This operation will take a very long time and may hit rate limits.")
+        st.warning("⚠️ **WARNING:** This will update prices for ALL games in your database. This operation will take a very long time and may hit rate limits.")
         
         # Show total games count
         try:
@@ -3774,17 +3630,17 @@ def main():
             if resp.status_code == 200:
                 all_games = resp.json()
                 st.info(f"📋 **{len(all_games)} total games** would be processed")
-                st.caption("Estimated time: ~5-10 seconds per game")
+                st.caption("⏱️ Estimated time: ~5-10 seconds per game")
         except Exception:
             st.warning("Could not get total games count")
         
         confirm_bulk_all_prices = st.checkbox(
-            "I understand this will take a very long time and want to update ALL game prices",
+            "⚠️ I understand this will take a very long time and want to update ALL game prices",
             key="editor_bulk_all_price_confirm",
         )
         
         # Enhanced bulk processing for ALL games
-        if st.button("Update ALL Game Prices", key="editor_bulk_all_price_button") and confirm_bulk_all_prices:
+        if st.button("⚠️ Update ALL Game Prices", key="editor_bulk_all_price_button") and confirm_bulk_all_prices:
             # Get all games
             all_games = []
             try:
@@ -3795,7 +3651,7 @@ def main():
                         st.warning("No games found in database!")
                         st.stop()
                     
-                    st.info(f"Starting bulk price update for ALL {len(all_games)} games...")
+                    st.info(f"🚀 Starting bulk price update for ALL {len(all_games)} games...")
                     st.warning("⏱️ This operation may take several hours. Please be patient and do not close this tab.")
             except Exception:
                 st.error("Could not fetch games from database")
@@ -3839,7 +3695,7 @@ def main():
             current_game_status.empty()
             
             # Show completion stats
-            st.success(f"Bulk price update for ALL games completed!")
+            st.success(f"✅ Bulk price update for ALL games completed!")
             
             # Show detailed results
             col1, col2, col3 = st.columns(3)
@@ -3876,7 +3732,7 @@ def main():
             try:
                 game_info = fetch_game_by_id(update_artwork_game_id)
                 if game_info:
-                    st.info(f"**{game_info.get('title', 'Unknown')}** (ID: {update_artwork_game_id})")
+                    st.info(f"🎮 **{game_info.get('title', 'Unknown')}** (ID: {update_artwork_game_id})")
                     # Show current artwork status
                     has_grid = bool(game_info.get('high_res_cover_url'))
                     has_hero = bool(game_info.get('hero_image_url'))
@@ -3884,7 +3740,7 @@ def main():
                     has_icon = bool(game_info.get('icon_image_url'))
                     
                     artwork_status = []
-                    if has_grid: artwork_status.append("Grid")
+                    if has_grid: artwork_status.append("✅ Grid")
                     else: artwork_status.append("❌ Grid")
                     if has_hero: artwork_status.append("✅ Hero")
                     else: artwork_status.append("❌ Hero")
@@ -3944,13 +3800,13 @@ def main():
                                 pass
                             st.session_state["refresh_artwork_stats"] = True
                         elif result and result.get("error") == "api_key_missing":
-                            st.error("SteamGridDB API key not configured")
+                            st.error("❌ SteamGridDB API key not configured")
                             st.info("To use this feature:")
                             st.write("1. Get an API key from https://www.steamgriddb.com/profile/preferences/api")
                             st.write("2. Add `steamgriddb_api_key` to your `config.json` file")
                             st.write("3. Restart the backend service")
                         elif result and result.get("error") == "no_artwork_found":
-                            st.warning("No artwork found for this game")
+                            st.warning("⚠️ No artwork found for this game")
                             st.write(f"**Game:** {result['details']['game_title']}")
                             st.info("SteamGridDB may not have artwork for this specific game. Try manually adding artwork or check if the game name matches exactly.")
                         else:
@@ -4172,9 +4028,10 @@ def main():
         except Exception:
             selected_price_range = None
 
-        # Add checkboxes for sorting
+        # Sorting options
         sort_alphabetical = st.checkbox("Sort Alphabetically", key="filter_sort_alphabetical")
         sort_highest_value = st.checkbox("Sort by Highest Value", key="filter_sort_highest_value")
+        sort_recent_added = st.checkbox("Sort by Recently Added", key="filter_sort_recent_added")
 
         filters = {}
         if selected_publisher:
@@ -4195,8 +4052,10 @@ def main():
             except Exception:
                 pass
 
-        # Decide which sort to apply. If both are checked, highest takes precedence.
-        if sort_highest_value:
+        # Decide which sort to apply. Precedence: recent > highest > alphabetical
+        if sort_recent_added:
+            filters["sort"] = "recent"
+        elif sort_highest_value:
             filters["sort"] = "highest"
         elif sort_alphabetical:
             filters["sort"] = "alphabetical"
@@ -4794,10 +4653,27 @@ def main():
     )
 
     if not st.session_state["filters_active"]:
-        st.markdown("## Top 5 Games by Average Price")
-        top_games = fetch_top_games()
-        if top_games:  # Only display if we have games
-            for game in top_games:
+        st.markdown("## Top 5")
+        # Switch between Top by Price and Recently Added
+        try:
+            mode = st.segmented_control(
+                "Show",
+                options=["Top by Price", "Recently Added"],
+                default="Top by Price",
+                key="home_top_list_mode",
+            )
+        except Exception:
+            mode = st.radio(
+                "Show",
+                options=["Top by Price", "Recently Added"],
+                index=0,
+                horizontal=True,
+                key="home_top_list_mode",
+            )
+
+        games_list = fetch_top_games() if mode == "Top by Price" else fetch_recent_games()
+        if games_list:  # Only display if we have games
+            for game in games_list:
                 cover_image_url = get_best_cover_image(game)
                 price_value = game.get("average_price")
                 if price_value is not None:
@@ -4807,6 +4683,9 @@ def main():
                         average_price = "N/A"
                 else:
                     average_price = "N/A"
+                # Show only the date part (YYYY-MM-DD), drop time
+                added_raw = game.get("date_added") or "-"
+                added = added_raw.split(" ")[0] if isinstance(added_raw, str) else "-"
                 st.markdown(
                     f"""
                     <div class="game-container">
@@ -4822,6 +4701,7 @@ def main():
                             <div><strong>Release Date:</strong> {html.escape(str(game['release_date']))}</div>
                             <div><strong>Region:</strong> {html.escape(str(backend_to_frontend_region(game.get('region', 'N/A'))))}</div>
                             <div><strong>Average Price:</strong> {html.escape(str(average_price))}</div>
+                            <div><strong>Added:</strong> {html.escape(str(added))}</div>
                         </div>
                     </div>
                     """,

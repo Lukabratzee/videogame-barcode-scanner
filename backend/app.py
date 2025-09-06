@@ -16,11 +16,6 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# APScheduler imports for automatic price scraping
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.jobstores.memory import MemoryJobStore
-
 # Import YouTube trailer fetcher function
 try:
     from fetch_youtube_trailers import get_youtube_video_id
@@ -130,20 +125,6 @@ app = Flask(__name__)
 # IGDB credentials default from environment (used as final fallback)
 IGDB_CLIENT_ID = os.getenv("IGDB_CLIENT_ID", "")
 IGDB_CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET", "")
-
-# Initialize APScheduler for automatic price scraping
-scheduler = BackgroundScheduler(
-    jobstores={'default': MemoryJobStore()},
-    job_defaults={
-        'coalesce': True,
-        'max_instances': 1,
-        'misfire_grace_time': 30
-    },
-    timezone='UTC'
-)
-
-# Global variable to track scheduler status
-scheduler_started = False
 
 # Specify the exact path to the ChromeDriver binary
 # driver_path = "/opt/homebrew/bin/chromedriver"  # Replace with the actual path - NOT USED IN DOCKER
@@ -337,216 +318,10 @@ def save_config(config):
                 logging.error(f"Failed to save config to fallback location: {fallback_error}")
         raise  # Re-raise the exception so the calling function knows it failed
 
-# ===============================
-# SCHEDULER FUNCTIONS
-# ===============================
-
-def start_auto_scraper_scheduler():
-    """Start the automatic price scraper scheduler"""
-    global scheduler_started
-
-    if scheduler_started:
-        logging.info("Scheduler already started")
-        return True
-
-    try:
-        config = load_config()
-        logging.info(f"Scheduler start attempt - config: {config}")
-
-        if not config.get('auto_scraping_enabled', False):
-            logging.info("Auto scraping disabled in config")
-            return False
-
-        frequency = config.get('auto_scraping_frequency', 'week')
-
-        # Clear any existing jobs
-        scheduler.remove_all_jobs()
-
-        # Schedule based on frequency
-        if frequency == 'day':
-            # Run daily at 9 AM
-            scheduler.add_job(
-                func=run_scheduled_scraping,
-                trigger=CronTrigger(hour=9, minute=0),
-                id='daily_scraping',
-                name='Daily Price Scraping',
-                replace_existing=True
-            )
-            logging.info("✅ Scheduled daily scraping at 9:00 AM UTC")
-
-        elif frequency == 'week':
-            # Run weekly on Monday at 9 AM
-            scheduler.add_job(
-                func=run_scheduled_scraping,
-                trigger=CronTrigger(day_of_week='mon', hour=9, minute=0),
-                id='weekly_scraping',
-                name='Weekly Price Scraping',
-                replace_existing=True
-            )
-            logging.info("✅ Scheduled weekly scraping on Monday at 9:00 AM UTC")
-
-        elif frequency == 'month':
-            # Run monthly on the 1st at 9 AM
-            scheduler.add_job(
-                func=run_scheduled_scraping,
-                trigger=CronTrigger(day=1, hour=9, minute=0),
-                id='monthly_scraping',
-                name='Monthly Price Scraping',
-                replace_existing=True
-            )
-            logging.info("✅ Scheduled monthly scraping on 1st at 9:00 AM UTC")
-
-        # Start the scheduler
-        logging.info(f"Starting scheduler with frequency: {frequency}")
-        scheduler.start()
-        scheduler_started = True
-        logging.info("✅ Auto scraper scheduler started successfully")
-
-        return True
-
-    except Exception as e:
-        logging.error(f"❌ Failed to start scheduler: {e}")
-        logging.error(f"❌ Exception type: {type(e).__name__}")
-        import traceback
-        logging.error(f"❌ Traceback: {traceback.format_exc()}")
-        return False
-
-def stop_auto_scraper_scheduler():
-    """Stop the automatic price scraper scheduler"""
-    global scheduler_started
-
-    if not scheduler_started:
-        logging.info("Scheduler already stopped")
-        return True
-
-    try:
-        scheduler.shutdown(wait=True)
-        scheduler_started = False
-        logging.info("✅ Auto scraper scheduler stopped successfully")
-        return True
-    except Exception as e:
-        logging.error(f"❌ Failed to stop scheduler: {e}")
-        return False
-
-def run_scheduled_scraping():
-    """Run the scheduled price scraping (called by APScheduler)"""
-    try:
-        logging.info("🚀 Starting scheduled price scraping...")
-
-        # Import the auto scraper functionality
-        from auto_price_scraper import run_auto_scraping
-
-        # Run the scraping
-        run_auto_scraping()
-
-        logging.info("✅ Scheduled price scraping completed")
-
-    except Exception as e:
-        logging.error(f"❌ Scheduled scraping failed: {e}")
-
-def get_scheduler_status():
-    """Get the current status of the scheduler"""
-    global scheduler_started
-
-    config = load_config()
-    jobs = []
-
-    if scheduler_started:
-        for job in scheduler.get_jobs():
-            jobs.append({
-                'id': job.id,
-                'name': job.name,
-                'next_run_time': str(job.next_run_time) if job.next_run_time else None,
-                'trigger': str(job.trigger)
-            })
-
-    return {
-        'started': scheduler_started,
-        'enabled': config.get('auto_scraping_enabled', False),
-        'frequency': config.get('auto_scraping_frequency', 'week'),
-        'jobs': jobs
-    }
-
-def trigger_manual_scraping():
-    """Manually trigger the auto scraper for testing"""
-    try:
-        logging.info("🔧 Manually triggering auto scraper...")
-
-        # Import the auto scraper functionality
-        from auto_price_scraper import run_auto_scraping
-
-        # Run the scraping
-        run_auto_scraping()
-
-        logging.info("✅ Manual scraping completed successfully")
-        return True
-
-    except Exception as e:
-        logging.error(f"❌ Manual scraping failed: {e}")
-        return False
-
 def get_price_source():
-    """Get global price source preference (for Editor/Library operations)"""
+    """Get current price source preference"""
     config = load_config()
     return config.get("price_source", "PriceCharting")
-
-def get_automatic_price_source():
-    """Get automatic price scraping source setting (for background scheduler)"""
-    config = load_config()
-    return config.get("automatic_price_source", "PriceCharting")
-
-def set_automatic_price_source(price_source):
-    """Set automatic price scraping source preference (independent of global price source)"""
-    if price_source not in ["eBay", "Amazon", "CeX", "PriceCharting"]:
-        logging.warning(f"Invalid automatic price source attempted: {price_source}")
-        return False
-
-    logging.info(f"Setting automatic price source to: {price_source}")
-    logging.info(f"Config file path: {CONFIG_FILE}")
-    logging.info(f"Config file absolute path: {os.path.abspath(CONFIG_FILE)}")
-
-    config = load_config()
-    config["automatic_price_source"] = price_source
-    # NOTE: Not touching price_source - they are now independent
-
-    # Log the current config before saving
-    logging.info(f"Current config before saving: {config}")
-
-    save_config(config)
-
-    # Verify the save was successful by reading it back
-    try:
-        with open(CONFIG_FILE, 'r') as f:
-            saved_config = json.load(f)
-            logging.info(f"Config file after saving: {saved_config}")
-            if saved_config.get("automatic_price_source") == price_source:
-                logging.info(f"✅ Automatic price source '{price_source}' saved successfully to {CONFIG_FILE}")
-            else:
-                logging.error(f"❌ Automatic price source verification failed. Expected: {price_source}, Got: {saved_config.get('automatic_price_source')}")
-                return False
-    except Exception as e:
-        logging.error(f"❌ Failed to verify saved config: {e}")
-        return False
-
-    return True
-
-def normalize_region(region):
-    """Normalize region values to standard codes: PAL, NTSC, JP"""
-    if not region:
-        return "PAL"
-
-    region_upper = region.upper().strip()
-
-    # Map various region formats to standard codes
-    if region_upper in {"JAPAN", "JP", "JPN"}:
-        return "JP"
-    elif region_upper in {"NTSC", "US", "USA", "UNITED STATES", "NORTH AMERICA", "NA"}:
-        return "NTSC"
-    elif region_upper in {"PAL", "EU", "EUROPE", "EUROPEAN"}:
-        return "PAL"
-    else:
-        # Default to PAL for unknown regions
-        return "PAL"
 
 def get_default_region():
     """Get current default region preference"""
@@ -581,22 +356,21 @@ def set_price_source(price_source):
     
     config = load_config()
     config["price_source"] = price_source
-    # NOTE: No longer syncing with automatic_price_source - they are now independent
-
+    
     # Log the current config before saving
     logging.info(f"Current config before saving: {config}")
-
+    
     save_config(config)
-
+    
     # Verify the save was successful by reading it back
     try:
         with open(CONFIG_FILE, 'r') as f:
             saved_config = json.load(f)
             logging.info(f"Config file after saving: {saved_config}")
             if saved_config.get("price_source") == price_source:
-                logging.info(f"✅ Global price source '{price_source}' saved successfully to {CONFIG_FILE}")
+                logging.info(f"✅ Price source '{price_source}' saved successfully to {CONFIG_FILE}")
             else:
-                logging.error(f"❌ Global price source verification failed. Expected: {price_source}, Got: {saved_config.get('price_source')}")
+                logging.error(f"❌ Price source verification failed. Expected: {price_source}, Got: {saved_config.get('price_source')}")
                 return False
     except Exception as e:
         logging.error(f"❌ Failed to verify saved config: {e}")
@@ -968,7 +742,7 @@ def load_notification_config():
         'discord_webhook_url': config.get('discord_webhook_url', ''),
         'price_drop_threshold': config.get('price_drop_threshold', 10.0),  # Percentage
         'price_increase_threshold': config.get('price_increase_threshold', 20.0),  # Percentage
-        'automatic_price_source': config.get('automatic_price_source', 'PriceCharting'),  # For auto scraping only
+        'default_price_source': config.get('default_price_source', 'PriceCharting'),
         'default_alert_price_region': config.get('default_alert_price_region', 'PAL'),  # Default region for alert prices
         'auto_scraping_enabled': config.get('auto_scraping_enabled', False),
         'auto_scraping_frequency': config.get('auto_scraping_frequency', 'week'),  # day, week, month
@@ -1010,7 +784,6 @@ def send_discord_notification(message, webhook_url=None):
         webhook_url = webhook_url or config['discord_webhook_url']
 
         if not webhook_url:
-            print("❌ No Discord webhook URL configured")
             return False
 
         payload = {
@@ -1018,52 +791,13 @@ def send_discord_notification(message, webhook_url=None):
             'username': 'Game Price Tracker'
         }
 
-        response = requests.post(webhook_url, json=payload, timeout=10)
+        response = requests.post(webhook_url, json=payload)
+        response.raise_for_status()
 
-        if response.status_code == 204:
-            print("✅ Discord notification sent successfully")
-            return True
-        else:
-            print(f"❌ Discord API error: {response.status_code} - {response.text}")
-            return False
-
-    except requests.exceptions.Timeout:
-        print("❌ Discord notification timed out")
-        return False
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Discord network error: {e}")
-        return False
+        print("✅ Discord notification sent")
+        return True
     except Exception as e:
         print(f"❌ Failed to send Discord notification: {e}")
-        return False
-
-def send_discord_embed_notification(embed_payload, webhook_url=None):
-    """Send rich embed notification to Discord webhook"""
-    try:
-        config = load_notification_config()
-        webhook_url = webhook_url or config['discord_webhook_url']
-
-        if not webhook_url:
-            print("❌ No Discord webhook URL configured")
-            return False
-
-        response = requests.post(webhook_url, json=embed_payload, timeout=10)
-
-        if response.status_code == 204:
-            print("✅ Discord embed notification sent successfully")
-            return True
-        else:
-            print(f"❌ Discord API error: {response.status_code} - {response.text}")
-            return False
-
-    except requests.exceptions.Timeout:
-        print("❌ Discord embed notification timed out")
-        return False
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Discord network error: {e}")
-        return False
-    except Exception as e:
-        print(f"❌ Failed to send Discord embed notification: {e}")
         return False
 
 def send_slack_notification(message, webhook_url=None):
@@ -1089,8 +823,8 @@ def send_slack_notification(message, webhook_url=None):
         print(f"❌ Failed to send Slack notification: {e}")
         return False
 
-def send_price_alert(game_id, game_title, old_price, new_price, source, change_type):
-    """Send price alert through Discord with rich embed formatting and cover image"""
+def send_price_alert(game_title, old_price, new_price, source, change_type):
+    """Send price alert through Discord"""
     config = load_notification_config()
 
     # Calculate percentage change
@@ -1099,126 +833,26 @@ def send_price_alert(game_id, game_title, old_price, new_price, source, change_t
     else:
         change_percent = 0
 
-    # Get cover image URL and platform
-    cover_image_url = get_game_cover_image(game_id)
-    platform = get_game_platform(game_id)
-
-    # Determine embed color and title based on change type
+    # Create alert message (no emojis)
     if change_type == 'drop':
-        embed_color = 65280  # Green for price drops
-        alert_title = "💰 Price Drop Alert!"
+        alert_type = 'PRICE DROP ALERT'
     else:
-        embed_color = 16711680  # Red for price increases
-        alert_title = "📈 Price Increase Alert!"
+        alert_type = 'PRICE INCREASE ALERT'
 
-    # Create Discord embed with cover image
-    embed = {
-        "title": alert_title,
-        "color": embed_color,
-        "fields": [
-            {
-                "name": "Game",
-                "value": f"**{game_title}**\n*{platform}*" if platform else f"**{game_title}**",
-                "inline": False
-            },
-            {
-                "name": "Price Change",
-                "value": f"**£{old_price:.2f}** → **£{new_price:.2f}**\n**{change_percent:+.1f}%**",
-                "inline": True
-            },
-            {
-                "name": "Source",
-                "value": f"**{source}**",
-                "inline": True
-            },
-            {
-                "name": "Date",
-                "value": datetime.now().strftime('%Y-%m-%d'),
-                "inline": False
-            }
-        ],
-        "footer": {
-            "text": "Video Game Catalogue Price Alert"
-        },
-        "timestamp": datetime.now().isoformat()
-    }
+    message = f"""**{alert_type}**
 
-    # Add thumbnail (cover image) if available
-    if cover_image_url:
-        embed["thumbnail"] = {"url": cover_image_url}
-        print(f"✅ Added cover image to embed: {cover_image_url}")
-    else:
-        print(f"❌ No cover image found for game {game_id}")
-
-    # Create the webhook payload
-    payload = {
-        "embeds": [embed],
-        "username": "Game Price Tracker"
-    }
+**{game_title}**
+Old Price: £{old_price:.2f}
+New Price: £{new_price:.2f}
+Change: {change_percent:+.1f}%
+Source: {source}
+Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
 
     # Send through Discord only
     if config['discord_webhook_url']:
-        result = send_discord_embed_notification(payload, config['discord_webhook_url'])
-        return result
-    else:
-        print("❌ No Discord webhook URL configured")
-        return False
+        return send_discord_notification(message, config['discord_webhook_url'])
 
-def get_game_cover_image(game_id):
-    """Get the cover image URL for a game"""
-    try:
-        conn = sqlite3.connect(database_path)
-        cursor = conn.cursor()
-
-        # Try high-res cover first, then hero image as fallback
-        cursor.execute("""
-            SELECT high_res_cover_url, hero_image_url
-            FROM games
-            WHERE id = ?
-        """, (game_id,))
-
-        result = cursor.fetchone()
-        conn.close()
-
-        if result and result[0]:  # high_res_cover_url
-            return result[0]
-        elif result and result[1]:  # hero_image_url
-            return result[1]
-        else:
-            return None
-
-    except Exception as e:
-        print(f"Error getting cover image for game {game_id}: {e}")
-        return None
-
-def get_game_platform(game_id):
-    """Get the platform for a game"""
-    try:
-        conn = sqlite3.connect(database_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT platforms
-            FROM games
-            WHERE id = ?
-        """, (game_id,))
-
-        result = cursor.fetchone()
-        conn.close()
-
-        if result and result[0]:
-            # Extract first platform from the platforms string
-            platforms = result[0]
-            if ',' in platforms:
-                return platforms.split(',')[0].strip()
-            else:
-                return platforms.strip()
-        else:
-            return None
-
-    except Exception as e:
-        print(f"Error getting platform for game {game_id}: {e}")
-        return None
+    return False
 
 def get_game_alert_settings(game_id):
     """Get alert settings for a specific game (with global fallbacks)"""
@@ -1241,7 +875,7 @@ def get_game_alert_settings(game_id):
             enabled, price_source, price_region, drop_thresh, increase_thresh, price_thresh, value_thresh = result
             return {
                 'enabled': bool(enabled),
-                'price_source': get_price_source(),  # Always use global price_source
+                'price_source': price_source or config['default_price_source'],
                 'price_region': price_region or 'PAL',
                 'price_drop_threshold': drop_thresh if drop_thresh is not None else config['price_drop_threshold'],
                 'price_increase_threshold': increase_thresh if increase_thresh is not None else config['price_increase_threshold'],
@@ -1252,7 +886,7 @@ def get_game_alert_settings(game_id):
             # Return global defaults if no per-game settings
             return {
                 'enabled': False,
-                'price_source': get_price_source(),  # Always use global price_source
+                'price_source': config['default_price_source'],
                 'price_region': 'PAL',
                 'price_drop_threshold': config['price_drop_threshold'],
                 'price_increase_threshold': config['price_increase_threshold'],
@@ -1265,7 +899,7 @@ def get_game_alert_settings(game_id):
         config = load_notification_config()
         return {
             'enabled': False,
-            'price_source': get_price_source(),  # Always use global price_source
+            'price_source': config['default_price_source'],
             'price_region': 'PAL',
             'price_drop_threshold': config['price_drop_threshold'],
             'price_increase_threshold': config['price_increase_threshold'],
@@ -1283,7 +917,7 @@ def check_price_change_and_alert(game_id, new_price, source):
         if not game_settings['enabled']:
             return
 
-        # Get the last TWO prices from history to compare properly
+        # Get the most recent price from history
         conn = sqlite3.connect(database_path)
         cursor = conn.cursor()
 
@@ -1291,19 +925,13 @@ def check_price_change_and_alert(game_id, new_price, source):
             SELECT price FROM price_history
             WHERE game_id = ?
             ORDER BY date_recorded DESC
-            LIMIT 2
+            LIMIT 1
         """, (game_id,))
 
-        results = cursor.fetchall()
+        result = cursor.fetchone()
 
-        if results and len(results) >= 1:
-            # Use the oldest price from the last two entries (skip the most recent if it's the same as new_price)
-            if len(results) >= 2 and results[0][0] == new_price:
-                # Most recent history entry is the same as new price, use the second most recent
-                old_price = results[1][0]
-            else:
-                # Use the most recent history entry
-                old_price = results[0][0]
+        if result:
+            old_price = result[0]
 
             # Get game title for the alert
             cursor.execute("SELECT title FROM games WHERE id = ?", (game_id,))
@@ -1327,11 +955,11 @@ def check_price_change_and_alert(game_id, new_price, source):
 
                 # Price drop alert
                 if change_percent <= -game_settings['price_drop_threshold']:
-                    send_price_alert(game_id, game_title, old_price, new_price, source, 'drop')
+                    send_price_alert(game_title, old_price, new_price, source, 'drop')
 
                 # Price increase alert
                 elif change_percent >= game_settings['price_increase_threshold']:
-                    send_price_alert(game_id, game_title, old_price, new_price, source, 'increase')
+                    send_price_alert(game_title, old_price, new_price, source, 'increase')
         else:
             conn.close()
 
@@ -1589,8 +1217,6 @@ class GameScan:
             region = data.get("region")
             if not region:
                 region = get_default_region()
-            # Normalize the region
-            region = normalize_region(region)
             logging.debug(f"Using region for price scraping: {region}")
             
             # Perform price scraping using the selected source
@@ -1815,6 +1441,55 @@ def get_top_games():
                 "steamgriddb_id": game[18] if len(game) > 18 else None,
                 "artwork_last_updated": game[19] if len(game) > 19 else None,
                 "region": (game[20] if len(game) > 20 else None) or "PAL",
+                "date_added": game[21] if len(game) > 21 else None,
+            }
+        )
+
+    return jsonify(game_list)
+
+@app.route("/recent_games", methods=["GET"])
+def get_recent_games():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT * FROM games
+        WHERE id != -1
+        ORDER BY datetime(COALESCE(date_added, '1970-01-01')) DESC
+        LIMIT 5
+        """
+    )
+    games = cursor.fetchall()
+    conn.close()
+
+    game_list = []
+    for game in games:
+        game_list.append(
+            {
+                "id": game[0],
+                "title": game[1],
+                "cover_image": None,
+                "description": game[2],
+                "publisher": game[3],
+                "platforms": game[4],
+                "genres": game[5],
+                "series": game[6],
+                "release_date": game[7],
+                "average_price": game[8],
+                "youtube_trailer_url": game[9] if len(game) > 9 else None,
+                "high_res_cover_url": game[10] if len(game) > 10 else None,
+                "high_res_cover_path": game[11] if len(game) > 11 else None,
+                "hero_image_url": game[12] if len(game) > 12 else None,
+                "hero_image_path": game[13] if len(game) > 13 else None,
+                "logo_image_url": game[14] if len(game) > 14 else None,
+                "logo_image_path": game[15] if len(game) > 15 else None,
+                "icon_image_url": game[16] if len(game) > 16 else None,
+                "icon_image_path": game[17] if len(game) > 17 else None,
+                "steamgriddb_id": game[18] if len(game) > 18 else None,
+                "artwork_last_updated": game[19] if len(game) > 19 else None,
+                "region": (game[20] if len(game) > 20 else None) or "PAL",
+                # Include date_added if the column exists
+                "date_added": game[21] if len(game) > 21 else None,
             }
         )
 
@@ -1947,8 +1622,8 @@ def save_game_to_db(game_data):
         platform_str = ""
         if game_data["platforms"]:
             platform_str = game_data["platforms"][0]
-        # Default region to PAL if not provided, then normalize
-        region = normalize_region(game_data.get("region") or "PAL")
+        # Default region to PAL if not provided
+        region = (game_data.get("region") or "PAL").strip().upper()
         
         cursor.execute(
             "SELECT COUNT(*) FROM games WHERE TRIM(title) = ? AND platforms LIKE ? AND UPPER(IFNULL(region, 'PAL')) = ?",
@@ -2091,12 +1766,38 @@ def get_games():
         except (ValueError, TypeError):
             pass
 
+    # Optional date_added filters
+    date_added_after = request.args.get("date_added_after")
+    date_added_before = request.args.get("date_added_before")
+    if date_added_after:
+        # Accept YYYY-MM-DD or full timestamp
+        try:
+            # If only a date is provided, include the full day from 00:00:00
+            if len(date_added_after) == 10:
+                date_added_after = date_added_after + " 00:00:00"
+            query += " AND datetime(date_added) >= datetime(?)"
+            params.append(date_added_after)
+        except Exception:
+            pass
+    if date_added_before:
+        try:
+            # If only a date is provided, include the full day until 23:59:59
+            if len(date_added_before) == 10:
+                date_added_before = date_added_before + " 23:59:59"
+            query += " AND datetime(date_added) <= datetime(?)"
+            params.append(date_added_before)
+        except Exception:
+            pass
+
     if sort == "alphabetical":
         query += " ORDER BY title ASC"
     elif sort == "highest":
         query += " ORDER BY average_price DESC"
         #Handles NULLS by placing them at the end
         query += " NULLS LAST"
+    elif sort == "recent":
+        # Most recently added first
+        query += " ORDER BY datetime(COALESCE(date_added, '1970-01-01')) DESC"
 
     # Handle pagination if requested
     if per_page:
@@ -2150,8 +1851,10 @@ def get_games():
                 "steamgriddb_id": game[18] if len(game) > 18 else None,
                 "artwork_last_updated": game[19] if len(game) > 19 else None,
                 "region": (game[20] if len(game) > 20 else None) or "PAL",
+                "date_added": game[21] if len(game) > 21 else None,
             }
         )
+        
 
     # Return with pagination info if requested, otherwise just the games list
     if per_page:
@@ -2290,8 +1993,8 @@ def update_game(game_id):
         cursor = conn.cursor()
 
         # Update game data, including average_price and youtube_trailer_url
-        # Default region handling and normalize
-        region = normalize_region(data.get("region") or "PAL")
+        # Default region handling
+        region = (data.get("region") or "PAL").strip().upper()
 
         cursor.execute("""
             UPDATE games
@@ -2354,6 +2057,7 @@ def fetch_game_by_id(game_id):
                 "steamgriddb_id": game[18] if len(game) > 18 else None,
                 "artwork_last_updated": game[19] if len(game) > 19 else None,
                 "region": (game[20] if len(game) > 20 else None) or "PAL",
+                "date_added": game[21] if len(game) > 21 else None,
             }), 200
         else:
             return jsonify({"error": "Game not found"}), 404
@@ -2823,6 +2527,9 @@ def get_gallery_games():
         year_max = request.args.get('year_max')
         completion_status = request.args.get('completion_status', '').strip()
         sort_order = request.args.get('sort', 'title_asc')
+        # Date-added filters (optional)
+        added_after = request.args.get('added_after')
+        added_before = request.args.get('added_before')
         
         # Also support "limit" parameter (in addition to per_page) to match gallery_api.py
         if request.args.get('limit'):
@@ -2905,6 +2612,24 @@ def get_gallery_games():
         if completion_status:
             where_conditions.append("ggm.completion_status = ?")
             params.append(completion_status)
+
+        # Apply date-added range if provided
+        if added_after:
+            try:
+                if len(added_after) == 10:
+                    added_after = added_after + " 00:00:00"
+                where_conditions.append("datetime(g.date_added) >= datetime(?)")
+                params.append(added_after)
+            except Exception:
+                pass
+        if added_before:
+            try:
+                if len(added_before) == 10:
+                    added_before = added_before + " 23:59:59"
+                where_conditions.append("datetime(g.date_added) <= datetime(?)")
+                params.append(added_before)
+            except Exception:
+                pass
         
         # Combine WHERE conditions
         where_clause = ""
@@ -2930,7 +2655,10 @@ def get_gallery_games():
             'rating_asc': 'ggm.personal_rating ASC',
             'price_desc': 'g.average_price DESC',
             'price_asc': 'g.average_price ASC',
-            'priority_desc': 'ggm.display_priority DESC'
+            'priority_desc': 'ggm.display_priority DESC',
+            # Recently added sorting
+            'added_desc': 'datetime(COALESCE(g.date_added, "1970-01-01")) DESC',
+            'added_asc': 'datetime(COALESCE(g.date_added, "1970-01-01")) ASC'
         }
         
         order_by = sort_mapping.get(sort_order, 'g.title ASC')
@@ -2949,6 +2677,7 @@ def get_gallery_games():
             g.average_price,
             g.youtube_trailer_url,
             g.region,
+            g.date_added,
             ggm.completion_status,
             ggm.personal_rating,
             ggm.play_time_hours,
@@ -2982,7 +2711,7 @@ def get_gallery_games():
             
             # Parse release year
             release_year = None
-            if game_row[7]:  # release_date (now column 7 instead of 8)
+            if game_row[7]:  # release_date column
                 try:
                     release_year = int(game_row[7][:4])
                 except (ValueError, TypeError):
@@ -3033,25 +2762,26 @@ def get_gallery_games():
                 'release_year': release_year,
                 'average_price': game_row[8],
                 'youtube_trailer_url': game_row[9],
-                'region': game_row[10] or 'PAL',  # New region field
-                'completion_status': game_row[11],
-                'personal_rating': game_row[12],
-                'play_time_hours': game_row[13],
-                'notes': game_row[14],
-                'display_priority': game_row[15],
-                'is_favorite': bool(game_row[16]),
-                'date_acquired': game_row[17],
-                'date_completed': game_row[18],
+                'region': game_row[10] or 'PAL',
+                'date_added': game_row[11],
+                'completion_status': game_row[12],
+                'personal_rating': game_row[13],
+                'play_time_hours': game_row[14],
+                'notes': game_row[15],
+                'display_priority': game_row[16],
+                'is_favorite': bool(game_row[17]),
+                'date_acquired': game_row[18],
+                'date_completed': game_row[19],
                 # High-resolution artwork from SteamGridDB  
-                'high_res_cover_url': game_row[19],
-                'high_res_cover_path': game_row[20],
-                'hero_image_url': game_row[21],
-                'hero_image_path': game_row[22],
-                'logo_image_url': game_row[23],
-                'logo_image_path': game_row[24],
-                'icon_image_url': game_row[25],
-                'icon_image_path': game_row[26],
-                'steamgriddb_id': game_row[27]
+                'high_res_cover_url': game_row[20],
+                'high_res_cover_path': game_row[21],
+                'hero_image_url': game_row[22],
+                'hero_image_path': game_row[23],
+                'logo_image_url': game_row[24],
+                'logo_image_path': game_row[25],
+                'icon_image_url': game_row[26],
+                'icon_image_path': game_row[27],
+                'steamgriddb_id': game_row[28]
             }
             games.append(game)
         
@@ -3296,20 +3026,14 @@ def get_gallery_filters():
                         genres.append(genre)
         genres.sort()
         
-        # Get unique regions and normalize them
+        # Get unique regions
         cursor.execute("""
             SELECT DISTINCT IFNULL(region, 'PAL') as region
-            FROM games
+            FROM games 
         """)
         region_rows = cursor.fetchall()
-        # Normalize all regions and remove duplicates
-        normalized_regions = set()
-        for row in region_rows:
-            if row[0]:
-                normalized_regions.add(normalize_region(row[0]))
-
-        regions = sorted(list(normalized_regions))
-
+        regions = sorted(list(set([row[0] for row in region_rows if row[0]])))
+        
         # Ensure standard regions are available
         if 'PAL' not in regions:
             regions.append('PAL')
@@ -3530,7 +3254,7 @@ def get_notification_config():
             'discord_webhook_configured': bool(config.get('discord_webhook_url')),
             'price_drop_threshold': config.get('price_drop_threshold', 10.0),
             'price_increase_threshold': config.get('price_increase_threshold', 20.0),
-            'automatic_price_source': config.get('automatic_price_source', 'PriceCharting'),
+            'default_price_source': config.get('default_price_source', 'PriceCharting'),
             'default_alert_price_region': config.get('default_alert_price_region', 'PAL'),
             'auto_scraping_enabled': config.get('auto_scraping_enabled', False),
             'auto_scraping_frequency': config.get('auto_scraping_frequency', 'week'),
@@ -3555,8 +3279,8 @@ def update_notification_config():
             config['price_drop_threshold'] = data['price_drop_threshold']
         if 'price_increase_threshold' in data:
             config['price_increase_threshold'] = data['price_increase_threshold']
-        if 'automatic_price_source' in data:
-            config['automatic_price_source'] = data['automatic_price_source']
+        if 'default_price_source' in data:
+            config['default_price_source'] = data['default_price_source']
         if 'auto_scraping_enabled' in data:
             config['auto_scraping_enabled'] = data['auto_scraping_enabled']
         if 'auto_scraping_frequency' in data:
@@ -3583,61 +3307,12 @@ def test_notifications():
         test_new_price = data.get('new_price', 35.0)
         test_source = data.get('source', 'Test Source')
 
-        success = send_price_alert(-1, test_game_title, test_old_price, test_new_price, test_source, 'drop')
+        success = send_price_alert(test_game_title, test_old_price, test_new_price, test_source, 'drop')
 
         if success:
             return jsonify({'success': True, 'message': 'Test notification sent successfully'})
         else:
             return jsonify({'success': False, 'message': 'No notification channels configured or all failed'}), 400
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-# -------------------------
-# Scheduler API Endpoints
-# -------------------------
-
-@app.route('/api/scheduler/status', methods=['GET'])
-def get_scheduler_status_endpoint():
-    """Get the current status of the auto scraper scheduler"""
-    try:
-        status = get_scheduler_status()
-        return jsonify({'success': True, 'status': status})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/scheduler/start', methods=['POST'])
-def start_scheduler_endpoint():
-    """Start the auto scraper scheduler"""
-    try:
-        success = start_auto_scraper_scheduler()
-        if success:
-            return jsonify({'success': True, 'message': 'Scheduler started successfully'})
-        else:
-            return jsonify({'success': False, 'message': 'Failed to start scheduler - check server logs for details'}), 400
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/scheduler/stop', methods=['POST'])
-def stop_scheduler_endpoint():
-    """Stop the auto scraper scheduler"""
-    try:
-        success = stop_auto_scraper_scheduler()
-        if success:
-            return jsonify({'success': True, 'message': 'Scheduler stopped successfully'})
-        else:
-            return jsonify({'success': False, 'message': 'Failed to stop scheduler'}), 400
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/scheduler/trigger', methods=['POST'])
-def trigger_scheduler_endpoint():
-    """Manually trigger the auto scraper for testing"""
-    try:
-        success = trigger_manual_scraping()
-        if success:
-            return jsonify({'success': True, 'message': 'Auto scraper triggered successfully'})
-        else:
-            return jsonify({'success': False, 'message': 'Failed to trigger auto scraper'}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -3994,9 +3669,5 @@ if __name__ == "__main__":
         else:
             print("✅ SteamGridDB API key configured")
     
-    # Initialize auto scraper scheduler
-    print("⏰ Initializing auto scraper scheduler...")
-    scheduler_started = start_auto_scraper_scheduler()
-
     print("🚀 Starting Flask application...")
     app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)
