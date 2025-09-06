@@ -45,6 +45,35 @@ python3 migrate_gallery_v1.py || true
 python3 add_price_history.py || true
 python3 migrate_artwork_columns.py || true
 python3 add_region_column.py || true
+python3 add_date_added_column.py || true
+
+# Ensure ChromeDriver matches Chromium version (runtime safety)
+echo "🔧 Verifying ChromeDriver version matches Chromium..."
+if command -v chromium &> /dev/null; then
+  CHROME_MAJOR=$(chromium --version | awk '{print $2}' | cut -d'.' -f1)
+  if command -v chromedriver &> /dev/null; then
+    DRIVER_MAJOR=$(chromedriver --version | awk '{print $2}' | cut -d'.' -f1)
+  else
+    DRIVER_MAJOR=""
+  fi
+  if [ "$CHROME_MAJOR" != "$DRIVER_MAJOR" ]; then
+    echo "Updating ChromeDriver to match Chromium major ${CHROME_MAJOR}..."
+    CFT_VERSION=$(curl -sSL "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_MAJOR}")
+    if [ -n "$CFT_VERSION" ]; then
+      wget -q -O /tmp/chromedriver-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/${CFT_VERSION}/linux64/chromedriver-linux64.zip" && \
+      unzip -o /tmp/chromedriver-linux64.zip -d /tmp >/dev/null && \
+      mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
+      chmod +x /usr/local/bin/chromedriver && \
+      rm -rf /tmp/chromedriver-linux64.zip /tmp/chromedriver-linux64
+      echo "✅ ChromeDriver updated to ${CFT_VERSION}"
+    else
+      echo "⚠️ Could not resolve Chrome for Testing version for major ${CHROME_MAJOR}"
+    fi
+  else
+    echo "✅ ChromeDriver major matches Chromium (${CHROME_MAJOR})"
+  fi
+fi
+python3 add_date_added_column.py || true
 
 # Start the Flask application
 echo "Starting Flask application..."

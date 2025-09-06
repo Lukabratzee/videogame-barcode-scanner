@@ -50,10 +50,13 @@ RUN apt-get update && apt-get install -y \
     libvulkan1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ChromeDriver for the target architecture - use Chrome for Testing API for newer versions
-RUN CHROME_VERSION="138.0.7204.168" && \
-    echo "Downloading ChromeDriver version: $CHROME_VERSION for linux64" && \
-    wget -O /tmp/chromedriver-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" && \
+# Install matching ChromeDriver using Chrome for Testing API
+# Detect Chromium major version, then fetch corresponding ChromeDriver
+RUN CHROME_MAJOR=$(chromium --version | awk '{print $2}' | cut -d'.' -f1) && \
+    echo "Detected Chromium major version: ${CHROME_MAJOR}" && \
+    CFT_VERSION=$(curl -sSL "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_MAJOR}") && \
+    echo "Using Chrome for Testing version: ${CFT_VERSION}" && \
+    wget -O /tmp/chromedriver-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/${CFT_VERSION}/linux64/chromedriver-linux64.zip" && \
     unzip /tmp/chromedriver-linux64.zip -d /tmp && \
     mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
     chmod +x /usr/local/bin/chromedriver && \

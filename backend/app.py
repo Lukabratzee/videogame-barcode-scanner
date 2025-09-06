@@ -1648,10 +1648,12 @@ def save_game_to_db(game_data):
                     logging.warning(f"Failed to fetch YouTube trailer for {title}: {e}")
             
             game_id = generate_random_id()
+            from datetime import datetime
+            date_added = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute(
                 """
-                INSERT INTO games (id, title, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url, region)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO games (id, title, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url, region, date_added)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     game_id,
@@ -1665,6 +1667,7 @@ def save_game_to_db(game_data):
                     game_data["average_price"],
                     youtube_trailer_url,
                     region,
+                    date_added,
                 ),
             )
             conn.commit()

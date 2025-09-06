@@ -16,16 +16,16 @@ cursor = conn.cursor()
 # Create table
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS games (
-    "id" INTEGER PRIMARY KEY,
-    "title" TEXT,
-    "cover_image" TEXT,
-    "description" TEXT,
-    "publisher" TEXT,
-    "platforms" TEXT,
-    "genres" TEXT,
-    "series" TEXT,
-    "release_date" TEXT,
-    "average_price" REAL
+    id INTEGER PRIMARY KEY,
+    title TEXT,
+    description TEXT,
+    publisher TEXT,
+    platforms TEXT,
+    genres TEXT,
+    series TEXT,
+    release_date TEXT,
+    average_price REAL,
+    youtube_trailer_url TEXT
 )
 ''')
 
@@ -42,18 +42,18 @@ if count == 0:
     placeholder_game = (
         -1,  # id (will be filtered out)
         "__PLACEHOLDER__",  # title
-        "",  # cover_image
         "Placeholder entry - do not display",  # description
         "__PLACEHOLDER__",  # publisher
         "__PLACEHOLDER__",  # platforms
         "__PLACEHOLDER__",  # genres
         "__PLACEHOLDER__",  # series
         "1900-01-01",  # release_date
-        0.0  # average_price
+        0.0,  # average_price
+        None  # youtube_trailer_url
     )
-    
+
     cursor.execute('''
-    INSERT INTO games (id, title, cover_image, description, publisher, platforms, genres, series, release_date, average_price)
+    INSERT INTO games (id, title, description, publisher, platforms, genres, series, release_date, average_price, youtube_trailer_url)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', placeholder_game)
     

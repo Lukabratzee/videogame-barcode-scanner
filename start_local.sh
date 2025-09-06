@@ -97,6 +97,8 @@ python3 add_price_history.py || true
 
 echo -e "${BLUE}🖼️  Ensuring artwork columns exist...${NC}"
 python3 migrate_artwork_columns.py || true
+echo -e "${BLUE}🗓️  Ensuring date_added column exists...${NC}"
+python3 add_date_added_column.py || true
 cd ..
 
 # Start backend in background with absolute path
